@@ -84,21 +84,16 @@ python runtime/doctor.py
 
 ### 4. 模型配置
 
-把 `.env.example` 复制成 `.env`，填三个键：
-
 ```dotenv
 ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
 ANTHROPIC_AUTH_TOKEN=your-api-key
 ANTHROPIC_MODEL=deepseek-flash[1M]
 ```
 
-端点和模型名填服务商给的即可，两者必须配套。`.env` 里会有密钥，不要整个目录打包外发；
-要分享就发不带值的 `.env.example`。
-
 ### 5. 启动
 
 双击项目根目录的 `run.bat`。它会起 Web 驱动、等它就绪，然后自动打开前端面板
-（已经在跑就只开面板，不会起第二个）。命令行精细控制用 `run.ps1`：
+（重复点击不会起额外面板）。命令行精细控制用 `run.ps1`：
 
 ```powershell
 .\run.ps1                              # 只读检查依赖
@@ -108,12 +103,12 @@ ANTHROPIC_MODEL=deepseek-flash[1M]
 
 ### 6. 上传赛题
 
-在面板顶栏点「⬆ 上传题目」选择整个赛题文件夹（题面、附件、数据一起），或把文件夹拖进高亮区。
-0阶段会先读题并停下让你核对，确认后才从1阶段起跑。
+在面板顶栏点「⬆ 上传题目」选择整个赛题文件夹（题面、附件、数据一起），或把文件夹拖进高亮区。<br>
+0阶段会先读题并停下由你核对，确认后再从1阶段起跑。
 
 ## 目录结构
 
-| 位置 | 是什么 |
+| 位置 | 作用 |
 |---|---|
 | `lib/web/` | 驱动本体（`python lib/web/server.py`）、门禁、前端 `lib/web/static/` |
 | `lib/delivery/` | 把工作区打包成提交形状（`python -m lib.delivery package\|check\|report`） |
