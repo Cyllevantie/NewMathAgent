@@ -1,0 +1,44 @@
+% 附录 —— 正文的最后一页：支撑材料文件清单表。
+%
+% 由 14Layout-and-format 阶段据 reports/SUBMISSION_MANIFEST.json 生成：表体逐行登记提交出去的文件
+% 名与用途，必须与打包出来的产物逐项一致（`python -m lib.delivery check` 会对账）。
+%
+% 表内**必须**重置行距（见下方四行）：preamble 的全局刚性行距会让表内上下相邻两行
+%   落到同一基线，第 1/2、10/11、15/16、20/21 行会互相压在一起、叠印到看不清。
+%   与 4_symbols.tex 的符号表同一处理。
+%
+% 两列就够：「文件（相对根目录）」与「说明」。不要写绝对路径、不要写内部目录名 ——
+%   `code/`、`reports/` 这类前缀在提交件里已被拉平，写上去就与实际对不上。
+%
+% 行粒度与「说明」的写法（样板规则见 `skills/14Layout-and-format/SKILL.md`）：
+%   · 一行一个提交件；同类可合并（`附件1.xlsx、附件2.xlsx`、`q1.py、q2.py、q3.py、q4.py` 各合一行）；
+%   · `说明` 要带读者能用的信息：`resultN.xlsx` 写「行数 / 时间间隔 / 径向位置数」，
+%     源程序写「它实现什么」，`附录A.pdf` 写「它补充了什么」；
+%   · 覆盖要全（每一个提交件都要一行，`.py` 不许漏）—— 这张表空着或只剩占位符是最严重的形态问题：
+%     模板占位符版这一页只有 **56 个字符**，样板页则有 **1022 字符**。
+%   · 范围 = 支撑材料，不含论文本身（样板里没有 `正文.pdf`；清单 `SUBMISSION_MANIFEST.json` 才含它）；
+%     **`AI工具使用详情.pdf` 必须在表内**（样板第 1 行），正文 §八 那句"详细使用情况见支撑材料"才有落点。
+
+\begin{center}
+\vspace{0.4em}
+{\small
+  % 行距复位**必须连表题一起罩住**：若这几行复位只写在 `{\small …}` 里，
+  %   而表题在组外 ⇒ 表题那一行仍带 preamble 的全局刚性行距（`\lineskiplimit=-20pt`、
+  %   `\lineskip=0pt`）⇒ 它和表格第一行只隔 4.0pt，**表题「表 N 支撑材料文件清单」
+  %   与表头「说明」bbox 重叠 6.5×6.7 pt**，渲染出来是「说明N 支撑材料文件清单」叠印；
+  %   同页其它表的表题到表头基线距是 24–36 pt。
+  %   复位圈进表题后，表题到表头的净空回到与正文表一致的量级。
+  \setlength{\lineskiplimit}{0pt}%
+  \setlength{\lineskip}{\baselineskip}%
+  {\fontsize{10.5pt}{12.6pt}\bfseries 表 10\quad 支撑材料文件清单}\par
+  \vspace{0.4em}%
+  \renewcommand{\arraystretch}{1.0}%
+  \begin{tabular}{@{}p{0.30\textwidth}p{0.62\textwidth}@{}}
+    \toprule
+    \textbf{文件} & \textbf{说明} \\
+    \midrule
+    <由 14Layout-and-format 逐行生成：文件名> & <一句话说清它做什么> \\
+    \bottomrule
+  \end{tabular}
+}
+\end{center}

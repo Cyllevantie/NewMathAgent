@@ -1,0 +1,47 @@
+# 本地配置与密钥：只在本机生效，不进仓库
+.env
+config/*.local.json
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 运行期状态与日志
+runtime/web_run.log
+runtime/_chk.js
+runtime/quality/
+runtime/.runclock.json
+runtime/.watch_*.json
+
+# 赛题输入：你自己上传的原件与附件，按需保留在本机，不进仓库
+request/
+data/
+
+# 跑题产出的工作区（换题时整目录归档，不进仓库）
+产物/
+reports/
+paper/
+paper_appendix/
+code/
+results/
+figures/
+demo/
+运行说明.md
+
+# 临时与探针脚本
+tmp/
+_tmp/
+
+# LaTeX 中间文件
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# 编辑器与系统
+.DS_Store
+Thumbs.db

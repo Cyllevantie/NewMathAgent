@@ -1,0 +1,219 @@
+% ---------- 自定义命令 ----------
+\newcommand{\papertitle}[1]{%
+  % 行距相关的设置放在这里，而不是 \AtBeginDocument——
+  % ctex 自己的 \AtBeginDocument 钩子会在其后执行并覆盖这些值，
+  % 导致段首行多 1.05pt、含深下标的行少 1.05pt（20.41 / 18.31 vs 19.36）。
+  \setlength{\parskip}{0pt}%
+  \setlength{\lineskip}{0pt}%
+  \setlength{\lineskiplimit}{-20pt}%
+  \setlength{\rigidbaselineskip}{\baselineskip}%
+  \setlength{\baselineskip}{\rigidbaselineskip}%
+  % 公式上下间距也在这里设：ctex 的 \AtBeginDocument 钩子会覆盖前言里设的值，
+  % 导致 6pt/14pt 都无效、两行高的公式与其下正文重叠（p10 公式(9) 压 7.64pt）。
+  \setlength{\abovedisplayskip}{14pt}%
+  \setlength{\belowdisplayskip}{14pt}%
+  \setlength{\abovedisplayshortskip}{14pt}%
+  \setlength{\belowdisplayshortskip}{14pt}%
+  \thispagestyle{plain}%   首页恢复页码
+  \begin{center}
+    {\fontsize{17.3pt}{22pt}\bfseries #1}
+  \end{center}
+  % 标题与「摘要」之间的间距：收到最小，好让摘要整页装下；
+  % 但不能收到 −1.6em——那样标题的字符框会与「摘要」重叠（15.9pt）。
+  \vspace{-0.7em}
+}
+\newcommand{\abstractcn}[2]{%
+  \thispagestyle{plain}%   首页恢复页码
+  \vspace{-1.2em}%
+  \begin{center}{\fontsize{14pt}{17pt}\bfseries 摘要}\end{center}
+  \vspace{-0.6em}%
+  % 摘要行距与正文一致取 1.375：摘要为 801 字时，用正文行距正好排满首页而不溢到第 2 页
+  % （正文延伸到 y≈706，版心底约 760）。**不要为把摘要压进一页而单独收紧行距** ——
+  % 那会让摘要与正文出现两套行距。
+  % 首段必须首行缩进 2 格：上面的 \end{center} 会置 \@doendpe，使紧随其后的段落不缩进
+  % （不补时首段 x=70.9 贴版心左边界，而其余各段 x=94.8 已缩进 2 格）。这里显式补 2em，最稳。
+  {\linespread{1.375}\selectfont\noindent\hspace*{2em}\ignorespaces #1\par}
+  % 关键词行与摘要正文拉开距离并整行加粗
+  \vspace{0.8\baselineskip}%
+  \noindent{\bfseries 关键词：#2}\par
+  \newpage
+}
+\makeatletter
+\newcommand{\referencescn}{%
+
+  \section{参考文献}
+
+\begingroup\renewcommand{\section}[2]{}\input{references}\endgroup%
+}
+% 附录 —— 本宏用在两个工程里，两个工程的用法不同：
+%
+%   ① 正文工程（`paper/`）：正文的最后一页，放支撑材料文件清单表。
+%      `\appendixAcn[支撑材料清单]{A1_materials}`，由 format 阶段生成该节。
+%   ② 附录工程（`paper_appendix/`）：整份就是附录 A（补充推导 / 补充图表 / 补充结果），
+%      `\appendixAcn[补充推导与补充图表]{A_appendix}`，独立编译成 附录A.pdf。
+%
+% #1（可选）目录项标题，默认「补充材料」；#2 节文件名（不含路径，位于 sections/）。
+% 附录内的编号一律带 A 前缀（图 A1、式 A.1、节 A.1）—— format 阶段负责核对。
+%
+% 两个 PDF 的公式编号要接续正文（否则附录里出现「式(1)」与正文第 1 式撞号）。
+%    起始编号由 format 阶段数出正文的公式总数后写入附录 main.tex 的
+%    `\setcounter{equation}{N}`（放在本宏调用之前），不要写死在这里。
+%
+% 这里不设「附录 B 完整源程序」：源码不排进论文 ——
+%    代码改以散装 `.py` 提交，在正文末页的清单表里逐项登记。
+\newcommand{\appendixAcn}[2][补充材料]{%
+  \section*{附录}\phantomsection\label{sec:appendix}%
+  \addcontentsline{toc}{section}{附录 A\quad #1}%
+  \setcounter{figure}{0}\renewcommand{\thefigure}{A\arabic{figure}}%
+  \input{sections/#2}%
+}
+\makeatother
+
+% 「表题 + 表体」锁成一块：
+%   题注与表体分处两页（题在页末、体在次页）是逐页目检要抓的版式事故 —— 正文 p6 的
+%   「表 7 主要符号说明」与 p13 的「表 1」都只剩一行题注留在页尾，表体在次页。`tabular`
+%   本身不可断，但题注是它前面的一个普通段落，TeX 可以在两者之间分页。minipage 整体
+%   不可断：装不下就连题带表一起推到下一页。这是定点改动，不改字号、列宽与表内行距。
+%
+%   这条补丁必须留在模板里（判据：`grep tableblock skills/` 不为空）——
+%   只留在产物里会永久丢失，下一轮 ⑩ 要重踩同一个事故。
+\newenvironment{tableblock}%
+  {\begin{center}\begin{minipage}{\textwidth}\centering}%
+  {\end{minipage}\end{center}}
+
+% 三线表：#1 表题 #2 列定义 #3 表头 #4 表体
+\newcommand{\threelinetable}[4]{%
+  \begin{tableblock}
+    {\fontsize{10.5pt}{12.6pt}\bfseries #1}\par
+    \vspace{0.5em}
+    \begin{tabular}{#2}
+      \toprule
+      #3 \\
+      \midrule
+      #4 \\
+      \bottomrule
+    \end{tabular}
+  \end{tableblock}
+}
+% 格内两行：第一行与同行各格同基线（靠 [t]）。**不许直接写嵌套 tabular**——
+% 不带位置参数的嵌套 tabular 在行的基线上竖直居中，同行数据会落在两行中间
+% （表 6 偏 8.58pt、表 7 偏 8.58pt，正常行距 18.x pt ⇒ 表现为「那排数字不对齐」）。
+% 由 lib/web/check_skeleton.py 的 _nested_cell_problems 机械拦。
+\newcommand{\twolinecell}[2]{\begin{tabular}[t]{@{}c@{}}#1\\#2\end{tabular}}
+
+% 插图：#1 可选宽度（默认整栏）#2 图文件名 #3 图题 #4 标签
+\newcommand{\paperfigure}[4][\textwidth]{%
+  \begin{figure}[htbp]
+    \centering
+    \includegraphics[width=#1]{figures/#2.pdf}
+    \caption{#3}
+    \label{fig:#4}
+  \end{figure}
+}
+
+% 附录插图：#1 可选宽度 #2 图文件名 #3 图题（不自动编号，编号由图题文字给出）
+\newcommand{\appfigure}[3][0.92\textwidth]{%
+  \begin{figure}[htbp]
+    \centering
+    \includegraphics[width=#1]{figures/#2.pdf}
+    \caption*{#3}
+  \end{figure}
+}
+
+% 上下双图：原本上下堆叠的两块，拆号后仍上下排（并排会变成又宽又扁的条，图注也被挤扁）。
+% #1 上图文件名 #2 上图题 #3 上标签 #4 下图文件名 #5 下图题 #6 下标签
+\newcommand{\paperfigurestack}[6]{%
+  \begin{figure}[htbp]
+    \centering
+    {\includegraphics[width=0.85\textwidth]{figures/#1.pdf}%
+     \caption{#2}\label{fig:#3}}
+    \par\vspace{0.9em}
+    {\includegraphics[width=0.85\textwidth]{figures/#4.pdf}%
+     \caption{#5}\label{fig:#6}}
+  \end{figure}
+}
+
+% 并排双图（自定义两半宽度）：两块宽高比相差较大的情形。
+% 同宽会把宽高比大的那块压得很矮、小的那块顶得很高（差到 1.9 倍），
+% 故这里分别给宽，使两块的渲染高度对齐。
+% #1 左宽 #2 左图 #3 左题 #4 左标签 #5 右宽 #6 右图 #7 右题 #8 右标签
+\newcommand{\paperfigurepairw}[8]{%
+  \begin{figure}[htbp]
+    \centering
+    \begin{minipage}[t]{#1}
+      \centering
+      \includegraphics[width=\linewidth]{figures/#2.pdf}
+      \caption{#3}\label{fig:#4}
+    \end{minipage}\hfill
+    \begin{minipage}[t]{#5}
+      \centering
+      \includegraphics[width=\linewidth]{figures/#6.pdf}
+      \caption{#7}\label{fig:#8}
+    \end{minipage}
+  \end{figure}
+}
+
+% 并排双图：两块内容互不相同，故各自独立编号、各自有图注，但并排放在同一行。
+% 与「一张图两个面板、共用一个图号」区分开——那种情形仍用 \paperfigure。
+% #1 左图文件名 #2 左图题 #3 左标签 #4 右图文件名 #5 右图题 #6 右标签
+\newcommand{\paperfigurepair}[6]{%
+  \begin{figure}[htbp]
+    \centering
+    \begin{minipage}[t]{0.49\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{figures/#1.pdf}
+      \caption{#2}\label{fig:#3}
+    \end{minipage}\hfill
+    \begin{minipage}[t]{0.49\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{figures/#4.pdf}
+      \caption{#5}\label{fig:#6}
+    \end{minipage}
+  \end{figure}
+}
+
+% 并排双表的一半（表的 \paperfigurepair）。
+%
+% 判据不是「窄」，而是同构：列结构一模一样、只是数值与单位不同 —— 例如
+% 「30 分钟内药材的温度（°C）」与「30 分钟内药材的水分浓度（kg/kg）」，同一批时刻、
+% 同一批距离，读起来就是同一张网格的两种量。这类表**必须并排**：各自独占一个
+% table 浮动体会白占一页高度（正文 31 页里，温度表与水分浓度表共 4 对，
+% 拆开排是超页的主因之一）。参考件 `基于变物性耦合传热传质与动域模型的.pdf`
+% 就是这么做的：表 2/3、表 4/5 各并排，而「主要结果表 + 水分浓度表」列结构不同、
+% 不并排。
+%
+% 表体直接写在环境里，不像 \paperfigurepair 那样当参数传 —— 并排表的表头常是
+% `\multirow` + `\cmidrule` 的两行结构，塞进宏参数既难写又易错。
+%
+% 用法（两半装在同一个 table 浮动体里，各自独立编号）：
+%
+%   \begin{table}[htbp]
+%     \centering
+%     \begin{papertablehalf}{表 2\quad 30 分钟内药材的温度（单位：$^\circ$C）}
+%       \begin{tabular}{cccccc}
+%         \toprule
+%         \multirow{2}{*}{时间/s} & \multicolumn{5}{c}{到药材中心的距离/cm} \\
+%         \cmidrule(lr){2-6}
+%          & 0 & 0.5 & 1 & 1.5 & 2 \\
+%         \midrule
+%         100 & 27.9762 & 27.8882 & 27.1636 & 23.9520 & 18.1911 \\
+%         \bottomrule
+%       \end{tabular}
+%     \end{papertablehalf}\hfill
+%     \begin{papertablehalf}{表 3\quad 30 分钟内药材的水分浓度（单位：kg/kg）}
+%       \begin{tabular}{cccccc}
+%         ... 与左表列结构完全相同 ...
+%       \end{tabular}
+%     \end{papertablehalf}
+%   \end{table}
+%
+% 列距收到 1.4pt 是参考件的值：半栏里放 6 列数字，默认 \tabcolsep 会溢出。
+% #1 表标题（含「表 N\quad」前缀，与全文的表题写法一致）
+\newenvironment{papertablehalf}[1]{%
+  \begin{minipage}[t]{0.49\textwidth}%
+    \centering
+    {\fontsize{10.5pt}{12.6pt}\bfseries #1}\par\vspace{0.4em}%
+    \small\setlength{\tabcolsep}{1.4pt}%
+}{%
+  \end{minipage}%
+}

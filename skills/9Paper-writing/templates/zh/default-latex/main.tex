@@ -1,0 +1,124 @@
+% !TEX program = xelatex
+% =============================================================================
+%  中文默认数学建模论文 LaTeX 模板
+%  对应 Typst 模板 zh/default/main.typ 的全部功能。
+%
+%  字体依赖（正文宋体 / 标题黑体 / 强调楷体）：
+%    - 规范字体：SimSun（宋体）、SimHei（黑体）、KaiTi（楷体）。
+%    - ctex 自动选择当前系统字体集；跨平台使用前编译确认字体可用。
+%    - 西文正文：Times New Roman；代码等宽：Menlo（缺失时回退到默认字体）。
+%  编译方式：xelatex main.tex （需运行两遍以生成目录）
+% =============================================================================
+\documentclass[12pt, a4paper]{ctexart}
+
+% =====================================================================
+%  本族只写「赛事/族差异」。通用排版规范全在 _base/ 里（复制模板时必须把
+%    templates/_base/ 一并复制到 paper/_base/，否则编译不过）。
+%      _base/preamble.tex   页面/字体/行距/标题骨架/caption/表格/浮动体/代码/断行
+%      _base/macros.tex     \papertitle \abstractcn \referencescn \appendixAcn
+%                           \threelinetable \paperfigure \paperfigurepair…
+%      _base/math-style.tex 数学字体与环境
+%    通用排版规范（页边距、\linespread、graphicx、caption 统一、刚性行距）
+%    全部由 _base/ 提供，本文件不再自带导言区。
+% =====================================================================
+\input{_base/preamble.tex}
+\input{_base/macros.tex}
+
+% ---------- 结果登记值（由 `python -m lib.result_contract export` 生成，禁止手工编辑） ----------
+% docs/RESULT_CONTRACT.md 是全链通用要求：正文数值一律写 \ResultValue{指标ID}，
+% 不写裸数字。\ResultValue 未定义（result-values.tex 尚未生成）时直接排会触发
+% `! Undefined control sequence`。
+% \detokenize 的理由：指标 ID 带下划线，直接排文本模式会触发 Missing $。
+\IfFileExists{result-values.tex}{\input{result-values.tex}}{}
+\providecommand{\ResultValue}[1]{\textbf{[未生成 result-values.tex：\detokenize{#1}]}}
+
+% ---------- 族差异 ①：编号用阿拉伯数字（_base 默认是国赛的中文数字「一、」） ----------
+\ctexset{
+  section/number       = \arabic{section},
+  subsection/number    = \arabic{section}.\arabic{subsection},
+  subsubsection/number = \arabic{section}.\arabic{subsection}.\arabic{subsubsection},
+}
+% ---------- 族差异 ②：标题字号按本族规范 16/14/12pt（_base 默认 17/15/13） ----------
+\titleformat{\section}
+  {\centering\fontsize{16pt}{19.2pt}\bfseries}
+  {\arabic{section}}{1em}{}
+\titleformat{\subsection}
+  {\fontsize{14pt}{16.8pt}\bfseries}
+  {\arabic{section}.\arabic{subsection}}{1em}{}
+\titleformat{\subsubsection}
+  {\fontsize{12pt}{14.4pt}\bfseries}
+  {\arabic{section}.\arabic{subsection}.\arabic{subsubsection}}{1em}{}
+\titlespacing{\section}       {0pt}{1.8em}{1.0em}
+\titlespacing{\subsection}    {0pt}{1.25em}{0.65em}
+\titlespacing{\subsubsection} {0pt}{0.9em}{0.4em}
+
+% ---------- 目录（tocloft 点线引导） ----------
+\usepackage{tocloft}
+\renewcommand{\cftsecfont}{\heiti\bfseries}
+\renewcommand{\cftsecpagefont}{\heiti\bfseries}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cftsubsecleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cftsubsubsecleader}{\cftdotfill{\cftdotsep}}
+
+% ---------- 页眉页脚（fancyhdr） ----------
+% 对应 Typst：页眉“数学建模竞赛论文”居中 + 下划线，页脚页码居中
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[C]{\fontsize{10.5pt}{12.6pt}数学建模竞赛论文}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---------- 族差异 ④：目录页 ----------
+% \papertitle / \abstractcn / \referencescn / \appendixAcn / \threelinetable /
+% \paperfigure 等全部在 _base/macros.tex 里，本族不再重复定义 —— 重复定义会直接
+% 撞名报错（`Command \papertitle already defined`）。
+\makeatletter
+\newcommand{\tocpage}{%
+  \setcounter{page}{1}%
+  \begin{center}
+    {\fontsize{16pt}{19.2pt}\bfseries 目录}
+  \end{center}
+  \vspace{1em}
+  \@starttoc{toc}%
+  \newpage
+}
+\makeatother
+
+\begin{document}
+
+% 标题页（不编号、不显示页码）
+\vspace*{1.85cm}
+\papertitle{论文标题}
+
+\vspace{2.25cm}
+
+% 摘要页（不编号）
+\abstractcn{%
+  摘要内容：问题概述 + 每个子问题的方法和数值结果 + 结论%
+}{%
+  关键词1；关键词2；关键词3%
+}
+
+% 目录页（页码从 1 开始，带页眉）
+\tocpage
+
+\input{sections/1_restatement}
+\input{sections/2_assumptions}
+\input{sections/3_symbols}
+\input{sections/4_problem1}
+\input{sections/5_problem2}
+\input{sections/6_problem3}
+\input{sections/7_sensitivity}
+\input{sections/8_evaluation}
+
+\newpage
+\referencescn
+\newpage
+% 附录（正文的最后一页）：只放「支撑材料文件清单」表，由 14Layout-and-format 据
+% reports/SUBMISSION_MANIFEST.json 生成，必须与打包出来的产物逐项一致。
+% 详细的补充推导/图表单独编译成 `附录A.pdf`（工程在 `paper_appendix/`，模板见 `appendix/`）。
+% 这里没有「附录 B 完整源程序」—— 源码不再排进论文，改以散装 .py 提交。
+\appendixAcn[支撑材料清单]{A1_materials}
+
+\end{document}

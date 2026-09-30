@@ -1,0 +1,33 @@
+\documentclass[UTF8,12pt]{ctexart}
+\usepackage[a4paper,margin=25mm]{geometry}
+\input{math-style.tex}
+\begin{document}
+\section{公式排版示例}
+本页仅演示排版。定义、模型和推导分别呈现，符号在首次出现时解释。
+令 $x_i$ 表示第 $i$ 类资源的分配量，$c_i$ 表示单位收益，$B$ 表示资源上限。
+\begin{equation}
+  \max_{\boldsymbol{x}}\quad f(\boldsymbol{x}) = \sum_{i=1}^{n}c_i x_i .
+\end{equation}
+将必须同时满足的条件组成一个公式组，按关系符对齐：
+\begin{modelconstraints}
+  \sum_{i=1}^{n}x_i &\le B, \\
+  0\le x_i &\le u_i, && i=1,\ldots,n .
+\end{modelconstraints}
+其中 $u_i$ 为各类资源分配量的上界。分段定义使用专用环境：
+\begin{equation}
+  g(x)=\begin{cases}
+    x^2, & x\ge 0,\\
+    0, & x<0.
+  \end{cases}
+\end{equation}
+多步推导按等号对齐，数值代入留到推导之后：
+\begin{equation}
+\begin{aligned}
+  \|\boldsymbol{a}+\boldsymbol{b}\|^2
+    &= (\boldsymbol{a}+\boldsymbol{b})^{\mathsf T}(\boldsymbol{a}+\boldsymbol{b})\\
+    &= \|\boldsymbol{a}\|^2 + 2\boldsymbol{a}^{\mathsf T}\boldsymbol{b}
+       + \|\boldsymbol{b}\|^2 .
+\end{aligned}
+\end{equation}
+公式不进行图片化或整体缩放，编号仅用于需要引用的数学关系。
+\end{document}

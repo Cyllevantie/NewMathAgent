@@ -1,0 +1,14 @@
+% Presentation only. Copy into paper/ before use; keep the contest template fonts.
+\RequirePackage{amsmath,amssymb}
+\AtBeginDocument{%
+  \setlength{\abovedisplayskip}{8pt plus 3pt minus 2pt}%
+  \setlength{\belowdisplayskip}{8pt plus 3pt minus 2pt}%
+  \setlength{\abovedisplayshortskip}{4pt plus 2pt}%
+  \setlength{\belowdisplayshortskip}{6pt plus 2pt minus 2pt}%
+}
+% One numbered group, aligned relations, optional brace conveys joint constraints.
+\newenvironment{modelconstraints}
+  {\begin{equation}\left\{\begin{aligned}}
+  {\end{aligned}\right.\end{equation}}
+\newcommand{\modelunit}[1]{\,\mathrm{#1}}
+% Use \numberwithin{equation}{section} only when compatible with the chosen template.

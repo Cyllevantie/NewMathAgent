@@ -1,0 +1,2270 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"/>
+<title>NewMathAgent</title>
+<style>
+  :root{--bg:#0f1419;--panel:#1a2027;--line:#2a323b;--fg:#d7e0e8;--dim:#8a96a3;--acc:#4da3ff;--ok:#2ecc71;--fail:#e74c3c;--run:#f1c40f;--wait:#ff9f1a;--manual:#b07cff;}
+  /* 黄灯不能只靠颜色区分（--run 也是黄）—— 用脉冲光晕做第二通道，色盲/灰度下也能分。 */
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,159,26,.55)}50%{box-shadow:0 0 0 5px rgba(255,159,26,0)}}
+  .stage.wait .dot{background:var(--wait);animation:pulse 1.6s infinite}
+  .stage.wait{color:var(--wait)}
+  .stage.manual .dot{background:var(--manual)}.stage.manual{color:#cbb0ff}
+  /* 披露放行与「按旧要求交付」也要有自己的色 —— 只靠 emoji 区分太弱，
+     而把这两种画成和干净通过同色，正是本文件自己禁止的「撒谎」。 */
+  .stage.disclosed .dot{background:#e67e22}.stage.disclosed{color:#f0b27a}
+  .stage.stale .dot{background:#95a5a6}.stage.stale{color:#b6c2c9}
+  #decide{display:none;padding:12px 18px;border-bottom:2px solid var(--wait);background:#241d0e}
+  #decide input,#decide select{background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:4px}
+  #decide button{border-color:#5a4520}
+  *{box-sizing:border-box}body{margin:0;font:14px/1.5 -apple-system,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+  header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;font-weight:600}header .sub{color:var(--dim);font-size:12px}
+  button{background:#26303a;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 14px;cursor:pointer}
+  button:hover{background:#2f3b47}button.primary{background:var(--acc);color:#062}
+  #status{font-size:13px;margin-left:auto;color:var(--dim)}
+  /* ★ 第二排（产物 chip 靠左、**GitHub 标识居中**、🤖托管 靠右 —— 用户 2026-09-29 / 2026-09-30）。
+     `flex-basis:100%` 让它**必然独占一行**：不用"内容长了自己掉下去"那种概率写法，
+     这里要的是确定性。
+     ★ 2026-09-30 由 `space-between` 改成**三栏 grid**（用户要求 GitHub 标识在「第二行的正中间」）：
+       `space-between` 只在左右两件**一样宽**时中间那件才真居中，而产物 chip 是变宽的
+       （`📁 产物 ·未生成 (归档 2026A_2026.9.30_14.15.24)` 能有 30+ 字符），一长就把标识推偏。
+       `1fr auto 1fr` 让两侧等分、中间那栏恒在正中，与两侧内容多宽无关。 */
+  .auxrow{flex-basis:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+          gap:14px;min-width:0}
+  .auxrow > #delivchip{justify-self:start}
+  .auxrow > #ghbadge{justify-self:center}
+  .auxrow > #autopilot{justify-self:end}
+  /* 第二排那两个（产物 chip / 🤖托管）**量高钉成同一个值**（用户 2026-09-29：「托管中那个按钮
+     向上一点，和产物…一行」）。
+     ★ 为什么光"同字号同内边距"不够：两个盒子里都有 emoji（📁 / 🤖），而 emoji 字形的上下伸
+       比正文字体大，浏览器会把行盒撑高 —— 于是**同样写法长出的高度不一样**。实测用户截图：
+       chip 框 34 设备像素、按钮 32，中心都是 47.5 ⇒ 同一行且居中，但按钮的**上边缘低了 1–2px**，
+       肉眼就是"按钮往下坠一点"。
+     ⇒ 用显式 `height` + `inline-flex` 居中，把字体度量彻底排除在外：两个盒子逐像素等高。
+     ★ 只作用于 `.auxrow` 里的这两个，不动全站按钮（`header button` 那种成片改法上次被否过）。 */
+  .auxrow > *{height:24px;display:inline-flex;align-items:center}
+  /* 🤖托管 比 chip **上移 3px**（用户 2026-09-29 最后定：撤过一次又要求恢复，就按他说的来）。
+     ★ 用 `position:relative` + `top` 而不是 margin：相对定位**不占布局**，
+       不撑高这一行、也不挪动 chip。想调幅度只改这一个数字。
+     ★ 实测（用户截图，设备像素）：两个盒子都是 `height:24px` 等高、中心同 y；
+       加上这一行之后按钮的边框外沿会整体高于 chip 3px —— 这是**刻意**错开，不是没对齐。 */
+  #autopilot{padding:0 10px;font-size:11.5px;line-height:1;position:relative;top:-3px}
+  /* 注：chip 的左右内边距写在它自己的行内 style 里（`padding:2px 9px`），行内胜出，
+     这里不再重复声明 —— 上下那 2px 被 `height` + `border-box` 吸收，内容照样居中。 */
+
+  /* ---- GitHub 标识（第二排正中）：流光 + 荧光（用户 2026-09-30：「字体炫酷一点，要流光的，
+     荧光的颜色」）。★ 只作用在这两个 id 上，不动全站。 ---- */
+  #ghbadge{cursor:pointer;gap:6px;padding:0 10px;border-radius:999px;
+           border:1px solid rgba(57,255,20,.30);
+           background:linear-gradient(100deg,#39ff14 0%,#00e5ff 30%,#c77dff 55%,#39ff14 100%);
+           background-size:300% 100%;-webkit-background-clip:text;background-clip:text;
+           color:transparent;-webkit-text-fill-color:transparent;
+           animation:ghflow 6s linear infinite;
+           filter:drop-shadow(0 0 5px rgba(0,229,255,.45))}
+  @keyframes ghflow{from{background-position:0% 50%}to{background-position:300% 50%}}
+  /* ★ 图标**不能**用 `currentColor`：上面把文字设成了 transparent 来做渐变裁切，
+     图标跟着 transparent 就整个看不见了。给它自己的荧光绿 + 光晕。 */
+  #ghbadge svg{fill:#39ff14;filter:drop-shadow(0 0 4px rgba(57,255,20,.85))}
+  #ghbadge:hover{border-color:rgba(57,255,20,.7);filter:drop-shadow(0 0 9px rgba(57,255,20,.6))}
+  #ghbadge .gh-name{font-weight:600;letter-spacing:.4px}
+  /* 赠言浮层：可关（× / 点框外 / Esc 三条路），字体同样走流光荧光。 */
+  #ghmodal{position:fixed;inset:0;z-index:120;display:none;align-items:center;justify-content:center;
+           background:rgba(0,0,0,.62);backdrop-filter:blur(2px)}
+  #ghcard{position:relative;max-width:min(560px,90vw);padding:26px 30px 24px;border-radius:14px;
+          background:var(--panel,#141a20);border:1px solid rgba(57,255,20,.28);
+          box-shadow:0 0 34px rgba(0,229,255,.20),0 0 90px rgba(57,255,20,.10);
+          text-align:center;line-height:1.9}
+  #ghcard .gh-neon{font-size:19px;font-weight:700;letter-spacing:1px;
+          background:linear-gradient(100deg,#39ff14,#00e5ff,#c77dff,#39ff14);
+          background-size:300% 100%;-webkit-background-clip:text;background-clip:text;
+          color:transparent;-webkit-text-fill-color:transparent;
+          animation:ghflow 5s linear infinite;
+          filter:drop-shadow(0 0 7px rgba(57,255,20,.45))}
+  #ghcard .gh-sub{margin-top:8px;font-size:13.5px;color:var(--fg)}
+  #ghcard a.gh-link{display:inline-block;margin-top:14px;font-size:13px;word-break:break-all;
+          color:#00e5ff;text-decoration:none;border-bottom:1px solid rgba(0,229,255,.45)}
+  #ghcard a.gh-link:hover{color:#39ff14;border-bottom-color:rgba(57,255,20,.6)}
+  #gh_close{position:absolute;top:8px;right:12px;background:none;border:none;padding:2px 6px;
+          font-size:18px;line-height:1;color:var(--dim);cursor:pointer}
+  #gh_close:hover{color:var(--fg)}
+  main{display:grid;grid-template-columns:290px 1fr;gap:0;height:calc(100vh - 120px)}
+  aside{border-right:1px solid var(--line);overflow:auto;padding:10px}
+  .sec{font-size:12px;color:var(--dim);margin:12px 4px 6px;text-transform:uppercase}
+  /* 外层改 block、内层 .dotline 才是那行 flex：因为建议面板要挂在**行下面**
+     （2026-09-28 用户要求 📝 改成点击展开，不再用悬停提示）。 */
+  .stage{padding:6px 8px;border-radius:6px;margin:2px 0;display:block;cursor:default}
+  .stage .dotline{display:flex;gap:8px;align-items:center}
+  /* 📝 徽章：改成**可点**的开关（点一下展开建议、再点收起），不再依赖悬停 */
+  .advtag{cursor:pointer;border-bottom:1px dotted var(--dim);margin-right:2px}
+  .advtag:hover{color:var(--fg)}
+  /* 建议浮层：**黑框白字**（用户 2026-09-28 指定）。单条一行，id 用暖黄标出来。
+     ★ 必须是 `position:fixed` 挂在 body 上、**不能**塞进阶段行里：
+       塞进行里会**把下面的行顶下去**（用户：「像之前一样展开一个框，而不是向下展开」），
+       而挂在侧栏里又会被 `aside` 的溢出裁掉 ⇒ 只能浮在最外层。 */
+  #advpop{position:fixed;display:none;z-index:60;max-width:min(620px,62vw);max-height:62vh;
+          overflow:auto;background:#000;border:1px solid #000;color:#fff;border-radius:6px;
+          padding:7px 11px;font-size:11.5px;line-height:1.6;white-space:pre-wrap;
+          box-shadow:0 6px 22px rgba(0,0,0,.75)}
+  .advitem{margin:3px 0}
+  .advitem b{color:#ffd45e}
+  /* ★ 建议浮层的表头 + 严重度着色（用户 2026-09-29：「搞得还以为 📝 这里贴的是判据呢」）。
+     这一层装的全是 `advisories` —— **建议**，不阻断链、不进返修单；门禁的正式判据在黄灯
+     面板与门禁报告里。表头先把这件事说清，每条前面再挂一个按 severity 上色的标签。 */
+  #advpop .advhead{color:#e6edf3;border-bottom:1px solid #3a3a3a;padding-bottom:6px;margin-bottom:6px}
+  /* ★ 下半段（建议）不再画分隔线（用户 2026-09-30：「面板没合并，导致现在看起来是**两个面板**」）——
+     那条 `border-top` 正是"看起来像两块"的原因。只留一点垂直间距，读起来是一块里的两个小标题。 */
+  #advpop .advhead.advsecond{margin-top:10px;padding-top:0;border-top:0}
+  #advpop .advlegend{display:block;margin-top:4px;color:#9aa4ae;font-size:10.5px;line-height:1.9}
+  .advsev{display:inline-block;border-radius:3px;padding:0 5px;margin-right:6px;
+          font-size:10.5px;font-weight:700;letter-spacing:.02em;vertical-align:1px}
+  .advsev.hard{background:#ff9f1a;color:#241a06}
+  .advsev.soft{background:#2ecc71;color:#052b16}
+  .advsev.info{background:#4da3ff;color:#04223f}
+  /* 图例那一行的三个标签要**跟前一句说明拉开**（用户 2026-09-29：「这三个框离上一个框的
+     文字有点近」）—— 靠 `margin-right` 只推开右边，左边仍贴着上一组的说明文字。
+     只加在 `.advlegend` 里：每条建议前面那个标签是**行首**，加左外边距会无端缩进。 */
+  #advpop .advlegend .advsev{margin-left:14px}
+  #advpop .advlegend .advsev:first-child{margin-left:0}
+  /* 徽章：有 hard 建议时用暖黄（与 --wait 同色系，一眼看出"这次有分量重的"）；
+     只有 soft/纯建议时保持原样的暗色，不喧宾夺主。 */
+  .advtag.advhard{color:var(--wait);border-bottom-color:var(--wait)}
+  .stage .dot{width:8px;height:8px;border-radius:50%;background:#333}
+  .stage.run .dot{background:var(--run);animation:blink 1s infinite}
+  .stage.done .dot{background:var(--ok)}.stage.done{color:#9fd9bb}
+  .stage.fail .dot{background:var(--fail)}.stage.fail{color:#f0a}
+@keyframes blink{50%{opacity:.3}}
+  .file{font-size:12px;padding:3px 8px;color:var(--dim);cursor:pointer;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .file:hover{background:#26303a;color:var(--fg)}
+  /* 侧栏两组的展开/收起表头（2026-09-28 用户要求）。caret 固定宽度，展开收起时标题不左右跳。 */
+  .grp{font-size:11px;color:var(--dim);padding:6px 8px 3px;cursor:pointer;user-select:none;border-top:1px solid var(--line);margin-top:4px}
+  .grp:hover{color:var(--fg)}
+  .grp .caret{display:inline-block;width:1.1em}
+  section{display:flex;flex-direction:column;min-width:0}
+  .tabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel)}
+  .tabs button{border:0;border-radius:0;background:none;color:var(--dim);padding:9px 16px}
+  .tabs button.on{color:var(--acc);box-shadow:inset 0 -2px 0 var(--acc)}
+  #view{flex:1;overflow:auto;padding:14px 18px;white-space:pre-wrap;font:13px/1.6 Consolas,Menlo,monospace}
+  /* ★ 选择器从 `#view.markdown` 放宽到 `.markdown`（2026-09-29）：读题确认页新增的
+     `#ik_view` 也要吃这套渲染样式（它渲染的是同一份 markdown 题面）。 */
+  .markdown{white-space:normal;font-family:inherit;font-size:14px}
+  .markdown h1{font-size:20px}.markdown h2{font-size:16px}
+  .markdown table{border-collapse:collapse;margin:8px 0}.markdown td,.markdown th{border:1px solid var(--line);padding:4px 8px}
+  img.grid{max-width:45%;margin:6px}
+  a{color:var(--acc)}
+  #pwrap{height:6px;background:#222;margin:0 18px;border-radius:3px;overflow:hidden;flex:1;min-width:120px}
+  #pbar{height:100%;width:0;background:linear-gradient(90deg,#2ecc71,#4da3ff);transition:width .5s}
+  #ptext{font:11px var(--mono,monospace);color:var(--dim);white-space:nowrap}
+  /* 上传入口是**唯一的**入口（选文件夹与拖放合一），所以做大、用强调色 —— 用户 2026-09-29 要求。 */
+  #updrop{margin-top:10px;padding:18px 16px;border:2px dashed var(--acc);border-radius:10px;
+    background:rgba(77,163,255,.10);text-align:center;cursor:pointer;
+    transition:background .15s,border-color .15s,box-shadow .15s}
+  #updrop:hover{background:rgba(77,163,255,.18)}
+  #updrop.hot{background:rgba(77,163,255,.28);border-color:#8cc4ff;box-shadow:0 0 0 3px rgba(77,163,255,.25)}
+  /* ---- 开屏页：终端窗口 + 玻璃霓虹 + 微动效（2026-09-30 用户从 7 版样稿里选定 v10）----
+     ★ 换的只是**皮**。`#splash` / `#splash_inner` / `.hero-title` / `.hero-kicker` /
+       `.ht-line` / `.ht-indent` / `#cf_*` 这些 id 与 class 是回归用例钉住的契约，一个都没改名。
+     ★ 下面**每一条都缩在 `#splash` 里**，而且关键帧全部带 `spl-` 前缀 —— 页面别处已经有
+       `blink`（阶段圆点在用）、`pop`、`spin` 之类的名字，不缩不前缀就会把它们一起改掉。 */
+  /* ★ 开屏页**不许滚动**（用户 2026-09-30：「v10 那个就不能滚动，进去之后才可以滚动」）——
+     它是"进门那一屏"，不是可翻阅的内容。窗口太矮时按下面的媒体查询压内边距，
+     而不是让它冒出滚动条。 */
+  #splash{position:fixed;inset:0;z-index:100;display:none;overflow:hidden;background:var(--bg);
+    /* ★ 字体**必须在 `#splash` 里定义**（用户 2026-09-30：「这些字体和 V10 完全不一样」）：
+       本页的 :root **没有** `--mono` / `--font`，所以 v10 那套 `ui-monospace,"Cascadia Code",…`
+       与 `"Segoe UI Variable Display",…` 全落到了兜底的 `monospace` / 页面默认字体上。
+       缩在 #splash 里定义而不是写进 :root —— 页面别处也在用 `var(--mono, monospace)`，
+       写进 :root 会把它们一起改掉。 */
+    --mono:ui-monospace,"Cascadia Code",Consolas,Menlo,"PingFang SC","Microsoft YaHei",monospace;
+    --font:-apple-system,"Segoe UI Variable Display","Segoe UI",Inter,system-ui,
+           "PingFang SC","Microsoft YaHei",sans-serif;
+    font-family:var(--font)}
+  #splash.on{display:flex;justify-content:center;padding:5vh 20px 6vh;
+    animation:fadein .32s ease-out both}
+  #splash.leaving{animation:fadeout .5s ease-in both}
+  @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @keyframes fadeout{from{opacity:1}to{opacity:0;transform:translateY(-8px) scale(.99);filter:blur(6px)}}
+  /* 背景三层：模糊色斑（极慢呼吸）/ 细线网格 / 暗角。`fixed` ⇒ 内容滚动时它们不动。 */
+  #splash .orb{position:fixed;border-radius:50%;pointer-events:none;z-index:0;filter:blur(110px)}
+  #splash .orb-a{width:62vw;height:62vw;max-width:900px;max-height:900px;left:-16vw;top:-22vh;
+    background:radial-gradient(circle at 50% 50%,var(--acc),transparent 68%);
+    animation:spl-breathe-a 10.5s ease-in-out infinite}
+  #splash .orb-b{width:56vw;height:56vw;max-width:820px;max-height:820px;right:-14vw;bottom:-24vh;
+    background:radial-gradient(circle at 50% 50%,var(--manual),transparent 68%);
+    animation:spl-breathe-b 11.8s ease-in-out infinite}
+  #splash .orb-c{width:40vw;height:40vw;max-width:620px;max-height:620px;right:12vw;top:-16vh;
+    background:radial-gradient(circle at 50% 50%,var(--acc),transparent 70%);
+    animation:spl-breathe-c 9s ease-in-out infinite}
+  #splash .grid-lines{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:linear-gradient(to right,rgba(255,255,255,.028) 1px,transparent 1px),
+                     linear-gradient(to bottom,rgba(255,255,255,.028) 1px,transparent 1px);
+    background-size:72px 72px;
+    -webkit-mask-image:radial-gradient(150% 120% at 50% 45%,#000 42%,transparent 88%);
+    mask-image:radial-gradient(150% 120% at 50% 45%,#000 42%,transparent 88%);
+    animation:spl-grid 11s ease-in-out infinite}
+  #splash .vignette{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:radial-gradient(130% 80% at 50% -10%,rgba(77,163,255,.10),transparent 60%),
+               linear-gradient(180deg,rgba(15,20,25,.52),rgba(15,20,25,.88))}
+  @keyframes spl-breathe-a{0%,100%{opacity:.49;transform:scale(1)}50%{opacity:.60;transform:scale(1.04)}}
+  @keyframes spl-breathe-b{0%,100%{opacity:.41;transform:scale(1.04)}50%{opacity:.51;transform:scale(1)}}
+  @keyframes spl-breathe-c{0%,100%{opacity:.25;transform:scale(1)}50%{opacity:.34;transform:scale(1.03)}}
+  @keyframes spl-grid{0%,100%{opacity:.44}50%{opacity:.58}}
+  @keyframes spl-rise{from{opacity:0;transform:translateY(12px) scale(.995)}to{opacity:1;transform:none}}
+  @keyframes spl-rise-sm{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @keyframes spl-neon{from{transform:scaleX(0);opacity:0}to{transform:none;opacity:1}}
+  @keyframes spl-type{from{-webkit-mask-size:0 100%;mask-size:0 100%}
+                      to{-webkit-mask-size:4em 100%;mask-size:4em 100%}}
+  @keyframes spl-pop{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+  @keyframes spl-blink{0%,50%{opacity:.85}50.01%,100%{opacity:0}}
+  @keyframes spl-spin{to{transform:rotate(360deg)}}
+  /* 终端窗口本体：`#splash_inner` 就是那扇窗（markup 里 class="term"）。
+     `margin:auto 0` 让它垂直居中，且内容比视口高时**不会把顶部裁掉**（靠滚动看全）。 */
+  #splash #splash_inner{margin:auto 0;position:relative;z-index:1;width:100%;max-width:920px;
+    background:rgba(26,32,39,.96);border:1px solid rgba(255,255,255,.12);border-radius:12px;
+    overflow:hidden;box-shadow:0 40px 90px -40px rgba(0,0,0,.9),0 0 70px -30px rgba(77,163,255,.42),
+      0 0 0 1px rgba(255,255,255,.02) inset;animation:spl-rise .55s cubic-bezier(.16,1,.3,1) both}
+  @supports ((-webkit-backdrop-filter:blur(2px)) or (backdrop-filter:blur(2px))){
+    #splash #splash_inner{background:linear-gradient(180deg,rgba(26,32,39,.74),rgba(26,32,39,.62));
+      -webkit-backdrop-filter:blur(20px) saturate(140%);backdrop-filter:blur(20px) saturate(140%)}
+  }
+  /* 窗口顶边那道霓虹细线 */
+  #splash #splash_inner::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;z-index:2;
+    pointer-events:none;transform-origin:50% 50%;
+    background:linear-gradient(90deg,transparent,rgba(77,163,255,.75),rgba(176,124,255,.55),transparent);
+    animation:spl-neon .85s cubic-bezier(.16,1,.3,1) .12s both}
+  #splash .term-bar{display:flex;align-items:center;gap:14px;height:42px;padding:0 16px;
+    background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.012));
+    border-bottom:1px solid rgba(255,255,255,.12)}
+  #splash .dots{display:inline-flex;gap:7px}
+  #splash .dots i{width:11px;height:11px;border-radius:50%;display:block}
+  #splash .dots .d1{background:var(--fail);box-shadow:0 0 10px -1px var(--fail)}
+  #splash .dots .d2{background:var(--wait);box-shadow:0 0 10px -1px var(--wait)}
+  #splash .dots .d3{background:var(--ok);box-shadow:0 0 10px -1px var(--ok)}
+  #splash .term-path{font:12.5px var(--mono,monospace);color:var(--dim);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  #splash .term-body{padding:34px 40px 32px}
+  #splash .hero{margin:0 0 26px;text-align:left}
+  /* 英文名：等宽小字 + 字距，末尾一个闪烁方块光标 */
+  #splash .hero-kicker{margin:0 0 14px;font:600 12px/1 var(--mono,monospace);letter-spacing:.34em;
+    color:var(--acc);padding-left:.34em;text-shadow:0 0 22px rgba(77,163,255,.55);
+    animation:spl-rise-sm .42s cubic-bezier(.16,1,.3,1) .10s both}
+  #splash .hero-kicker::after{content:"";display:inline-block;width:.5em;height:1.02em;margin-left:.42em;
+    background:var(--acc);vertical-align:-.16em;box-shadow:0 0 12px -2px var(--acc);
+    animation:spl-blink 1.24s steps(1,end) infinite}
+  /* 标题两行：渐变得挂在**每个**文字块上（挂父层的话子 span 不吃那层裁剪 ⇒ 第二行会变实心） */
+  #splash .hero-title{margin:0;font-size:clamp(38px,6.4vw,62px);line-height:1.1;font-weight:700;
+    letter-spacing:0;cursor:pointer;filter:drop-shadow(0 0 34px rgba(77,163,255,.20));
+    font-family:"Segoe UI Variable Display","Segoe UI",Inter,system-ui,sans-serif}
+  #splash .hero-title:hover{filter:drop-shadow(0 0 34px rgba(77,163,255,.20)) brightness(1.12)}
+  #splash .ht-line{display:block;background:linear-gradient(96deg,#f2f8ff 0%,#c9dcef 42%,#93aec6 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:spl-type .30s steps(4,end) .22s both}
+  /* ★ 「一键」压在「建模」下面（用户 2026-09-30：「一键放在建模的下面」，与 v10 一致）。
+     中日韩字形每字约 1em，缩进 2em ⇒ 「一」对「建」、「键」对「模」，正好压住这两个字。
+     （我一度改成 3em 让「一」对「模」，用户要的是 v10 原样 ⇒ 改回 2em。）
+     实测（headless 量 Range 坐标）：数@197.1 学@258.8 建@320.5 模@382.2；2em 时「一」@320.5、「键」@382.2 ✓ */
+  #splash .ht-indent{padding-left:2em;
+    background:linear-gradient(92deg,var(--acc) 6%,var(--manual) 96%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:spl-type .30s steps(4,end) .48s both}
+  @supports not ((-webkit-background-clip:text) or (background-clip:text)){
+    #splash .ht-line{color:#eaf3fb;background:none}
+    #splash .ht-indent{color:var(--acc);background:none}
+  }
+  #splash .hero-sub{margin:16px 0 0;font-size:14px;line-height:1.8;color:var(--dim);
+    animation:spl-rise-sm .38s cubic-bezier(.16,1,.3,1) .70s both}
+  /* boot 模式：只播一眼品牌 + 过渡动画，表单收起（用户："如果配置好 env 就直接放过渡的小动画进"） */
+  #splash[data-mode="boot"] .cfg{display:none}
+  #splash[data-mode="boot"] .hero-sub{opacity:.45;transition:opacity .4s}
+  #splash .hero-boot{display:none;margin-top:20px;color:var(--acc);font-size:13px;letter-spacing:.06em}
+  #splash[data-mode="boot"] .hero-boot{display:block;animation:spl-blink 1.1s steps(1,end) infinite}
+  /* 配置卡片 */
+  #splash .cfg{position:relative;background:rgba(15,20,25,.92);border:1px solid rgba(255,255,255,.12);
+    border-radius:8px;padding:22px 24px 20px;animation:spl-rise-sm .42s cubic-bezier(.16,1,.3,1) .32s both}
+  @supports ((-webkit-backdrop-filter:blur(2px)) or (backdrop-filter:blur(2px))){
+    #splash .cfg{background:linear-gradient(180deg,rgba(15,20,25,.64),rgba(15,20,25,.52));
+      -webkit-backdrop-filter:blur(12px) saturate(130%);backdrop-filter:blur(12px) saturate(130%)}
+  }
+  #splash .cfg h2{margin:0 0 20px;font-size:14px;font-weight:600;letter-spacing:.06em;color:var(--fg);
+    padding-left:11px;border-left:3px solid var(--acc);line-height:1.2;
+    text-shadow:0 0 20px rgba(77,163,255,.28);animation:spl-rise-sm .32s cubic-bezier(.16,1,.3,1) .38s both}
+  /* 三个字段的容器：**间距靠容器的 gap**，不靠每个字段的下边距
+     （见 markup 里那段：`:last-of-type` 的坑实测把三行间距变成 71/53px）。 */
+  #splash .cfg .fields{display:flex;flex-direction:column;gap:20px}
+  /* 每个字段一行： KEY = ____ ，中文字注在输入框下面 */
+  #splash .cfg .field{display:grid;grid-template-columns:minmax(196px,max-content) 1ch minmax(0,1fr);
+    column-gap:10px;row-gap:6px;align-items:center;margin:0;font-size:12.5px;color:var(--dim)}
+  /* 注释行 + 勾选框放在**同一格**里：勾选框跟在「# 模型」后面、只空一点点，
+     而不是被推到行的最右边（用户 2026-09-30）。 */
+  #splash .cfg .field .notecell{grid-column:3;display:flex;align-items:center;gap:14px;min-width:0}
+  #splash .cfg .fields .field:nth-child(1){animation:spl-rise-sm .30s cubic-bezier(.16,1,.3,1) .40s both}
+  #splash .cfg .fields .field:nth-child(2){animation:spl-rise-sm .30s cubic-bezier(.16,1,.3,1) .46s both}
+  #splash .cfg .fields .field:nth-child(3){animation:spl-rise-sm .30s cubic-bezier(.16,1,.3,1) .52s both}
+  #splash .cfg .field .k{display:flex;align-items:baseline;gap:9px;min-width:0;flex-wrap:wrap}
+  #splash .cfg .field .k code{font:13px var(--mono,monospace);color:var(--fg);white-space:nowrap;
+    transition:color .18s ease,text-shadow .18s ease}
+  #splash .cfg .field .eq{color:var(--line);font-size:13px;user-select:none;transition:color .18s ease}
+  #splash .cfg .field:focus-within .k code{color:#fff;text-shadow:0 0 16px rgba(77,163,255,.42)}
+  #splash .cfg .field:focus-within .eq{color:var(--acc)}
+  #splash .cfg .field em{grid-column:3;font-style:normal;font-size:11.5px;color:var(--dim);
+    padding-left:2px;letter-spacing:.02em}
+  #splash .cfg .field em::before{content:"# "}
+  /* 输入框：只留底边一条线，聚焦时那条线从左往右"长出" */
+  #splash .input{width:100%;min-width:0;font:13.5px var(--mono,monospace);color:var(--fg);
+    background-color:transparent;border:0;border-bottom:1px solid rgba(255,255,255,.12);
+    border-radius:0;padding:7px 2px 6px;caret-color:var(--acc);
+    background-image:linear-gradient(90deg,rgba(77,163,255,.5),var(--acc) 55%,var(--acc));
+    background-repeat:no-repeat;background-position:left bottom;background-size:0% 2px;
+    transition:border-color .2s ease,box-shadow .22s ease,background-size .30s cubic-bezier(.2,.7,.2,1)}
+  #splash .input::placeholder{color:#5d6874}
+  #splash .input:hover{border-bottom-color:rgba(255,255,255,.22)}
+  #splash .input:focus{outline:none;border-bottom-color:transparent;background-size:100% 2px;
+    box-shadow:0 8px 22px -14px var(--acc)}
+  #splash .input.flash{background-size:100% 2px;border-bottom-color:transparent}
+  /* 勾选框：终端味的 [ ] / [x]，勾中时打勾线从左"划"过去 */
+  #splash .check{display:inline-flex;align-items:center;gap:8px;margin:0;font-size:13px;
+    color:var(--fg);cursor:pointer;user-select:none;width:fit-content}
+  #splash .check input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+  #splash .check .box{position:relative;color:var(--dim);font:13.5px var(--mono,monospace);
+    transition:color .16s ease,text-shadow .16s ease}
+  #splash .check .box::before{content:"[ ]"}
+  #splash .check input:checked ~ .box::before{content:"[x]"}
+  #splash .check input:checked ~ .box{color:var(--ok);text-shadow:0 0 14px rgba(46,204,113,.45)}
+  #splash .check .box::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
+    background:linear-gradient(90deg,var(--ok),rgba(46,204,113,.30));transform:scaleX(0);
+    transform-origin:left center;transition:transform .32s cubic-bezier(.2,.7,.2,1)}
+  #splash .check input:checked ~ .box::after{transform:scaleX(1)}
+  #splash .check:hover .box{color:var(--fg)}
+  #splash .check input:focus-visible ~ .box{outline:1px dashed var(--acc);outline-offset:3px}
+  /* 按钮：方括号命令行样式（括号由伪元素生成，按钮文字本身没动） */
+  #splash .cfg-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:22px;
+    padding-top:18px;border-top:1px dashed rgba(255,255,255,.07);
+    animation:spl-rise-sm .38s cubic-bezier(.16,1,.3,1) .60s both}
+  #splash .cfg-row .grow{flex:1 1 auto}
+  #splash .cfg-row button{display:inline-flex;align-items:center;gap:7px;font:13.5px var(--mono,monospace);
+    line-height:1;padding:9px 5px;color:var(--fg);background:transparent;border:0;border-radius:4px;
+    cursor:pointer;white-space:nowrap;
+    transition:color .14s ease,background .14s ease,box-shadow .14s ease,opacity .14s ease,
+      transform .16s cubic-bezier(.2,.7,.2,1)}
+  #splash .cfg-row button::before{content:"[ ";color:var(--dim);transition:color .14s}
+  #splash .cfg-row button::after{content:" ]";color:var(--dim);transition:color .14s}
+  #splash .cfg-row button:hover{background:rgba(77,163,255,.10);transform:translateY(-1px)}
+  #splash .cfg-row button:hover::before,#splash .cfg-row button:hover::after{color:var(--acc)}
+  #splash .cfg-row button:active{transform:translateY(0)}
+  #splash .cfg-row button:focus-visible{outline:1px dashed var(--acc);outline-offset:2px}
+  #splash .cfg-row button:disabled{opacity:.62;cursor:progress;transform:none}
+  #splash #cf_save{color:var(--acc);text-shadow:0 0 18px rgba(77,163,255,.45);
+    background:rgba(77,163,255,.10);box-shadow:0 12px 34px -16px var(--acc),0 0 20px -8px var(--acc)}
+  #splash #cf_save::before,#splash #cf_save::after{color:var(--acc)}
+  #splash #cf_save:hover{background:rgba(77,163,255,.18);text-shadow:0 0 22px rgba(77,163,255,.62);
+    box-shadow:0 16px 42px -14px var(--acc),0 0 28px -6px var(--acc)}
+  #splash #cf_back{color:var(--dim)}
+  #splash #cf_back:hover{color:var(--fg);background:rgba(255,255,255,.07)}
+  /* 结果行：`#cf_msg` 由 JS 直接写 textContent/innerHTML（没动那段逻辑），
+     所以这里用 `:empty` 让它空着时不占位、有内容时才长成一条终端输出 */
+  #splash #cf_msg{margin-top:16px;font-size:12.5px;line-height:1.7;color:var(--fg);word-break:break-all}
+  #splash #cf_msg:empty{display:none}
+  #splash #cf_msg:not(:empty){padding:9px 12px;background:rgba(255,255,255,.035);
+    border:1px solid rgba(255,255,255,.07);border-left:2px solid var(--line);border-radius:0 6px 6px 0;
+    animation:spl-pop .22s cubic-bezier(.2,.7,.2,1) both}
+  #splash #cf_msg:not(:empty)::before{content:"› ";color:var(--dim)}
+  #splash .spin{width:13px;height:13px;flex:none;border:2px solid currentColor;
+    border-right-color:transparent;border-radius:50%;animation:spl-spin .7s linear infinite}
+  @media (max-width:760px){
+    #splash .term-body{padding:24px 20px 22px}
+    #splash .cfg .field{grid-template-columns:minmax(0,1fr);row-gap:7px}
+    #splash .cfg .field .eq{display:none}
+    #splash .cfg .field em{grid-column:auto}
+    #splash .cfg .field .notecell{grid-column:1;flex-wrap:wrap}
+    #splash .cfg-row .grow{display:none}
+    #splash .cfg-row button{flex:1 1 auto;justify-content:center}
+  }
+  @media (prefers-reduced-motion:reduce){
+    #splash *,#splash *::before,#splash *::after{animation:none !important;transition:none !important}
+  }
+  /* ★ 因为开屏页**不许滚动**，窗口矮时只能压尺寸（而不是让它冒滚动条）。
+     两档：先压内边距/间距，再压标题字号。 */
+  /* ★ 兜底（2026-09-30 自查找出来的真 bug）：`overflow:hidden` 之下，视口一矮
+     （实测视口 ≤ ~640 时窗口底部 573 > 视口 542），**「保存并进入」会被裁掉且够不着
+     —— 人就被锁在开屏页外面了**（1366×768 的笔记本正好中招）。
+     v10 是 `overflow-x:hidden`（纵向本来就能滚），它"看着不能滚"只是因为装得下、没冒滚动条。
+     所以这里照同一个口径：**装得下就不滚，装不下才允许纵向滚**；横向永远不滚。 */
+  @media (max-height:700px){ #splash{overflow-y:auto} }
+  @media (max-height:820px){
+    #splash.on{padding:2.5vh 20px 3vh}
+    #splash .term-body{padding:22px 32px 20px}
+    #splash .hero{margin-bottom:18px}
+    #splash .cfg{padding:18px 20px 16px}
+    #splash .cfg h2{margin-bottom:14px}
+    #splash .cfg .fields{gap:14px}
+    #splash .cfg-row{margin-top:16px;padding-top:14px}
+  }
+  @media (max-height:680px){
+    #splash .term-body{padding:16px 24px 14px}
+    #splash .hero-title{font-size:clamp(28px,4.6vw,40px)}
+    #splash .hero-sub{font-size:13px;margin-top:10px}
+    #splash .cfg .fields{gap:10px}
+    #splash .cfg-row{margin-top:12px;padding-top:10px}
+    #splash #cf_msg{margin-top:10px}
+  }
+  /* ---- 目录选择器（固定浮层，照 #advpop 的先例）---- */
+  #dirpop{position:fixed;z-index:110;display:none;left:50%;top:11%;transform:translateX(-50%);
+    width:min(580px,93vw);max-height:72vh;overflow:auto;background:var(--panel);
+    border:1px solid var(--acc);border-radius:10px;padding:13px 15px;
+    box-shadow:0 14px 44px rgba(0,0,0,.62)}
+  #dirpop .dp-path{font:12px var(--mono,monospace);color:var(--fg);word-break:break-all;
+    background:#0d1117;border:1px solid var(--line);border-radius:5px;padding:6px 8px}
+  #dirpop .dp-list{margin-top:9px;max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:6px}
+  #dirpop .dp-row{padding:5px 9px;font:12.5px var(--mono,monospace);cursor:pointer;border-bottom:1px solid var(--line)}
+  #dirpop .dp-row:hover{background:#0d1117;color:var(--acc)}
+  #dirpop .dp-empty{padding:8px 9px;color:var(--dim);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="brand" title="点一下回到项目介绍与配置页；在那边再点标题回来">NewMathAgent</h1>
+  <button id="upbtn">⬆ 上传题目</button>
+  <button id="delivbtn" title="设置产物落到哪、归档目录叫什么">📁 产物</button>
+  <select id="stage_sel" style="background:#26303a;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px"></select><button id="redo_btn">↺ 从所选阶段重跑</button><button id="wipe_btn">🗑 清空全部</button><button id="start" class="primary">▶ 开始全链</button>
+  <button id="pause" title="从当前阶段停下并转黄灯 —— 面板上可接着选「再试一次 / 回退到某阶段 / 接受并披露 / 我已手工修好」">⏸ 暂停</button>
+  <button id="stop" title="硬停，不给决策面板（黄灯若亮着则一并收起）。要「停下但保留出口」用暂停">⏹ 停止</button>
+  <!-- 只在整链跑完、且工作区里确实还有残留时才出现（见 /api/cleanup 的两道门） -->
+  <button id="cleanup" style="display:none" title="把工作区里剩下的生成物移到 <产物>/其他产物/（移动，不是复制）">🧹 清理全部残留</button>
+  <div id="pwrap"><div id="pbar"></div></div><span id="ptext" style="color:var(--dim);font-size:12px"></span>
+  <span id="timer" style="color:#39ff14;font-size:12px;font-family:var(--mono,monospace);margin-left:6px;text-shadow:0 0 6px rgba(57,255,20,.6)"></span>
+  <span id="status">未运行</span>
+  <!-- ★ 第二排：**左边**产物 chip、**右边** 🤖托管（用户 2026-09-29 指定）。
+       这两个原本都挤在第一排右端，于是「计时器那栏一变长就把托管顶到下一排」。
+       请下第一排之后：第一排不用再压缩、宽度也宽裕了，两个各占第二排一头，谁也不再挤谁。
+       产物落到哪**必须在收起面板时也看得见**：它是用户选的、又决定提交件去哪，
+       藏在面板里等于没设。点它可直接展开面板。
+       一键托管（用户 2026-09-28）：开着的两个行为见 /api/autopilot 的 docstring。 -->
+  <span class="auxrow">
+  <span id="delivchip" title="点一下展开设置、再点收起" style="cursor:pointer;font-size:11.5px;color:var(--dim);border:1px solid var(--line);border-radius:10px;padding:2px 9px;white-space:nowrap;max-width:44ch;overflow:hidden;text-overflow:ellipsis">📁 产物</span>
+  <!-- ★ 第二排**正中**的 GitHub 标识（用户 2026-09-30）。点它：弹赠言浮层 + 新开项目标签页。
+       整链跑完（⑯ 结束）时也会自动「点」它一次，见 showGhCard 的调用点。 -->
+  <span id="ghbadge" title="点这里：项目主页 + 一句想说的话">
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+    <span class="gh-name">Cyllevantie</span>
+  </span>
+  <button id="autopilot">🤖 托管</button>
+  </span>
+</header>
+<div id="uppanel" style="display:none;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);font-size:13px">
+  <b>上传赛题：</b>
+  <span style="color:var(--dim);font-size:12px">选<b>整个文件夹</b>（题面 + 附件 + 数据一起，保留子目录）——
+    AI 会自己读一遍并分类，读完<b>停下等你核对</b>；你确认后才从 ① 文献定向 开始跑链。</span>
+  <span id="up_close" title="收起这个面板" style="float:right;cursor:pointer;color:var(--dim);padding:0 4px">✕</span>
+  <!-- 入口只留一个：这块**同时是按钮和拖放区**（点它直接开文件夹选择框）。
+       原先这里还有"或：选零散文件"，已按用户 2026-09-29 要求删掉 —— 散文件只能拍平，
+       而本题的 `附件3/` 就是子目录，拍平等于丢结构。 -->
+  <div id="updrop">
+    <div style="font-size:17px;font-weight:700;color:var(--acc)">📂 点这里选整个文件夹</div>
+    <div style="font-size:14px;color:var(--acc);margin-top:6px;opacity:.85">—— 或者把文件夹<b>直接拖进这块区域</b> ——</div>
+  </div>
+  <input id="up_folder" type="file" webkitdirectory multiple style="display:none">
+  <div id="up_pick" style="display:none;margin-top:9px;font-size:13px"></div>
+  <button id="up_go" disabled title="把这些原件收进来，然后让 AI 读一遍">⬆ 确认上传并让 AI 读题</button>
+  <span id="up_msg" style="color:var(--acc)"></span>
+  <div id="up_result" style="display:none;margin-top:8px;padding:8px;background:#0d1117;border:1px solid var(--line);border-radius:6px;font-size:13px"></div>
+</div>
+<div id="delivpanel" style="display:none;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel);font-size:13px">
+  <b>产物设置：</b>
+  <span style="color:var(--dim);font-size:12px">全链跑完后打包成<b>提交形状</b>（正文.pdf / 附录A.pdf / demo.html / result*.xlsx / 题目附件 / *.py 平铺 / 运行说明.md，外加「其余文件」）→ 落在 <code>产物/提交作品/最新作品/</code>；各阶段产物镜像在 <code>产物/各阶段产物/最新产物/&lt;阶段名&gt;/</code>。<b>换题时</b>这两个「最新」整目录改名成 <code>&lt;题目标识_日期_时间&gt;/</code>，并新建两个空的 —— 所以同一题反复重跑不用清理。</span>
+  <div style="margin-top:6px;display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">
+    <label>产物路径（留空 = 项目根下的 <code>产物/</code>）<br>
+      <input id="dv_dir" type="text" size="46" placeholder="留空 → <项目根>/产物/" style="background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:4px">
+      <button id="dv_pick" title="点着选一个目录（浏览器不让网页读本地绝对路径，所以由服务端列目录）">📁 选…</button></label>
+    <label>题目标识（进归档目录名，如 <code>2026A</code>；留空 = 只用日期）<br>
+      <input id="dv_pid" type="text" size="20" placeholder="2026A" style="background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:4px"></label>
+    <button id="dv_archive" title="把两个「最新」（提交作品/最新作品、各阶段产物/最新产物）整目录改名成 <产物>/&lt;题目标识_日期_时间&gt;/，再新建两个空的；同时把这两个框的设置存下来">📦 归档本题并换新</button>
+    <button id="dv_wipe" style="color:var(--fail);border-color:#5a2a2a" title="**不归档**，直接把本题的产物与状态删掉（题面与附件保留）。不可恢复">🗑 不归档删除本题</button>
+  </div>
+  <div id="dv_msg" style="margin-top:7px;color:var(--acc);font-size:12px"></div>
+</div>
+<div id="decide">
+  <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
+    <b id="dc_title" style="color:var(--wait);font-size:15px">⏳ 等待你决策</b>
+    <span id="dc_sub" style="color:var(--dim);font-size:12px"></span>
+  </div>
+  <div id="dc_reason" style="margin:7px 0;font-size:13px;line-height:1.5"></div>
+  <div id="dc_issues" style="font-size:12px;color:var(--dim);margin-bottom:9px;white-space:pre-wrap"></div>
+  <!-- ⓪ 读题的确认区：分类表 + 题面并排 + 事实对照。只在 kind=intake 时填充。 -->
+  <div id="dc_intake" style="display:none;margin-bottom:9px"></div>
+  <!-- 最后输出：驱动一直在抓（pending.tail，末 1500 字），但**从来没渲染过** ——
+       于是「进程非零退出」这类失败，面板只给一句派生的 `verdict_schema`（缺必查项…），
+       真正死因（如 `API Error: 402 Insufficient Balance`）藏在看不见的地方。
+       实测 2026-09-22：用户连着几轮"为什么又不行"，答案其实一直在 tail 里。 -->
+  <div id="dc_tailwrap" style="display:none;margin-bottom:9px">
+    <div id="dc_tailhead" style="font-size:12px;color:var(--dim);cursor:pointer;user-select:none"></div>
+    <pre id="dc_tail" style="display:none;font-size:11.5px;color:var(--dim);white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto;border-left:2px solid #333;padding-left:8px;margin:4px 0 0"></pre>
+  </div>
+  <!-- 轻微/可选项：不拦链、不进返修，但必须让人在这儿看见 —— 要靠成本估计决定值不值得为它多跑一轮 -->
+  <div id="dc_advwrap" style="display:none;margin-bottom:9px">
+    <div id="dc_advhead" style="font-size:12px;color:#d9b84a;cursor:pointer;user-select:none"></div>
+    <div id="dc_adv" style="display:none;font-size:12px;color:#d9b84a;white-space:pre-wrap;border-left:2px solid #5a4520;padding-left:8px;margin-top:4px"></div>
+  </div>
+  <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+    <label id="dc_stagewrap">目标阶段 <select id="dc_stage"></select></label>
+    <!-- ★ min/max 只是**首帧**的兜底值（渲染时会由 /api/hil 的 retry_extra_default/max 覆盖，
+         见下面 fillDelivery 里的 `$('dc_cap').min/max`）。真正的上限出处是
+         server.py 的 RETRY_CAP_EXTRA_MIN/MAX —— 别在这里写死一个与它不同的数。 -->
+    <label id="dc_capwrap" style="display:none">再延长 <input id="dc_cap" type="number" min="10" max="60" step="5" value="10" style="width:64px"> 分钟<span id="dc_caphint" style="color:var(--dim);font-size:11.5px"></span></label>
+    <button id="dc_rollback">↩ 回退到所选阶段</button>
+    <button id="dc_extend" style="display:none">⏱ 延长并继续</button>
+    <button id="dc_retry">🔁 再试一次</button>
+    <!-- ⓪ 读题的专用放行动作（服务端 _action_set 只给它 confirm/retry）——
+         没有这个按钮，读题的黄灯上就只剩「再试一次」，新功能根本走不到确认。 -->
+    <button id="dc_confirm" class="primary" style="display:none" title="把我核对/改过的题面与分类落到盘上，然后从 ① 文献定向 开始跑链">✓ 确认并开始跑链</button>
+    <button id="dc_attest" title="逐条列出要改哪儿（文件:行 + 上下文 + 判词），改完再点「我已修好并重试」">🛠 手工修复</button>
+    <button id="dc_disclose">🔶 接受并披露</button>
+  </div>
+  <div id="dc_msg" style="font-size:12px;color:var(--acc);margin-top:7px"></div>
+  <div style="font-size:11px;color:var(--dim);margin-top:6px">
+    「接受并披露」= 认下已知残余，如实写进论文；「手工修复」= 逐条给出**改哪儿**（文件:行 + 上下文 +
+    判词原文），你改完点面板末尾的「我已修好并重试」—— 它会以当前盘面重新认证该阶段
+    （先跑客观校验、留审计痕），**不让生产阶段重跑**。
+  </div>
+</div>
+<!-- 手工修复面板（用户 2026-09-23 要求）：黄灯上只说"§8 第 5 条"这类章节坐标，人得去
+     1700 行的报告里自己找 —— 这里把位置机械地算出来，判词并排放旁边。 -->
+<div id="hilpanel" style="display:none;padding:12px 18px;border-bottom:2px solid var(--wait);background:#241d0e">
+  <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
+    <b style="color:var(--wait);font-size:15px">🛠 手工修复</b>
+    <span id="hil_sub" style="color:var(--dim);font-size:12px"></span>
+    <button id="hil_close" style="margin-left:auto">收起</button>
+  </div>
+  <div id="hil_body" style="margin-top:9px;font-size:13px"></div>
+  <div style="margin-top:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <button id="hil_apply" class="primary">✓ 我已修好并重试</button>
+    <span id="hil_msg" style="font-size:12px;color:var(--acc)"></span>
+  </div>
+</div>
+<div id="ws" style="padding:6px 18px;color:var(--dim);font-size:12px;border-bottom:1px solid var(--line)"></div>
+<div id="stalebar" style="display:none;padding:8px 18px;border-bottom:1px solid var(--line);background:#1d2430;font-size:12.5px">
+  <div><span style="color:var(--acc)">⚠</span> <span id="stale_txt"></span></div>
+  <div id="stale_chips" style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center"></div>
+  <div style="color:var(--dim);font-size:11.5px;margin-top:5px;line-height:1.6">
+    <b>多数情况不必全部重跑。</b>按改的东西选：
+    ① 改<b>绘图代码</b>（<code>lib/visualization/*.py</code>）→ 只需重跑 <b>⑭ 排版与版式</b>（它重跑渲染脚本重画图并重新登记），<b>数值不必重算</b>；⑮ 验收的图表证据检查也会自动报「图片已改变」并推荐它。
+    若变的是<b>数据</b>（<code>code/outputs/</code>）那就要回 <b>④ 编码计算</b>，不是重画能解决的。
+    ② 改<b>措辞类说明</b>（CLAUDE.md 等）→ 通常什么都不用做。
+    ③ 改<b>某个阶段自己的 SKILL</b> → 只重跑那个阶段。
+    <br>点下面的阶段名即从该阶段重跑（会先暂存产物到 cache/，可恢复）。
+  </div>
+</div>
+<main>
+  <aside>
+    <div class="sec">阶段进度</div>
+    <div id="stages"></div>
+    <!-- 🛡 质量护栏 面板已按用户 2026-09-27 要求删除（服务端 /api/guardrails 端点保留，
+         需要时仍可直接调接口看）。 -->
+    <div class="sec">Reports / 图</div>
+    <!-- ★ 这里原先挂着一行 `<div class="file" data-kind="reports">📄 加载报告列表…</div>`，
+         是**旧版设计的残留**：`data-kind` 全文件只有它一个地方出现、**没有任何代码读它**
+         （实测 grep 只命中这一行），而列表在页面加载时就被 `loadFiles('reports')` 拉进
+         `#files` 了。于是那行永远停在"加载报告列表…"，长得像按钮、点了没反应
+         （2026-09-27 用户报「点加载报告列表…好像没反应」）。删掉 —— 假的可点控件比不显示更糟。
+         拉取失败时的提示与重试由 `loadFiles` 自己往 `#files` 里写。 -->
+    <div id="files"></div>
+  </aside>
+  <section>
+    <div class="tabs">
+      <button data-v="log" class="on">运行日志</button>
+      <button data-v="md">报告查看</button>
+      <button data-v="fig">图片</button>
+      <button data-v="pdf">📕 PDF</button>
+      <!-- 「原始 markdown」页签已按用户 2026-09-27 要求删除：它与「报告查看」原先显示同一个
+           东西（渲染器当时根本没实现，见 renderFile 那段的说明），留着只会让人以为有得选。
+           非 .md 的文件（.json/.txt）在「报告查看」里仍然按**原文**显示 —— renderFile 按扩展名分流，
+           所以删掉这个页签没有丢掉任何能力。想看确切字串请用「报告查看」里的非 md 文件或直接读盘。 -->
+    </div>
+    <div id="view"></div>
+  </section>
+</main>
+<div id="splash">
+  <!-- ★ 三层背景（模糊色斑 / 细线网格 / 暗角）—— 纯装饰，不接任何事件 -->
+  <div class="orb orb-a" aria-hidden="true"></div>
+  <div class="orb orb-b" aria-hidden="true"></div>
+  <div class="orb orb-c" aria-hidden="true"></div>
+  <div class="grid-lines" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+  <!-- ★ `#splash_inner` **就是那个终端窗口**（皮挂在 term 上）。
+       ⚠️ 里面每一个 id / class 都是**回归用例钉住的契约**：splash_inner、hero-title、hero-kicker
+       （必须在中文标题之前）、第二行的 ht-line + ht-indent 组合，以及 cf_base / cf_key / cf_model /
+       cf_1m / cf_test / cf_save / cf_back / cf_msg —— 换皮时**一个都不许改名**，
+       `regression/test_setup.py` 与 `frontend_splash_check.js` 盯着它们。
+       ★ 本注释里刻意**不写出那两个 class 属性的字面形态**（连这里也不写）——
+         `test_the_english_name_sits_above_the_chinese_title` 是按属性字面量在整份文件里定位元素的，
+         注释里先出现一次，它就会把锚点指到注释上而不是元素上（我在这条注释上连踩两次）。 -->
+  <div id="splash_inner" class="term">
+    <header class="term-bar" aria-hidden="true">
+      <span class="dots"><i class="d1"></i><i class="d2"></i><i class="d3"></i></span>
+      <span class="term-path">~/newmathagent</span>
+    </header>
+    <div class="term-body">
+      <div class="hero">
+        <!-- 英文名在标题**上面**（用户 2026-09-29）；点它也一样回主界面（`#splash_brand` 是标题那行） -->
+        <div class="hero-kicker">NewMathAgent</div>
+        <div class="hero-title" id="splash_brand" title="点一下进入主界面">
+          <span class="ht-line">数学建模</span>
+          <span class="ht-line ht-indent">一键生成</span>
+        </div>
+        <p class="hero-sub">传入完整赛题，经过 17 个阶段，一键生成数学建模论文</p>
+        <div class="hero-boot">▸ 正在进入主界面…</div>
+      </div>
+      <div class="cfg">
+        <h2>模型配置</h2>
+        <!-- ★ 三个字段包在 `.fields` 里（v10 的做法：容器 `gap:20px`，而不是每个字段各带下边距）——
+             原先用 `.field:last-of-type{margin-bottom:0}` 收尾，但勾选框搬进模型那行之后
+             `.cfg` 下直接的 `<label>` 只剩两个 ⇒ AUTH_TOKEN 成了 last-of-type、下边距被清成 0，
+             实测三行间距变成 71/53px。容器 gap 没有这个坑。 -->
+        <div class="fields">
+        <label class="field"><span class="k"><code>ANTHROPIC_BASE_URL</code></span><span class="eq" aria-hidden="true">=</span><input id="cf_base" class="input" type="text" spellcheck="false" placeholder="https://…"><em>端点</em></label>
+        <label class="field"><span class="k"><code>ANTHROPIC_AUTH_TOKEN</code></span><span class="eq" aria-hidden="true">=</span><input id="cf_key" class="input" type="password" spellcheck="false" placeholder="留空保持不变"><em>密钥</em></label>
+        <!-- ★ 这一行是 div 不是 label：勾选框要跟在「# 模型」后面（用户 2026-09-30），
+             而 label 套 label 是非法 HTML ⇒ 改用 aria-label 给输入框挂名字。 -->
+        <div class="field field-model"><span class="k"><code>ANTHROPIC_MODEL</code></span><span class="eq" aria-hidden="true">=</span><input id="cf_model" class="input" type="text" spellcheck="false" aria-label="ANTHROPIC_MODEL" placeholder="deepseek-flash"><span class="notecell"><em>模型</em><label class="check cb"><input id="cf_1m" type="checkbox"><span class="box" aria-hidden="true"></span><span class="lbl">声明支持 1M</span></label></span></div>
+        </div>
+        <div class="cfg-row">
+          <button id="cf_test">🔌 测试连接</button>
+          <span class="grow"></span>
+          <button id="cf_back" style="display:none">直接进入</button>
+          <button id="cf_save" class="primary">保存并进入</button>
+        </div>
+        <div id="cf_msg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="dirpop">
+  <div style="display:flex;justify-content:space-between;align-items:baseline">
+    <b style="font-size:13.5px">选一个目录</b>
+    <span id="dp_close" style="cursor:pointer;color:var(--dim)">✕</span>
+  </div>
+  <div class="dp-path" id="dp_path" style="margin-top:8px"></div>
+  <div style="margin-top:8px;font-size:12px">
+    <button id="dp_up">↑ 上一级</button>
+    <button id="dp_home">⌂ 仓库根</button>
+    <button id="dp_out">📁 当前产物目录</button>
+    <button id="dp_use" class="primary">✓ 用这个目录</button>
+    <span id="dp_msg" style="color:var(--dim);margin-left:6px"></span>
+  </div>
+  <div class="dp-list" id="dp_list"></div>
+</div>
+
+<!-- ★ 赠言浮层（用户 2026-09-30）：三条关闭路径 —— ×、点框外、Esc。
+     字体走流光渐变 + 荧光光晕，与第二排那个标识共用同一个 keyframes（`ghflow`）。
+     ★★ 必须放在**脚本标签之前**：脚本顶层就有 `$('gh_close').onclick=…`，
+        放在脚本后面时 `$('gh_close')` 是 null，那一行抛 TypeError 会**把整段脚本连同
+        `boot()` 一起带走** —— 症状是面板"什么都没了"（阶段列表空、日志空、SSE 不建）。
+        这文件的老规矩就是「标记在前、脚本在最后」（`const $=…, view=$('view')` 那一行就靠它）。
+        ★ 注释里**别写出那个标签的字面量** —— `frontend_id_order_check.js` 按它定位脚本起点，
+        注释里先出现一个的话会把起点定到注释里（这一版就是这么把自己绊倒的）。 -->
+<div id="ghmodal">
+  <div id="ghcard">
+    <button id="gh_close" title="关闭（也可以点框外或按 Esc）">×</button>
+    <div class="gh-neon">感谢使用，祝数学建模取得好成绩</div>
+    <div class="gh-sub">跪求各位大佬点点 star ⭐</div>
+    <a class="gh-link" id="gh_link" href="https://github.com/Cyllevantie/NewMathAgent"
+       target="_blank" rel="noopener noreferrer">https://github.com/Cyllevantie/NewMathAgent</a>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id), view=$('view');
+// ===== 上传 =====
+// 用户 2026-09-29：点这个**直接开文件夹选择框**，不再只是把面板翻出来。
+// 面板顺带展开（要露出拖放区/消息），收起改由面板右上角的 ✕ 负责。
+$('upbtn').onclick=()=>{ $('uppanel').style.display='block'; $('up_folder').click(); refreshWS(); };
+
+// ---------------- 产物设置（落地路径 + 归档目录名） ----------------
+// 回退/重跑会把残留移到哪 —— 让用户在按下按钮**之前**就看清落点，而不是按完去猜。
+function deliveryCacheHint(){
+  const d=(lastSt&&lastSt.delivery)||{};
+  // 要显示的是**落点全路径**，用 resolved —— output_dir 是配置原值，可能是空串
+  // （空串代表「用默认」）。两个字段的含义见 `_delivery_status` 的注释。
+  const base=d.resolved||d.output_dir;
+  if(!base) return '<产物>\\cache\\<题目标识_日期_时间>\\';
+  return base+'\\cache\\'+(d.archive_name||'<题目标识_日期_时间>')+'\\';
+}
+function fillDelivery(d){
+  if(!d) return;
+  const dir=$('dv_dir'), pid=$('dv_pid');
+  // 正在输入时不回写，否则轮询会把用户打了一半的路径冲掉。
+  // ★ 这里必须是**配置原值**（`output_dir`）：填成解析后的绝对路径会让「留空 = 用默认」
+  //   这个语义在界面上消失。`/api/delivery` 与 `/api/state` 两个 payload 的口径已统一。
+  // ★ 只有**用户没在编辑、且这一格没被改脏**时才回写（2026-09-28 审出来的 medium）：
+  //   原先只挡"当前正聚焦"—— 用户打完路径**失焦**（去点别的）之后，4 秒一次的轮询会把
+  //   服务端那份**旧值**写回去 ⇒ 面板上显示的还是老路径 ⇒ 点 ▶ 时 `dvPayload()` 读到的是
+  //   被回写过的旧值 ⇒ **产物落到旧目录** ✗（而且用户以为自己已经改了）。
+  //   改脏标记在 `input` 事件里置上、在保存成功时清掉。
+  if(document.activeElement!==dir && !dir.dataset.dirty) dir.value=d.output_dir||'';
+  if(document.activeElement!==pid && !pid.dataset.dirty) pid.value=d.problem_id||'';
+  $('dv_msg').textContent = d.error ? ('⚠ '+d.error)
+    : ('提交件 → '+(d.submission_dir||'(未知)')+(d.submission_exists?'（已生成）':'（尚未生成）')
+       +' · 各阶段产物 → '+(d.stage_dir||'(未知)')+(d.stage_exists?'（已生成）':'（尚未生成）')
+       +' · 下一个归档名 '+d.archive_name);
+  // 工具栏上的常驻提示。项目内显示相对路径，项目外显示全路径（那时缩略会看不出在哪）。
+  const chip=$('delivchip');
+  if(d.error){ chip.textContent='📁 ⚠ 题目标识有问题'; chip.style.color='var(--fail)'; chip.title=d.error; }
+  else{
+    const root=(lastSt&&lastSt.delivery&&lastSt.delivery.root)||'';
+    const abs=d.resolved||d.output_dir||'(默认)';
+    let show=abs;
+    if(root && show.toLowerCase().startsWith(root.toLowerCase())) show=show.slice(root.length).replace(/^[\\/]+/,'');
+    chip.textContent='📁 '+show+(d.submission_exists?'':' ·未生成')+'   (归档 '+d.archive_name+')';
+    chip.style.color=d.submission_exists?'var(--ok)':'var(--dim)';
+    chip.title='产物根：'+abs
+      +'\n提交件根：'+(d.submission_dir||'')
+      +'\n各阶段产物：'+(d.stage_dir||'')
+      +'\n下一个归档名：'+d.archive_name+'\n点一下展开／收起';
+  }
+}
+// ★ 产物面板的开关**只有一个出口**（2026-09-27 用户报「点一下展开，再点一次应该收起」）。
+//   原先 `delivchip`（工具栏那个 `📁 产物 ·未生成 (归档 …)`）写死 `display='block'`
+//   —— 点它只会**开**，再点一次什么都不发生；只有旁边那个 `📁 产物` **按钮**才是真开关。
+//   同一个面板、两个长得几乎一样的入口、行为却不一样，用户当然会以为坏了。
+//   现在两者都走 `toggleDelivery()`：点一下开、再点一下收，行为一致。
+function toggleDelivery(){
+  const p=$('delivpanel');
+  const opening=(p.style.display==='none'||!p.style.display);
+  p.style.display=opening?'block':'none';
+  if(opening) refreshDelivery();      // 只在**展开时**拉一次，收起时不必打扰后端
+}
+$('delivchip').onclick=toggleDelivery;
+async function refreshDelivery(){
+  try{ fillDelivery(await (await fetch('/api/delivery')).json()); }catch(e){}
+}
+// from：起了「从所选阶段重跑」时把**起点**一并交给后端（缺省 = ① 全链）。
+//   为什么必须交：`run_all` 原先恒从 ① 走、靠回执跳过，而上游**门禁**若是"裁决过期"，
+//   它会被当场真跑一遍 —— 于是「从 ⑨ 重跑」实际卡在 ⑤。用户要的就是从 ⑨ 开始。
+function dvPayload(from){ const o={output_dir:$('dv_dir').value, problem_id:$('dv_pid').value};
+  if(from) o.from_stage=from; return JSON.stringify(o); }
+$('delivbtn').onclick=toggleDelivery;      // 与 delivchip 同一出口，见 toggleDelivery 的说明
+
+// 产物设置两个输入框的「改脏」标记（见 fillDelivery 里那段：失焦后被轮询回写成旧值，
+// 会让 ▶ 把产物落到旧目录）。用户一敲键盘就置脏，保存成功/归档成功时清掉。
+['dv_dir','dv_pid'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input',()=>{ el.dataset.dirty='1'; }); });
+function clearDeliveryDirty(){ ['dv_dir','dv_pid'].forEach(id=>{ const el=$(id); if(el) delete el.dataset.dirty; }); }
+
+// 一键托管（右上角）。开着时：阶段超时自动延长、有推荐目标时自动按其回退。
+$('autopilot').onclick=async()=>{
+  const on = !(lastSt && lastSt.autopilot);          // 以服务端状态取反，不看本地变量
+  try{
+    const r=await fetch('/api/autopilot',{method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({on})});
+    if(!r.ok){ const d=await r.json().catch(()=>({}));
+               alert('托管开关没生效：'+(d.detail||('HTTP '+r.status))); }
+  }catch(e){ alert('托管开关请求失败：'+e.message); }
+  loadState();                                        // 立刻回读，按钮以服务端为准
+};
+// （原「✓ 保存」按钮已删：它只是"存下设置不启链"，而 `开始全链` 与 `归档到 cache`
+//   本来就会存，用户看不出它跟那两处有什么分别。归档那条**同时存两个框**，
+//   所以删掉保存之后"改完路径再归档"也不会丢。）
+$('dv_archive').onclick=async()=>{
+  const nm=((lastSt&&lastSt.delivery&&lastSt.delivery.archive_name)||'<题目标识_日期_时间>');
+  if(!confirm('把两个「最新」归档成 '+nm+'/？\n\n'
+    +'· 提交作品/最新作品  →  提交作品/'+nm+'/\n'
+    +'· 各阶段产物/最新产物  →  各阶段产物/'+nm+'/\n\n'
+    +'归档后新建两个空的「最新」。本题的产物不会丢 —— 工作区里那份照旧。\n'
+    +'同时会把这两个框的设置存下来。')) return;
+  $('dv_msg').textContent='归档中…';
+  const r=await fetch('/api/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:dvPayload()});
+  const d=await r.json();
+  if(r.ok) clearDeliveryDirty();      // 归档会把这两个框存下来 ⇒ 脏标记清掉，轮询可以放心回写
+  // ★ 后端会如实回 `created`：两个「最新」都空时只建骨架、**没有**归档目录，
+  //   这时不能再打「✓ 已归档 → X/」——那是冒充成功（假目录名会指向不存在的路径）。
+  $('dv_msg').textContent = !r.ok ? ('⚠ '+(d.detail||'归档失败'))
+    : (d.created ? ('✓ 已归档 → '+d.name+'/（'+(d.rotated||[]).length+' 项改名为该时间戳）')
+                 : ('没有可归档的东西 —— '+(d.note||'两个「最新」都是空的')));
+  refreshDelivery();
+};
+async function uploadOne(kind,input){
+  if(!input.files||!input.files.length) return [];
+  const fd=new FormData(); fd.append('kind',kind);
+  [...input.files].forEach(f=>fd.append('files',f));
+  const r=await fetch('/api/upload',{method:'POST',body:fd}); const d=await r.json();
+  if(!d.ok) throw new Error(JSON.stringify(d)); return d.saved||[];
+}
+// ★ 一键传文件夹。浏览器**只把基名放进 `File.name`**，相对路径在
+//   `webkitRelativePath` 里、且**不会自动进 multipart** ⇒ 必须显式成对 append（两串各自保序，
+//   后端按位置一一对应）。这是"保住目录结构"的唯一办法 —— 而本题的 `附件3/` 就是子目录。
+function folderFiles(input){
+  return [...(input.files||[])].filter(f=>f.name && !f.name.startsWith('.'))
+         .map(f=>[f, f.webkitRelativePath || f.name]);
+}
+async function uploadPairs(pairs, withRelative){
+  const fd=new FormData(); fd.append('kind','folder');
+  pairs.forEach(([f])=>fd.append('files',f));                       // 先全部 files
+  if(withRelative) pairs.forEach(([,rel])=>fd.append('paths',rel)); // 再全部 paths（同序）
+  const r=await fetch('/api/upload',{method:'POST',body:fd});
+  let d={}; try{ d=await r.json(); }catch(_){}
+  if(!r.ok) throw new Error((d&&d.detail)||('HTTP '+r.status));
+  return d;
+}
+// 拖拽上传：**文件夹要自己递归走**。`drop` 的 DataTransfer 不像 `<input webkitdirectory>`
+// 那样自带 `webkitRelativePath` —— 只有 FileSystemEntry API 能一层层读下去，
+// 而相对路径得自己用 `fullPath` 拼（拼错了后端就会把子目录拍平）。
+function _entryPairs(entry, prefix, out, depth, seen){
+  // ★ 深度上限 + 环检测（2026-09-28 审查抓出来的 low）：`webkitGetAsEntry` 在自指目录/极深
+  //   目录上会让这条 Promise 无限递归下去（浏览器卡死，用户只能强关标签页）。
+  depth = depth || 0;
+  seen = seen || new Set();
+  return new Promise(res=>{
+    if(!entry || depth > 32) return res();
+    const key=entry.fullPath||entry.name;
+    if(key && seen.has(key)) return res();        // 同一个路径第二次出现 ⇒ 剪掉
+    if(key) seen.add(key);
+    if(entry.isFile){
+      return entry.file(f=>{ out.push([f, prefix+entry.name]); res(); }, ()=>res());
+    }
+    const reader=entry.createReader();
+    const readBatch=()=>reader.readEntries(es=>{
+      if(!es.length) return res();
+      Promise.all([...es].map(e=>_entryPairs(e, prefix+entry.name+'/', out, depth+1, seen)))
+        .then(readBatch, res);
+    }, ()=>res());
+    readBatch();
+  });
+}
+async function dropPairs(dt){
+  const out=[];
+  const entries=[...(dt.items||[])].map(it=>it.webkitGetAsEntry&&it.webkitGetAsEntry()).filter(Boolean);
+  if(entries.length){
+    await Promise.all(entries.map(e=>_entryPairs(e, '', out)));
+  }else{
+    [...(dt.files||[])].forEach(f=>out.push([f, f.name]));    // 老浏览器：只有散文件
+  }
+  return out;
+}
+// ★ 单一入口 = **先暂存、再确认**（用户 2026-09-29："这几个都删了，留个确认就好了"）。
+//   选文件夹与拖放走同一条路：都只把结果放进 `_pend`，由 `#up_go` 那一下真正发出去。
+//   代价是拖完还得多点一次；好处是两条路行为一致，而且**发出去之前你能看见到底选到了什么**
+//   （原先拖进来是当即上传的，选错了只能等它传完再重来）。
+let _pend=null;
+function _stagePairs(pairs, name){
+  const msg=$('up_msg'), R=$('up_result'); msg.textContent=''; R.style.display='none';
+  if(!pairs || !pairs.length){ $('up_msg').textContent='这里没有文件 —— 选一个文件夹，或把文件夹拖进来'; return; }
+  _pend={pairs, name:name||'(未知)'};
+  const flat=pairs.every(([,rel])=>rel.indexOf('/')<0);
+  $('up_pick').style.display='block';
+  $('up_pick').innerHTML='已选 <b>'+pairs.length+'</b> 份原件，来自 <b>'+esc(_pend.name)+'</b>'
+    +(flat?'<br><span style="color:var(--wait)">⚠ 这些都是散文件（没有子目录）—— 请确认题目附件确实没有嵌套目录</span>'
+          :'<br><span style="color:var(--dim)">保留了子目录结构</span>');
+  $('up_go').disabled=false;
+}
+(function bindUploadEntry(){
+  const p=$('uppanel'); if(!p) return;
+  const dz=$('updrop');
+  // 点拖放区 = 点"选文件夹"（`webkitdirectory` 必须由用户手势触发，这里就是那个手势）
+  dz.addEventListener('click',()=>$('up_folder').click());
+  $('up_close').addEventListener('click',()=>{ p.style.display='none'; });
+  $('up_folder').addEventListener('change',()=>{
+    const fs=[...($('up_folder').files||[])];
+    const root=fs.length?(fs[0].webkitRelativePath||'').split('/')[0]:'';
+    _stagePairs(folderFiles($('up_folder')), root);
+  });
+  // 整块面板都收拖放（宽容些），但高亮只给拖放区 —— 让"往哪儿放"一眼可见。
+  // 进出子元素也会触发 dragleave，用计数器判"真的离开了"，不然高亮会闪。
+  let depth=0;
+  p.addEventListener('dragenter',e=>{ e.preventDefault(); depth++; dz.classList.add('hot'); });
+  p.addEventListener('dragover',e=>{ e.preventDefault(); dz.classList.add('hot'); });
+  p.addEventListener('dragleave',()=>{ if(--depth<=0){ depth=0; dz.classList.remove('hot'); } });
+  p.addEventListener('drop',async e=>{
+    e.preventDefault(); depth=0; dz.classList.remove('hot');
+    const dt=e.dataTransfer;
+    // ★ 文件夹名必须在 await **之前**取：`dropPairs` 里面有 await，而 DataTransfer 的
+    //   items 在事件处理器的 await 之后就可能被清空/不可读了（读出来是空数组）。
+    const first=[...(dt.items||[])][0];
+    const ent=first&&first.webkitGetAsEntry&&first.webkitGetAsEntry();
+    const name=ent?ent.name:'';
+    _stagePairs(await dropPairs(dt), name);
+  });
+})();
+async function doUpload(input, withRelative, label){
+  const pairs=Array.isArray(input)?input:folderFiles(input);
+  const msg=$('up_msg'), R=$('up_result'); msg.textContent=''; R.style.display='none';
+  if(!pairs.length){ msg.textContent='请先选文件/文件夹'; return; }
+  msg.textContent='上传中…（大文件夹可能要几十秒）';
+  try{
+    const d=await uploadPairs(pairs, withRelative);
+    if(d===null){ msg.textContent='请先选文件/文件夹'; return; }
+    R.style.display='block';
+    R.innerHTML='<b style="color:#2ecc71">✓ 已收 '+d.saved.length+' 份原件</b>'
+      +(d.skipped&&d.skipped.length?('<br><span style="color:var(--dim)">跳过系统生成的临时文件 '
+                                     +d.skipped.length+' 份：'+esc(d.skipped.slice(0,3).join('、'))+'…</span>'):'')
+      +'<br><b>⏳ AI 正在读题…读完会停下等你核对（不用一直守着，面板会自己更新）</b>';
+    refreshWS();
+  }catch(e){ R.style.display='block'; R.innerHTML='<b style="color:#e74c3c">失败：'+esc(e.message)+'</b>'; }
+}
+$('up_go').onclick=()=>{
+  if(!_pend) return;
+  const p=_pend; _pend=null; $('up_go').disabled=true;
+  $('up_pick').style.display='none'; $('up_folder').value='';   // 复位，便于重选同一个文件夹
+  doUpload(p.pairs, true, p.name);
+};
+async function refreshWS(){
+  try{
+    const r=await fetch('/api/workspace'); const w=await r.json();
+    const el=$('ws'); if(el) el.textContent='request: '+(w.request.join(', ')||'空')+' ｜ data: '+(w.data.join(', ')||'空');
+  }catch(e){}
+}
+
+// ★ 必须与 lib/web/server.py 的 STAGES 顺序一致 —— 下面是 map 遍历，漏加一个阶段
+//   面板上根本不显示它（后端在跑、界面却像没这个阶段）。audit 排在 robustness 之前
+//   （便宜的先跑，结果不可信时不白跑昂贵的稳健性计算），format 排在三个门禁之前。
+const STAGE_ORDER=["intake","literature","analysis","review","code","audit","robustness","drawio","figreview","write","mathproof","cross","rubric","fix","format","verify","demo"];
+const STAGE_NAME={"intake":"⓪ 读题","literature":"① 文献定向","analysis":"② 建模设计","review":"③ 建模评审门禁","code":"④ 编码计算","audit":"⑤ 结果可信度审计","robustness":"⑥ 稳健性","drawio":"⑦ 技术路线图","figreview":"⑧ 绘图门禁","write":"⑨ 论文撰写","mathproof":"⑩ 数学论证门禁","cross":"⑪ 跨问一致性","rubric":"⑫ 评分标终审","fix":"⑬ 按评分判词返修","format":"⑭ 排版与版式","verify":"⑮ 验收","demo":"⑯ 交互Demo"};
+const STAGE_GATE={"review":1,"audit":1,"figreview":1,"mathproof":1,"cross":1,"verify":1,"rubric":1};   // 门禁阶段不能人工认证
+// 判词/建议的文本来自 agent 写的 JSON，进 innerHTML 的 title 属性前必须转义 ——
+// 里面的引号会把属性截断，然后整段文本跑到标签外面去。
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\n/g,'&#10;');}
+// ★ 序号**只来自 `STAGE_NAME`**（它自带 ⓪①…⑯）：原先这里又拼了个 `i+1.`
+//   ⇒ 下拉里逐行成了「1. ⓪ 读题」「2. ① 文献定向」两套编号并存（2026-09-28 审查抓出来的 low）。
+function fillStageSel(){ const el=$('stage_sel'); if(!el) return; el.innerHTML=STAGE_ORDER.map(id=>`<option value="${id}">${STAGE_NAME[id]||id}</option>`).join(''); }
+// ★ 失败必须把**真实原因**说出来。
+//   原先直接 `await r.json()` 然后读 `d.cleared` —— 而 `/api/redo` 在**链正在跑**时返回
+//   **409** `{"detail": "运行中不能移动阶段产物，请先停止并等待执行结束"}`，这份错误被吞掉，
+//   面板显示成「已清空：无」+「点 ▶ 开始全链」，而 ▶ 在运行中也点不动 ⇒ 用户看到的是
+//   **"点了没反应"**（实测那一发：⑩ 排版版式正在跑，点两次都被静默拒绝）。
+async function postRedo(stage){
+  const r=await fetch('/api/redo',{method:'POST',headers:{'Content-Type':'application/json'},
+                                  body:JSON.stringify({stage})});
+  let d={}; try{ d=await r.json(); }catch(_){}
+  if(!r.ok) return {ok:false, why:(d&&d.detail)||('HTTP '+r.status)};
+  return {ok:true, cleared:d.cleared||[]};
+}
+// ★ 链正在跑时，**一键**走完「暂停当前阶段 → 清空 → 从选定阶段重跑」（2026-09-23 用户要求）。
+//   原先只回一句"请先停止"，用户得手动 ⏹ → 清空 → ▶ 三步，且运行中那一步还会被静默拒绝 ✗。
+//   顺序不能颠倒：暂停要等**真的停下**（暂停是"请求中断"，收尾要几秒到几十秒）才清空，
+//   否则 /api/redo 仍会被 `state["running"]` 挡回；清空后再 /api/start，前序自动跳过。
+async function pauseAndWait(){
+  const p=await fetch('/api/pause',{method:'POST'});
+  if(!p.ok){ let d={}; try{ d=await p.json(); }catch(_){} return {ok:false, why:(d&&d.detail)||('HTTP '+p.status)}; }
+  for(let i=0;i<240;i++){                       // 最多等 4 分钟
+    await new Promise(r=>setTimeout(r,1000));
+    try{ if(!(await (await fetch('/api/state')).json()).running) return {ok:true}; }catch(_){}
+  }
+  return {ok:false, why:'暂停等待超时（4 分钟）'};
+}
+$('redo_btn').onclick=async()=>{
+  const id=$('stage_sel').value; if(!id) return;
+  const nm=STAGE_NAME[id]||id;
+  if(!confirm('清空「'+nm+'」及之后全部产物，随后从该阶段重跑？（已完成的前序会自动跳过）')) return;
+  let res=await postRedo(id);
+  if(!res.ok){
+    if(!confirm('链条正在跑：'+res.why+'\n\n要「暂停当前阶段 → 清空 → 从「'+nm+'」重跑」吗？')) return;
+    const pw=await pauseAndWait();
+    if(!pw.ok){ alert('暂停失败 —— '+pw.why+'\n请手动 ⏹ 停止后再点本按钮'); loadState(); return; }
+    res=await postRedo(id);
+    if(!res.ok){ alert('清空失败 —— '+res.why); loadState(); return; }
+    alert('已暂停并清空：'+(res.cleared.join(', ')||'无')+'\n现在从「'+nm+'」开始重跑。'); loadState();
+    await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:dvPayload(id)});
+    loadState(); return;
+  }
+  // ★ 清空之后**自动开始**（2026-09-27 用户：「从所选阶段重跑点完后应该自动开始才对」）——
+  //   原先只弹一句「点 ▶ 开始全链」，白让用户多点一次；而"链条正在跑"那条分支**早就**是
+  //   清空完直接 /api/start ✓ ⇒ 这里补齐，两条路径行为一致。
+  //   产物设置随本轮一起提交（与 ▶ 同一个 `dvPayload()`：用户可能先填了路径、没点保存 ✓）。
+  //   ★ 并且**把起点交给后端**：从 ⑨ 重跑就该从 ⑨ 起跑，不再从 ① 走一遍
+  //     让上游那盏"裁决过期"的门禁把链拦下来（用户原话：「回到 9 才对」「赶紧跳到 9」）。
+  const r2=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:dvPayload(id)});
+  if(!r2.ok){
+    const d=await r2.json().catch(()=>({}));
+    alert('已清空：'+(res.cleared.join(', ')||'无')+'\n但没能开始：'+(d.detail||r2.status)+'\n（点 ▶ 开始全链 可重试）');
+  } else {
+    alert('已清空：'+(res.cleared.join(', ')||'无')+'\n已从「'+nm+'」开始重跑 ✓');
+  }
+  loadState();
+};
+$('wipe_btn').onclick=async()=>{
+  if(!confirm('确定要清空全部产物、从文献开始完整重跑吗？此操作不可撤销。')) return;
+  const t=prompt('请在下方输入“清空”二字确认（防止误点）：');
+  if(t!=='清空'){ alert('已取消（未输入“清空”）。'); return; }
+  const res=await postRedo('literature');
+  if(!res.ok){ alert('没能清空 —— '+res.why); loadState(); return; }
+  // 与「从所选阶段重跑」同款：清空完**自动开始**（用户 2026-09-27 的口径：「点完后应该自动开始」）。
+  // 这个按钮前面已经要求手输「清空」二次确认 ⇒ 起点明确，再让用户多点一次 ▶ 没有意义。
+  const r2=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:dvPayload()});
+  if(!r2.ok){
+    const d=await r2.json().catch(()=>({}));
+    alert('已清空全部（'+res.cleared.length+' 项）。但没能开始：'+(d.detail||r2.status)+'\n（点 ▶ 开始全链 可重试）');
+  } else {
+    alert('已清空全部（'+res.cleared.length+' 项）。已开始完整重跑 ✓');
+  }
+  loadState();
+};
+fillStageSel();
+let curTab='log',curFile=null,filesList=[],figList=[],logBuf=[];
+
+function stageSec(st,id,s){
+  const stt=st&&st.stage_t&&st.stage_t[id];
+  if(!stt) return 0;
+  if(s==='running' && stt.start){ return (stt.elapsed||0) + (Date.now()/1000 - stt.start); }
+  return stt.elapsed||0;
+}
+// ★ 逐行**原地更新**，不再整块 `innerHTML=`（2026-09-28 修用户报的「📝 悬停不显示判词」）。
+//   原先是 `$('stages').innerHTML = STAGE_ORDER.map(...)`：每次状态轮询都把**全部**行节点
+//   重建一遍。而原生 `title` 提示要求**同一个节点**被连续悬停约半秒才弹出 —— 节点每隔
+//   一两秒就被换掉，提示永远来不及出现（不是没写 title，是根本没机会显示）。
+//   现在：行按 `data-sid` 认领、只在**内容真的变了**时改 `innerHTML`；不变的行连节点都不动
+//   ⇒ 悬停稳定，提示正常；顺带省掉每秒重建 16 个节点的无谓开销。
+let _stageHtml={};        // sid → 上次写进该行的 innerHTML（用来跳过无变化的重画）
+// ---------------- 📝 建议浮层（2026-09-28 用户：点一下弹一个框，别再往下撑开、也别用悬停） ----------------
+// 三条设计约束，都是踩过的：
+//   ① 用**点击**而不是悬停 —— 原生 `title` 要求同一节点连续悬停半秒，而状态轮询每 1~2 秒
+//      就把阶段行重建一遍，提示永远来不及弹出（用户实测"悬停什么都不显示"）；
+//   ② 用**浮层**而不是行内展开 —— 行内展开会把下面 15 行顶下去（用户：「像之前一样展开一个框，
+//      而不是向下展开」）。而这里一条建议就有 1400+ 字符，撑开对侧栏是灾难；
+//   ③ 浮层挂 `document.body` + `position:fixed` —— 挂侧栏里会被 `aside` 的溢出裁掉。
+function advPanel(){
+  let p=document.getElementById('advpop');
+  if(!p){
+    p=document.createElement('div');
+    p.id='advpop';
+    document.body.appendChild(p);
+    // 点外面 / 按 Esc / 滚动（浮层会脱锚）都收起。徽章的 onclick 里 stopPropagation 了，
+    // 所以"点徽章"不会走到这里、不会被自己的这一下关掉。
+    document.addEventListener('click',e=>{ if(!p.contains(e.target)) hideAdv(); });
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape') hideAdv(); });
+    window.addEventListener('scroll',e=>{ if(!p.contains(e.target)) hideAdv(); },true);
+  }
+  return p;
+}
+function hideAdv(){ const p=document.getElementById('advpop'); if(p) p.style.display='none'; }
+// 建议的严重度归一：只认 hard / soft，其余（含 info、缺省）一律按"建议"渲染。
+function advSev(a){
+  const s=String((a&&a.severity)||'').toLowerCase();
+  return (s==='hard'||s==='soft')?s:'info';
+}
+function showAdv(sid,badge){
+  const p=advPanel();
+  const adv=(lastSt&&lastSt.advisories?lastSt.advisories[sid]:null)||[];
+  const iss=(lastSt&&lastSt.issues?lastSt.issues[sid]:null)||[];
+  if(!adv.length&&!iss.length) return;
+  const nH=a=>a.filter(x=>advSev(x)==='hard').length;
+  const nS=a=>a.filter(x=>advSev(x)==='soft').length;
+  const item=a=>'<div class="advitem"><span class="advsev '+advSev(a)+'">'+advSev(a)+'</span>'
+      +'<b>'+esc(a.id||'')+'</b> '+esc(a.fix||a.evidence||'')
+      +(a.cost?(' <i>（成本：'+esc(a.cost)+'）</i>'):'')+'</div>';
+  // ★ 两段的分账**合并写在一个表头里**（用户 2026-09-30：「（hard 0 · soft 1 · 纯建议 3）这里
+  //   应该删掉，在「🚧 门禁判据 3 条（hard 0 · soft 3）」的后面加到一起写」）——
+  //   判据与建议合起来数，一眼看得出这一关一共积了多少条。
+  const all=[...iss,...adv];
+  const legend='<span class="advlegend">'
+    +'<span class="advsev hard">hard</span>分量重、建议修'
+    +'<span class="advsev soft">soft</span>可修可不修'
+    // ★ 标签写 `info`（severity 的原值）而不是"建议"：每条前面的小标签印的就是 `info`，
+    //   图例跟它对上才看得懂；右边那句才是中文解释（用户 2026-09-29 指定）。
+    +'<span class="advsev info">info</span>纯建议</span>';
+  let html='';
+  // ★ 上半段：**门禁判据**（会阻断的那批）。原先它们只活在黄灯面板上，黄灯一收就没了
+  //   （用户 2026-09-29：「把黄灯面板里的那个复制过来」）。放上面是因为它们才是要命的那批。
+  if(iss.length){
+    html+='<div class="advhead">🚧 <b style="color:#fff">门禁判据 '+iss.length+' 条</b>'
+      +'（hard '+nH(all)+' · soft '+nS(all)+' · 纯建议 '+(all.length-nH(all)-nS(all))+'）<br>'
+      +'这一关<span style="color:#ff9f1a">没通过的</span>判据 —— '
+      +'<b style="color:#ff9f1a">会阻断链、进返修单</b>。'
+      + legend + '</div>'+iss.map(item).join('');
+  }
+  // ★ 下半段：**建议**。不是判据、不阻断 —— 表头先把这件事说清楚，免得又被当成判据。
+  //   它自己**不再重复计数**（合并到上面那个表头里了）；图例也只出现一次（在上面）。
+  if(adv.length){
+    html+='<div class="advhead'+(iss.length?' advsecond':'')+'">📝 '
+      +'<b style="color:#fff">建议 '+adv.length+' 条</b>'
+      + (iss.length?'<br>':'')
+      +'它们<span style="color:#8cc4ff">不是门禁判据</span>：不阻断链、不进返修单。'
+      + (iss.length?'':legend) + '</div>'+adv.map(item).join('');
+  }
+  p.innerHTML=html;
+  p.style.display='block';
+  // 贴着徽章右侧弹出；右边/下边放不下就翻到左侧、往上收，别跑出视口。
+  const r=badge.getBoundingClientRect();
+  const w=p.offsetWidth, h=p.offsetHeight;
+  let left=r.right+10, top=r.top;
+  if(left+w>innerWidth-8) left=Math.max(8,r.left-w-10);
+  if(top+h>innerHeight-8) top=Math.max(8,innerHeight-h-8);
+  p.style.left=left+'px'; p.style.top=top+'px';
+}
+function toggleAdv(sid,ev){
+  if(ev&&ev.stopPropagation) ev.stopPropagation();
+  const p=advPanel();
+  if(p.style.display==='block'&&p.dataset.sid===sid){ hideAdv(); return; }   // 再点一次 = 收起
+  p.dataset.sid=sid;
+  showAdv(sid, ev&&ev.currentTarget);
+}
+// 一键托管按钮的显示。★ 状态**以服务端为准**（`/api/state` 的 `autopilot`）——
+// 前端自己记一个变量的话，刷新页面 / 换标签页之后两边就对不上了。
+function fillAutopilot(on){
+  const b=$('autopilot'); if(!b) return;
+  b.className = on ? 'primary' : '';
+  b.textContent = on ? '🤖 托管中' : '🤖 托管';
+  b.style.color = on ? '#39ff14' : '';
+  b.title = (on ? '一键托管**开着**。' : '一键托管：')
+    + '阶段超时自动延长、有推荐目标（agent 说该退到哪）时自动按其回退，'
+    + '再点一次取消。没有可自动执行的动作时照旧留给你决定。';
+}
+// 上一次看到的 `run_completed`，用来认**跳变**（见 renderStages 末尾那两行）。
+// ★ 必须声明在 `renderStages` **之前**：`let` 在声明执行前处于暂时性死区，声明放到文件
+//   末尾（我第一版就在那儿）时，任何早于它的 `renderStages(st)` 调用都会
+//   `ReferenceError: Cannot access '_lastDone' before initialization` —— 而那是"整段脚本
+//   停摆、面板全空"的同一类事故。声明在使用点之前，这类窗口就根本不存在。
+let _lastDone=null;
+function renderStages(st){
+  if(!st || typeof st!=='object' || !st.stages) return;
+  fillAutopilot(!!st.autopilot);
+  const isFailed=s=>['failed','blocked','unverified'].includes(s)||String(s).startsWith('exit');
+  const pend=st&&st.pending;
+  // 先算出每一行**该长什么样**（外层的 class 与内容分开，class 变化不该重建 innerHTML）
+  const rows=STAGE_ORDER.map(id=>{
+    const s=st&&st.stages?st.stages[id]:'idle';
+    const wait=s==='awaiting_user';
+    // ★ 三种「完成」必须长得不一样：干净通过 ✅ / 披露放行 🔶 / 人工认证 🔧。
+    //   把披露或人工认证画成和干净通过一模一样，等于对读报告的人撒谎。
+    const disclosed=String(s).startsWith('done(disclosed)');
+    const manual=String(s).startsWith('done(manual)');
+    const stale=String(s).startsWith('done(stale-instr)');
+    // ⓪ 读题「人核对过」：与"干净通过"要分得开 —— 它的产物是 AI 读的，但**结论经过人工点头**，
+    //   面板上要能一眼看出"这一步有人把关过"（用户 2026-09-28）。
+    const confirmed=String(s).startsWith('done(confirmed)');
+    const cls=wait?'wait':manual?'manual':disclosed?'disclosed':confirmed?'done':stale?'stale':(String(s).startsWith('done'))?'done':isFailed(s)?'fail':(s==='running'?'run':'');
+    const sec=stageSec(st,id,s);
+    const ts=sec>1?(' ⏱'+fmtHMS(Math.round(sec))):'';
+    // 四种「完成」必须长得不一样：✅ 干净通过 / 🔶 披露放行 / 🔧 人工认证 / ⚠ 按旧要求交付。
+    // 把后者画成 ✅ 等于对读报告的人撒谎 —— 它是在**旧的做法要求下**做出来的。
+    const tag=wait?((pend&&pend.kind==='overtime'&&pend.stage===id)?'⏱':'⏳')
+      :manual?'🔧':disclosed?'🔶':confirmed?'✋':stale?'⚠':(String(s).startsWith('done'))?'✅'
+      :isFailed(s)?'❌':(s==='running')?'🟡':['needs_fix','awaiting_review','stopped'].includes(s)?'⏸':'';
+    // 轻微建议（tier=optional）：不拦链也不进返修，得在阶段行上留个可见入口，
+    // 否则它们只躺在 RUBRIC_REVIEW.md 里 —— 而"看成本决定加不加"正是它们的用途。
+    // ★ 徽章改成**点击开关**（2026-09-28 用户：「别用鼠标悬停了，点一下显示、再点折叠」）。
+    //   原先挂在原生 `title` 上 —— 而 `title` 提示要求同一个节点被连续悬停约半秒，
+    //   状态轮询一来节点就被换掉，提示永远来不及弹出（用户实测"悬停什么都不显示"）。
+    //   点击开关没有这个时序问题，而且长文本（这里有 1400+ 字符）悬停提示本来也难读。
+    const adv=(st&&st.advisories?st.advisories[id]:null)||[];
+    const iss=(st&&st.issues?st.issues[id]:null)||[];
+    // ★ 徽章上的数字**只数 hard**（用户 2026-09-29：原先印的是总数，看着像"这里有 6 条判据"）。
+    //   判据和建议里的 hard 都算进来 —— 只数判据的话，"一条 hard 建议"就再也没有入口了。
+    //   一条 hard 都没有时徽章不带数字（不是 📝0），但仍可点开看 soft / 纯建议。
+    const nHard=[...iss,...adv].filter(a=>advSev(a)==='hard').length;
+    const advTag=(iss.length||adv.length)
+      ?`<span class="advtag${nHard?' advhard':''}" `
+       +`title="点一下展开／收起：门禁判据 ${iss.length} 条（会阻断）、建议 ${adv.length} 条`
+       +`（不阻断）。其中 hard ${nHard} 条。" `
+       +`onclick="toggleAdv('${id}',event)">📝${nHard?nHard:''}</span>`
+      :'';
+    return {id, cls, html:
+      `<div class="dotline"><span class="dot"></span>${STAGE_NAME[id]||id}`
+      +`<span style="color:var(--dim);margin-left:auto;font-size:11px">${advTag}${advTag?' ':''}${tag}${ts}</span></div>`};
+  });
+  const box=$('stages');
+  rows.forEach((r,i)=>{
+    let el=box.children[i];
+    if(!el || el.dataset.sid!==r.id){           // 位置对不上（首次 / 顺序变了）→ 重建这一行
+      const d=document.createElement('div');
+      d.dataset.sid=r.id;
+      if(el) box.replaceChild(d,el); else box.appendChild(d);
+      el=d; delete _stageHtml[r.id];
+    }
+    if(el.className!=='stage '+r.cls) el.className='stage '+r.cls;
+    if(_stageHtml[r.id]!==r.html){ el.innerHTML=r.html; _stageHtml[r.id]=r.html; }
+  });
+  while(box.children.length>rows.length) box.lastChild.remove();
+  const pr=st&&st.progress?st.progress:{}; const tot=pr.total||STAGE_ORDER.length, done=pr.done||0;
+  $('pbar').style.width=(done/tot*100)+'%';
+  $('ptext').textContent=done+'/'+tot
+    +(st&&st.cur?(' · 当前 '+(STAGE_NAME[st.cur]||st.cur)):'');
+  // 总计时器：优先用 server 的 elapsed_total；本地每秒 tick 保持秒级跳动
+  lastSt=st;
+  // 超时黄灯时链**仍在跑**（驱动不杀进程），这里必须同时说出「在等人」和「还在运行」，
+  // 否则用户会以为任务停了、去点重试，把跑了几小时的东西掐掉。
+  const over=pend&&pend.kind==='overtime';
+  $('status').textContent=
+    over?('⏱ 超时等待决策 · 任务仍在运行 · '+(STAGE_NAME[pend.stage]||pend.stage||'')):
+    pend?('⏳ 等待你决策 · '+(STAGE_NAME[pend.stage]||pend.stage||'')):
+    st.running?('运行中 · '+(st.cur||'')):
+    st.halt_gate?('已挂起 · '+(st.halt_reason||'待处理')):
+    st.run_completed?('run '+(st.run_id||'—')+' 已完成交付'):   // run_id 为 null 时别渲染成「run null」
+    st.run_id?'已停止，未完成本轮交付':'未运行';
+  $('status').style.color=pend?'var(--wait)':'var(--dim)';
+  // 整链跑完（⑯ 结束）→ 自动「点」一次第二排正中那个 GitHub 标识（用户 2026-09-30）。
+  // ★ 认**跳变**（false→true）而不是"当前是 true"：后者会让每次刷新页面都再弹一遍。
+  //   `_lastDone` 初值 null ⇒ 打开面板时若链早已跑完，不补弹（驱动那时已经把 demo 开过了）。
+  if(_lastDone===false&&st.run_completed) showGhCard(true);
+  _lastDone=!!st.run_completed;
+  renderStale(st);
+  fillDelivery(st.delivery);      // 产物路径/归档名随 SSE 一起刷新
+  // 「清理全部残留」只在整链跑完、且盘上确实还有残留时出现 —— 中途搬走 reports/code，
+  // 回退和重跑就没东西可读了。
+  $('cleanup').style.display = st.can_cleanup ? '' : 'none';
+  renderDecision(st);
+  _tickTimer();
+}
+
+// 「做法要求变过、但产物没重跑」的已完成阶段。★ 必须显眼 —— 不显眼就是静默放行。
+let _staleSig=null;
+function renderStale(st){
+  const list=(st&&st.stale_instr)||[], pol=(st&&st.layout_superseded)||[], el=$('stalebar');
+  // 签名要覆盖**被渲染的东西**：芯片上显示的是 stage_t[id].elapsed，只签 list 的话
+  // 耗时变了不会重画，芯片上的数字会与点击确认框里的实时数字不一致。
+  const sig=list.map(id=>id+':'+(((st.stage_t||{})[id]||{}).elapsed||0)).join(',')+'|'+pol.join(',');
+  if(sig===_staleSig) return;                 // 幂等：SSE/轮询会反复触发
+  _staleSig=sig;
+  if(!list.length && !pol.length){ el.style.display='none'; return; }
+  el.style.display='';
+  const parts=[];
+  if(list.length) parts.push(
+    list.length+' 个已完成阶段的「做法要求」（SKILL / 规范 / 工作区说明 / 驱动注入指令）'
+    +'在它们交付之后变过 —— 产物仍在盘上，只是按「旧的」要求做的。');
+  // ★ 「打磨之后未复评」的内容判官（用户 2026-09-27 口径：⑫⑬⑭ 打磨措辞与版式**不作废**
+  //   ⑩⑪⑫ 的内容判决）—— 它们**不是** stale_instr，但同样必须看得见：不显示就是静默放行。
+  if(pol.length) parts.push(
+    pol.length+' 个内容判官（数学论证 / 跨问一致性 / 评分标终审）的裁决是在**版式或措辞打磨之前**'
+    +'下的，此后只有 ⑬按评分判词返修 / ⑭排版与版式 动过论文 —— 按你的口径**不自动复评**；'
+    +'要按现在这一版重判，就点它。');
+  $('stale_txt').textContent=parts.join(' ');
+  // ★ 每个阶段一个**独立**的芯片，带它上次实际耗时 —— 让人看得见代价再决定。
+  //   绝不给「一键重跑全部」：那会从最早的 stale 阶段回滚，改一次绘图代码就把小时级的
+  //   code 带上（实测差点这么设计，被用户一眼看穿）。
+  $('stale_chips').innerHTML=[...new Set([...list,...pol])].map(id=>{
+    const t=(st&&st.stage_t&&st.stage_t[id]&&st.stage_t[id].elapsed)||0;
+    const cost=t>1?(' <span style="color:var(--dim)">'+fmtHMS(Math.round(t))+'</span>'):'';
+    return `<button class="stale-chip" data-sid="${id}" style="padding:3px 10px;font-size:12px">`
+         + `${STAGE_NAME[id]||id}${cost}</button>`;
+  }).join('')+'<span style="color:var(--dim);font-size:11.5px">（数字是上次实际耗时）</span>';
+  document.querySelectorAll('.stale-chip').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.sid;
+    const t=(lastSt&&lastSt.stage_t&&lastSt.stage_t[id]&&lastSt.stage_t[id].elapsed)||0;
+    const cost=t>1?('，上次跑了 '+fmtHMS(Math.round(t))):'';
+    if(!confirm('从「'+(STAGE_NAME[id]||id)+'」重跑'+cost+'？\n'
+               +'会清空该阶段及之后的产物并重跑（前序未变的自动跳过；产物先暂存过去，可恢复）。\n'
+               +'暂存落点：'+(deliveryCacheHint())+'\n\n'
+               +'提示：若你改的是绘图代码，通常重跑「排版与版式」重画图就够了，不必重跑「编码计算」。'))
+      return;
+    fetch('/api/redo',{method:'POST',headers:{'Content-Type':'application/json'},
+                       body:JSON.stringify({stage:id})})
+      .then(r=>r.json()).then(d=>{
+        alert('已暂存：'+((d.cleared||[]).join('、')||'无')+'\n点 ▶ 开始全链 即从该阶段续跑');
+        loadState();
+      });
+  });
+}
+
+// 决策面板。★ 必须幂等：renderStages 被 SSE + 4 秒轮询 + 高频 log 事件反复触发，
+// 不加签名守卫会在用户正选下拉/填限时的时候被每秒冲掉。
+let _decSig=null;
+// 当前黄灯卡在哪个阶段 —— `decide()` 要拿它判「回退目标是不是真在前序」。
+// `pending` 是 `renderDecision(st)` 的局部变量，`decide` 拿不到，所以在这儿留一份。
+let _curStage='';
+// 最近一次渲染的 pending —— 下拉改选时要拿它重算「哪个按钮是推荐的」（见 syncDecideButtons）。
+let _lastP=null;
+
+// ★ 蓝框（`primary`）**只给推荐的那一个动作**（用户 2026-09-27：
+//   「蓝色的比较显眼，让人知道推荐的哪个」）：
+//   · 有推荐的回退目标时 → 「↩ 回退到「X」（推荐）」用蓝框，「🔁 再试一次」退回灰框（与其它按钮同款）；
+//   · 没有推荐时 → 蓝框回到「再试一次」（它是"继续做下去"的那一个）。
+//   ⚠️ **超时灯不套这条**：那盏灯的推荐语义是"延长 / 不延长"，把回退标成蓝的会被读成"建议放弃"。
+//   ⚠️ 下拉改选之后必须重算 —— 否则蓝框会停在一个**已经不是推荐**的目标上（所以绑 onchange）。
+function syncDecideButtons(p, acts){
+  p = p || {}; acts = acts || (p.actions || []);
+  const t = $('dc_stage') ? $('dc_stage').value : '';
+  if (acts.includes('rollback')) {
+    // 收了下拉之后，把"回退到谁"写进按钮上（用户看不到下拉了，得让他知道点下去会去哪）
+    $('dc_rollback').textContent = t
+      ? '↩ 回退到「' + (STAGE_NAME[t] || t) + '」' + (t === p.recommended ? '（推荐）' : '')
+      : '↩ 回退到所选阶段';
+  }
+  const rollbackRecommended = acts.includes('rollback') && !!p.recommended
+                              && t === p.recommended && p.kind !== 'overtime';
+  // ⓪ 读题：这盏灯的**主按钮**是「确认」（不是重试）—— `recommended` 在这里恒为 None
+  //   （它在链首、没有可回退的前序），蓝框得显式给它，否则用户看到的主按钮是"再试一次"。
+  const confirmPrimary = acts.includes('confirm');
+  if ($('dc_confirm'))  $('dc_confirm').classList.toggle('primary', confirmPrimary);
+  if ($('dc_rollback')) $('dc_rollback').classList.toggle('primary', rollbackRecommended);
+  if ($('dc_retry'))    $('dc_retry').classList.toggle('primary', !rollbackRecommended && !confirmPrimary);
+}
+function renderDecision(st){
+  const p=st&&st.pending, el=$('decide');
+  if(!p){
+    if(el.style.display!=='none'){ el.style.display='none'; _decSig=null; }
+    // ★ **必须在这里也把读题面板清一次**（2026-09-29 排查抓出来的 high）。
+    //   原先这里直接 return，于是 `renderIntakePanel` 的"灯灭了 ⇒ 清空 + 清脏标记"那一段
+    //   **永远不会执行**（那句只在 `p.kind!=='intake'` 时跑到，而灯灭时函数压根没被调用）。
+    //   后果：点「🔁 再试一次」后 pending 变 null → 停下 ⓪ 重跑 → 新灯回来时
+    //   `box.dataset.dirty==='1' && box.children.length` 判真 ⇒ **直接 return 不重画**
+    //   ⇒ 用户在新这盏灯上看到的分类表与题面**全是上一轮的**，而 `_ikCollect` 会把那份旧题面
+    //   当 `problem_text` 提交 ⇒ 写进 `request/problem.md`（①–⑯ 全链的题意锚点）。
+    renderIntakePanel(null);
+    return;
+  }
+  const acts=p.actions||[];
+  // ★ 签名要覆盖**所有会被渲染的字段**，不能只算 issues 的长度 —— 否则「同一阶段第二次
+  //   黄灯、issue 条数相同但内容/原因不同」时面板不重画，用户看到的是上一条的旧文本
+  //   （面板撒谎，比不显示更糟）。tail 是易变的原始输出，排除掉免得高频重画。
+  const sig=JSON.stringify([p.stage,p.kind,p.status,p.verdict,acts,p.reason,p.recommended,
+                            p.recommended_source,p.attest_default,p.retry_cap_default,
+                            p.retry_extra_default,p.retry_extra_max,p.retry_cap_max,
+                            // ⓪ 读题：分类表/AI 事实也要进签名 —— 否则"同一盏灯、文件清单变了"
+                            // （例如用户在别处改了盘上的原件）时面板不重画，显示的是旧表。
+                            p.files,p.facts,
+                            p.estimate,p.issues,p.advisories_total,
+                            // ★ 刻意**不**放 p.tail（745 行那句注释就是这么说的）：它是每轮都变的
+                            //   原始输出，进签名会让面板每几十秒整段重画一次 —— 而重画会把用户正在填的
+                            //   「再延长 N 分钟」冲回默认值（2026-09-29 审查抓出来的 low）。
+                            (p.advisories||[]).map(a=>a.id),
+                            (p.candidates||[]).map(c=>[c.id,c.out_changed,c.unchanged])]);
+  if(sig===_decSig) return;
+  _decSig=sig;
+  _curStage=p.stage;
+  _lastP=p;
+  // ★ 必须写 'block'，不能写 '' —— `#decide` 的初始隐藏是在 **CSS 规则**里
+  //   （`#decide{display:none}`），写 '' 只是**删掉内联声明**，级联回落到样式表后仍是 none，
+  //   面板永远出不来（实测：pending 已就绪、页头显示「等待你决策」，面板却整块不可见）。
+  //   对照 `#stalebar`：它的隐藏是 **HTML 内联属性**，写 '' 能回落到默认 block，所以没这问题。
+  el.style.display='block';
+  const over=p.kind==='overtime';
+  // 由「暂停」产生的黄灯：面板上要写明白"停在这儿了、但还能接着做"，
+  // 否则用户会以为已经结束、不知道底下那几个按钮是干什么的。
+  const halted=p.kind==='paused';
+  $('dc_title').textContent = over?'⏱ 超时，任务仍在运行'
+    : halted?'⏸ 已暂停 — 接着选下一步':'⏳ 等待你决策';
+  // ★ 超时黄灯**不是**「它判你不合格」：主语是**当前这个阶段**（要延长的是它的限时），
+  //   「回退」只是"不延长时的另一条路"。原先这句一律写成「推荐回退 X（默认映射）」——
+  //   在超时灯上读起来像"这盏灯是关于 X 的"（实测 2026-09-26：⑤结果可信度审计 超时，
+  //   面板写着"推荐回退 编码计算"，被读成"给 ④ 延长"，而实际上延长按钮作用的是 ⑤）。
+  $('dc_sub').textContent = (STAGE_NAME[p.stage]||p.stage)+' · 状态 '
+    +(over?'超时':(p.status||'—'))
+    +(p.verdict?(' · 裁决 '+p.verdict):'')
+    +(p.recommended?((over?' · 不延长则回退到 ':' · 推荐回退 ')
+        +(STAGE_NAME[p.recommended]||p.recommended)
+        +(p.recommended_source==='handback'?'（agent 主动交回）'
+         :p.recommended_source==='verdict'?'（裁决给出）':'（默认映射）')):'');
+  $('dc_reason').textContent = p.reason||'';
+  $('dc_issues').textContent = (p.issues||[]).slice(0,6).map(i=>
+      '· ['+(i.severity||'')+'] '+(i.id||'')+'：'+(i.fix||i.evidence||'')).join('\n')
+    + (p.estimate?('\n· 缩比预估：约 '+(p.estimate.total_est_s/60).toFixed(0)+' 分钟'):'');
+  // ⓪ 读题的确认区：只在读题那盏灯上出现，其余情况**清空**（同一块 div 被复用，
+  //   不清理的话下一次普通黄灯下面会挂着上一次的分类表）。
+  renderIntakePanel(p);
+  // ★ 轻微/可选项单独一块：它们**不拦链、不进返修**，所以不能混在 issues 里吓人；
+  //   但也不能只躺在报告里 —— 用户要拿成本估计决定加不加。
+  //   ★ 默认**折叠**：一轮定点返修会留下几十条文字痕迹（实测一轮 23 条，全是"只改一句/
+  //     不改任何数值"级），全铺开会把面板淹掉、还让人误以为"问题这么多"。
+  //     折叠行只说**共几条 + 按类别分布**，点开才看明细。
+  const advs=p.advisories||[], advTotal=(p.advisories_total!=null?p.advisories_total:advs.length);
+  const advWrap=$('dc_advwrap'), advEl=$('dc_adv'), advHead=$('dc_advhead');
+  if(advTotal){
+    advWrap.style.display='block';
+    const by={}; advs.forEach(a=>{const c=a.category||'其他'; by[c]=(by[c]||0)+1;});
+    const brk=Object.keys(by).map(c=>c+' '+by[c]).join(' · ');
+    advHead._txt='轻微建议 '+advTotal+' 条（'+brk+'）—— 不影响放行，看成本决定加不加'
+      +(advTotal>advs.length?('；面板只带前 '+advs.length+' 条，全部见报告'):'');
+    advHead.textContent='▸ '+advHead._txt;
+    advEl.textContent = advs.map(a=>
+        '· '+(a.id||'')+'：'+(a.fix||a.evidence||'')
+        +(a.cost?(' ｜ 成本：'+a.cost):'')
+        +(a.why_not_blocking?('\n   ↳ 不拦链理由：'+a.why_not_blocking):'')).join('\n');
+  } else {
+    advWrap.style.display='none'; advEl.style.display='none';
+  }
+  // ★ 最后输出：**进程非零退出**这类失败没有裁决、`issues` 是空的，这一栏就是唯一线索。
+  //   所以那种情况下默认**展开**（别的黄灯默认折叠，别占地方）。
+  const tailTxt=(p.tail||'').trim();
+  const tailWrap=$('dc_tailwrap'), tailEl=$('dc_tail'), tailHead=$('dc_tailhead');
+  if(tailTxt){
+    const noVerdict=!(p.issues||[]).length && (p.status==='failed'||p.status==='stopped');
+    tailWrap.style.display='block';
+    tailHead._txt='最后输出（'+tailTxt.length+' 字）'
+      +(noVerdict?' —— 进程没给出明确裁决，失败原因通常在这里':'');
+    tailHead.textContent=(noVerdict?'▾ ':'▸ ')+tailHead._txt;
+    tailEl.textContent=tailTxt;
+    tailEl.style.display=noVerdict?'block':'none';
+    tailEl.scrollTop=tailEl.scrollHeight;   // 展开时定位到末尾（错误信息一般在末尾）
+  } else { tailWrap.style.display='none'; tailEl.style.display='none'; }
+  // 目标阶段下拉：回退可选任意前序；认证只能选非门禁。默认值按动作分别取，
+  // 用一个下拉同时服务两者，避免界面上出现两个「选阶段」让人搞混。
+  $('dc_stage').innerHTML=(p.candidates||[]).map(c=>
+      `<option value="${c.id}">${STAGE_NAME[c.id]||c.id}`
+      +(STAGE_GATE[c.id]?'（门禁）':'')
+      +(c.out_changed?' ✎产物已改':'')
+      +(c.unchanged?'（未变，回退会直接跳过）':'')
+      // ★ 只给「人工认证」用的那项要写明：非门禁阶段失败时，服务端会把
+      //   `attest_default`（可能是**当前阶段自己**，或已不是前序）补进 candidates，好让
+      //   认证下拉预选得中。它**不是**合法的回退目标 —— 不写明的话，用户会看到一个
+      //   点下去必然被拒的回退选项（服务端 400「返修目标必须是有效前序阶段」）。
+      +(c.only_attest?'（仅用于人工认证）':'')
+      +`</option>`).join('');
+  // ★ 下拉同时服务「回退」与「认证」，但默认值只能有一个，而两者要的目标不同：
+  //   回退要**推荐的返修目标**（副标题已宣告），认证要**你改过产物的那个阶段**。
+  //   早先按黄灯种类取（失败黄灯取 attest_default），于是「不动下拉直接点回退」会打到一个
+  //   不是推荐值的阶段上；没有推荐值时更糟 —— 下拉静默停在第一项「① 文献定向」，
+  //   一点就把整链回退到最上游。现在统一取 recommended；没有就**不预选**，逼用户显式选。
+  const dflt=p.recommended||p.attest_default||'';
+  if(dflt){ $('dc_stage').value=dflt; }
+  else{
+    $('dc_stage').insertAdjacentHTML('afterbegin','<option value="">— 请选择目标阶段 —</option>');
+    $('dc_stage').value='';
+  }
+  // ★ 超时（延长）面板里的「目标阶段」下拉与延长**毫不相干** —— 延长的是**正在跑的那个阶段**，
+  //   不是下拉里选的阶段（用户 2026-09-27：「目前在跑 10，前面却写的 4 或者别的阶段超时延长」
+  //   「延长又不是他，选他没啥用」）。⇒ **延时时把下拉收起**，并把「再延长 N 分钟 + 延长按钮」
+  //   挪到它原来的位置上（用户：「仅在延长时把这个选项删了，把后面这个延长移到选项的位置」）。
+  //   回退的目标仍是**推荐值**（`dflt` 上面已设、副标题也已宣告），并写进回退按钮文案，
+  //   免得收了下拉之后看不见要回退到谁。
+  // 只在**超时且已有预选目标**时收起：没有预选值时留着下拉（否则回退按钮会变成死路 ——
+  // 点下去只会提示"请先选一个阶段"，而下拉又看不见）
+  $('dc_stagewrap').style.display = ((over && dflt) || !(p.candidates||[]).length) ? 'none' : '';
+  $('dc_capwrap').style.display = over ? '' : 'none';
+  {                       // 位置固定成「再延长 N 分钟 → 延长按钮」；两者在非超时面板里本就是隐藏的
+    const anchor = $('dc_stagewrap');
+    anchor.parentNode.insertBefore($('dc_capwrap'), anchor);
+    $('dc_capwrap').insertAdjacentElement('afterend', $('dc_extend'));
+  }
+  // ★ 框里填的是**追加量**，不是新的总上限（见 server.py 的 RETRY_CAP_* 注释）。
+  //   默认 30 → 到点问 → 你加 10 ⇒ 临时上限 40 → 40 到点**再问一次** → 再加…
+  //   原先默认值取的是「当前上限」，读起来像"新的上限"，用户填 10 就把 30 缩短成了 10。
+  if(over){
+    // ★ 兜底值必须与后端常量一致：`retry_extra_max` 缺失时原来兜 1800 秒
+    //   （30 分钟，那是**已废弃**的旧 RETRY_CAP_MAX）⇒ 面板把"一次最多追加 60 分钟"悄悄压回
+    //   30 分钟。后端现在是 `RETRY_CAP_EXTRA_MAX = 3600`（见 lib/web/server.py）。
+    const emin=Math.round((p.retry_extra_default||600)/60), emax=Math.round((p.retry_extra_max||3600)/60);
+    $('dc_cap').min=emin; $('dc_cap').max=emax; $('dc_cap').step=5; $('dc_cap').value=emin;
+    const cur=Math.round((p.retry_cap_default||1800)/60);
+    $('dc_caphint').textContent='（追加 '+emin+' 分钟后本次上限 = '+cur+'+'+emin+' = '
+      +(cur+emin)+' 分钟；到点会再问你一次，总上限 '
+      +Math.round((p.retry_cap_max||10800)/60)+' 分钟）';
+    // 按钮上写明**延长的是谁的限时** —— 光看"推荐回退 X"会以为这盏灯是关于 X 的（见上面 dc_sub）。
+    $('dc_extend').textContent = '⏱ 延长「'+(STAGE_NAME[p.stage]||p.stage)+'」的限时';
+  }
+  $('dc_retry').style.display    = acts.includes('retry')?'':'none';
+  // ⓪ 读题：只有这盏灯给「确认」（服务端 `_action_set` 的 intake 分支）。
+  $('dc_confirm').style.display  = acts.includes('confirm')?'':'none';
+  $('dc_extend').style.display   = acts.includes('extend')?'':'none';
+  $('dc_rollback').style.display = acts.includes('rollback')?'':'none';
+  // 按钮文案 + **蓝框只给推荐的那一个动作**（见 syncDecideButtons 的说明）。
+  // 下拉改选后要跟着重算，所以把 onchange 也接上（每次渲染重设一次，幂等）。
+  $('dc_stage').onchange = ()=> syncDecideButtons(_lastP);
+  syncDecideButtons(p, acts);
+  $('dc_disclose').style.display = acts.includes('disclose')?'':'none';
+  // attest 没有可认证的目标（例如卡在门禁上、前面又没有任何可认证阶段）时必须藏起来 ——
+  // 否则按钮可点但只会拿到 400「未知的认证目标 None」，界面上没有任何可行动提示。
+  // ★ 判据从 `attest_default` 改成「有没有未解决项」（2026-09-23，用户实测报的 bug）。
+  //   旧写法有两个毛病：① `attest_default` 是**黄灯亮起那一刻**的快照，而人**总是先改文件、
+  //   再回来点按钮** —— 改完文件之后它反而变成 none，按钮整个消失（实测：我把 ⑤ 判词
+  //   要求的三处改完，按钮不见了）；② "手工修复"该在**有东西可修**时出现，
+  //   而那正是"有 issues"这件事。真正能不能认证由面板里的现算值决定（见 /api/hil）。
+  $('dc_attest').style.display   = (p.issues && p.issues.length)?'':'none';
+  $('dc_msg').textContent='';
+}
+// ---- ⓪ 读题的确认区----
+// 三块：① 分类表（每份原件去哪，逐行可改）② 题面并排（机械抽取 vs AI 读的，都可看、AI 那份可改）
+//       ③ 更正说明 + 完整报告入口。
+// ★ 长文本（AI 报告、机械抽取）**不进 pending 快照** —— `/api/state` 每 4 秒轮询一次，
+//   把几万字的正文塞进每一轮会把面板拖慢；这里按服务端给的 paths 现取现渲染。
+const IK_ROLES=[["problem","题面"],["attachment","附件"],["data","数据"],
+                ["ignore","忽略（不动它）"],["needs_manual","需人工处理"]];
+let _ikLoadedFor=null;
+function renderIntakePanel(p){
+  const box=$('dc_intake');
+  if(!box) return;
+  if(!p || p.kind!=='intake'){                 // 同一块 div 被复用 ⇒ 别的黄灯上必须清掉
+    if(box.style.display!=='none'){ box.style.display='none'; box.innerHTML=''; _ikLoadedFor=null; }
+    delete box.dataset.dirty;                  // 灯灭了 ⇒ 脏标记跟着清（下一盏灯从零开始）
+    return;
+  }
+  // ★ 用户正在这张表/这个框上改东西时**不许重画**（2026-09-28，我自己审出来的）：
+  //   这是唯一一个带**可编辑输入**的黄灯面板，而 `/api/state` 每 4 秒轮询一次 ——
+  //   状态一变就 `innerHTML=h` 会把已经打了一半的题面/路径/说明**整段冲掉**，
+  //   用户只会觉得"面板老在吃我打的字"。手法照 `fillDelivery` 那条现成的 `dataset.dirty`：
+  //   动过就置脏、重画跳过；这盏灯灭了（或确认成功）时清掉。
+  const rows=p.files||[], a=(p.facts&&p.facts.ai)||{};
+  // 这一盏灯对应的那份读题结果的**身份**（题面长度 + 文件数）—— 见下面脏标记那条
+  const ikKey=p.stage+'|'+(a.chars||0)+'|'+rows.length;
+  // ★ 脏标记只对**同一份读题结果**有效（2026-09-29 排查抓出来的 high）：
+  //   原先只判"脏 + 有子节点"就不重画 —— 于是"⓪ 重跑后带回新的一份读题"时，面板会继续显示
+  //   **上一轮**的分类表与题面（`renderDecision` 的 `!p` 分支现已补清，但那条只在轮询恰好
+  //   落在 pending 为 null 的窗口里才生效）。把身份并进判据之后，**换了那份结果就一定重画**，
+  //   不再依赖"有没有撞上那个窗口"。
+  if(box.dataset.dirty==='1' && box.children.length && box.dataset.ikFor===ikKey) return;
+  box.dataset.ikFor=ikKey;
+  let h='<div style="border:1px solid var(--line);border-radius:6px;padding:8px;background:#0d1117">';
+  h+='<div style="font-size:12.5px;margin-bottom:6px">AI 读到了 <b>'+rows.length+'</b> 份原件'
+    +'。逐行核对"去哪"；右栏是 AI 读到的题面，<b>对着左栏的原 PDF 看它读得对不对</b>'
+    +'—— 不对就直接改（「✎ 改文字」），改完点「✓ 确认并开始跑链」。</div>';
+  // AI **自称**的几个量：纯信息，不再是"机械 vs AI"的绿/黄对照（机械读题已拆，没有对照物）。
+  // ★ 值一律转义：它们来自 **AI 写的** INTAKE.json，是不可信输入。
+  const info=(label,v)=>'<span style="border:1px solid var(--line);color:var(--dim);'
+    +'border-radius:9px;padding:1px 7px;margin-right:6px;font-size:11.5px">'
+    +label+'：'+((v==null)?'—':esc(v))+'</span>';
+  h+='<div style="margin-bottom:7px">'+info('AI 自称页数',a.pages)+info('AI 自称字数',a.chars)
+    +info('AI 数出的小问',a.subquestions)+info('AI 数出的附件',a.files)+'</div>';
+  h+='<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  rows.forEach((r,i)=>{
+    h+='<tr>'
+      +'<td style="padding:3px 6px;border-top:1px solid var(--line);word-break:break-all">'+esc(r.path)
+      +(r.why?(' <span title="'+esc(r.why)+'" style="cursor:help;color:var(--dim)">ⓘ</span>'):'')+'</td>'
+      +'<td style="padding:3px 6px;border-top:1px solid var(--line)"><select data-ik-role="'+i+'">'
+        +IK_ROLES.map(([v,t])=>'<option value="'+v+'"'+(v===r.role?' selected':'')+'>'+t+'</option>').join('')
+      +'</select></td>'
+      +'<td style="padding:3px 6px;border-top:1px solid var(--line)">'
+      +'<input data-ik-target="'+i+'" value="'+esc(r.target||'')+'" '
+      +'style="width:100%;background:#0d1117;color:#dfe6ee;border:1px solid var(--line);font:11.5px Consolas,monospace"></td>'
+      +'</tr>';
+  });
+  h+='</table>';
+  // ---- 分栏：左 = 原 PDF，右 = 渲染后的题面 ----
+  // 题面那一行（`role=problem`）优先；没标出来就退而取第一份 .pdf；都没有就不开这一栏。
+  const pdfRow=rows.find(r=>r.role==='problem'&&/\.pdf$/i.test(r.path||''))
+             ||rows.find(r=>/\.pdf$/i.test(r.path||''));
+  const pdfUrl=pdfRow?('/api/read?path='+encodeURIComponent(pdfRow.path)):'';
+  h+='<div style="display:flex;gap:10px;margin-top:9px;align-items:stretch">';
+  if(pdfUrl){
+    h+='<div style="flex:1;min-width:0"><div style="font-size:12px;margin-bottom:3px">原 PDF（'
+      +esc(String(pdfRow.path).split('/').pop())+'）</div>'
+      +'<object data="'+esc(pdfUrl)+'" type="application/pdf" style="width:100%;height:340px;'
+      +'border:1px solid var(--line);background:#fff"></object>'
+      +'<div style="font-size:11.5px;color:var(--dim);margin-top:3px">'
+      +'浏览器没显示出来就 <a href="'+esc(pdfUrl)+'" target="_blank" rel="noopener">在新标签打开</a></div></div>';
+  }
+  h+='<div style="flex:1;min-width:0"><div style="font-size:12px;margin-bottom:3px;display:flex;'
+    +'justify-content:space-between;align-items:baseline"><span>AI 读到的题面'
+    +(pdfUrl?'（对着左边这份 PDF 核）':'')+'</span>'
+    +'<button id="ik_edit" onclick="ikToggleEdit()" style="font-size:11.5px;padding:1px 8px">✎ 改文字</button></div>'
+    +'<div id="ik_view" class="markdown" style="height:340px;overflow:auto;background:#0d1117;'
+    +'border:1px solid var(--line);padding:8px;font-size:13px"></div>'
+    +'<textarea id="ik_text" spellcheck="false" style="display:none;width:100%;height:340px;'
+    +'background:#0d1117;color:#dfe6ee;border:1px solid var(--line);'
+    +'font:11.5px/1.45 Consolas,monospace"></textarea></div></div>'
+    +'<div style="margin-top:8px"><div style="font-size:12px;margin-bottom:3px">'
+    +'更正说明（不想自己改正文就写在这儿；会作为提示交给 ① 文献定向，AI 的报告本身不改）</div>'
+    +'<textarea id="ik_notes" style="width:100%;height:52px;background:#0d1117;color:#dfe6ee;'
+    +'border:1px solid var(--line);font:12px/1.5 Consolas,monospace"></textarea></div>'
+    +'<div style="margin-top:6px;font-size:12px">'
+    +'<button onclick="openFile(\''+esc(p.report_path||'reports/INTAKE_REPORT.md')+'\')">📄 看 AI 的完整读题报告</button> '
+    +(pdfUrl?('<button onclick="window.open(\''+esc(pdfUrl)+'\',\'_blank\')">↗ 在新标签打开原 PDF</button> '):'')
+    +'<span style="color:var(--dim)">（报告是 agent 的证据，只读 —— 要改就改上面的题面或更正说明）</span></div>';
+  h+='</div>';
+  box.innerHTML=h; box.style.display='block';
+  delete box.dataset.dirty;                    // 刚画完 ⇒ 干净
+  // 表格/文本框一被碰过就置脏。事件委托绑在 `box` 自己身上 —— 而 `box` 是**常驻**节点
+  // （被重画的只有它的子节点）⇒ 只能绑一次，否则每轮都挂一个同样的监听（累积泄漏）。
+  if(!box.dataset.bound){
+    box.dataset.bound='1';
+    box.addEventListener('input',()=>{ box.dataset.dirty='1'; });
+    box.addEventListener('change',()=>{ box.dataset.dirty='1'; });
+  }
+  // ★ 重画之后节点是**空的**，必须重取（2026-09-28 审查抓出来的 medium）：
+  //   重画走 `box.innerHTML=h`（同步清空 #ik_text/#ik_view），而长文本只在"换了一盏灯"时才取
+  //   ⇒ 状态一变（轮询 4 秒一次）面板重画后题面**全空**，而用户正要靠它核对。判据：灯变了**或**节点空着。
+  //   key 里带 `a.chars`：⓪ 重跑（点了「再试一次」）后 AI 的题面会变，长度变了就该重取；
+  //   原先靠 `p.mechanical_path` 当指纹，那个字段随机械读题一起没了。
+  const key=ikKey;                             // 与上面脏标记那条判据共用同一个身份，别各写一份
+  const _emptyNode=!($('ik_text')&&$('ik_text').value);
+  if(_ikLoadedFor!==key || _emptyNode){
+    _ikLoadedFor=key;
+    (async()=>{
+      try{
+        const r=await fetch('/api/intake'); const d=await r.json();
+        const ta=$('ik_text'), v=$('ik_view');
+        if(ta && !ta.value) ta.value=(d.ai||'');
+        if(v && !v.innerHTML) v.innerHTML=(ta?mdToHtml(ta.value):'');
+      }catch(e){}
+    })();
+  }
+}
+function ikToggleEdit(){
+  // 「渲染态 ⇄ markdown 原文」的开关。渲染态是默认（用户 2026-09-29：读完要生成**渲染后的**
+  // md 让他对照 PDF 检查）；要改就切到原文，改完切回来看效果。
+  const v=$('ik_view'), ta=$('ik_text'), b=$('ik_edit');
+  if(!v||!ta) return;
+  if(ta.style.display!=='none'){               // 正在编辑 ⇒ 存回渲染
+    v.innerHTML=mdToHtml(ta.value);
+    v.style.display='block'; ta.style.display='none';
+    if(b) b.textContent='✎ 改文字';
+  }else{                                       // 正在渲染 ⇒ 切到编辑
+    ta.style.display='block'; v.style.display='none';
+    if(b) b.textContent='✓ 看渲染';
+    ta.focus();
+  }
+}
+function _ikCollect(){
+  const rows=[];
+  document.querySelectorAll('[data-ik-role]').forEach((sel,i)=>{
+    const t=document.querySelector('[data-ik-target="'+i+'"]');
+    const src=(_lastP&&_lastP.files&&_lastP.files[i])?_lastP.files[i].path:'';
+    rows.push({path:src, role:sel.value, target:(t?t.value:'')});
+  });
+  const ta=$('ik_text'), nt=$('ik_notes');
+  return {roles:rows, problem_text:(ta?ta.value:null), corrections:(nt?nt.value:'')};
+}
+async function decide(action){
+  const stage=$('dc_stage').value, msg=$('dc_msg');
+  const body={action, note:''};
+  if(action==='rollback'||action==='attest') body.stage=stage;
+  // ⓪ 读题确认：把核对过的分类表、题面正文、更正说明一并交上去。
+  // ★ 服务端会**再校验一遍**（`_validate_roles`）—— 前端只是收集，不做判定。
+  if(action==='confirm'){
+    const ik=_ikCollect();
+    if(!ik.roles.length){ msg.textContent='确认表读不出来（页面可能被改过）—— 刷新一下再试。'; return; }
+    const n=ik.roles.filter(r=>r.role!=='ignore'&&r.role!=='needs_manual').length;
+    if(!confirm('确认 AI 读到的内容？\n\n会把 _inbox 里的文件按上面那张表搬到位（'+n+' 份），'
+               +'删掉 _inbox，然后从 ① 文献定向 开始跑链。\n'
+               +'拿不准的行就先改上面那张表里的「角色」或目标路径再确认；'
+               +'题面读错了就点右栏的「✎ 改文字」直接改，或在「更正说明」里写清。')) return;
+    body.roles=ik.roles; body.problem_text=ik.problem_text; body.corrections=ik.corrections;
+  }
+  // ★ 限时输入框只有在**超时黄灯**时才是可见、有意义的。普通失败重试时它是隐藏的，
+  //   但里面的值还留着默认的 1（或上一次超时留下的旧值）—— 照读会把该阶段的墙钟上限
+  //   从 CALL_HARD_CAP(3h) 悄悄压到 1h，于是 code 这种实测要 ~112 分钟的阶段
+  //   会在 60 分钟时弹一次**假超时黄灯**。只在真超时时才带上这个字段。
+  if(action==='extend' || (action==='retry' && $('dc_capwrap').style.display!=='none')){
+    const m=parseFloat($('dc_cap').value);          // 单位是**分钟**
+    // 钳位照**输入框自己的 max**（它来自 server.py 的 RETRY_CAP_EXTRA_MAX）——
+    // 别在这儿再写一个硬编码的数：第一版写死 `Math.min(30, m)`，于是把上限调到 60 之后，
+    // 面板能填 60、发出去的却是 30，而且没有任何提示。
+    const capMin=parseFloat($('dc_cap').max)||60;
+    if(m>0) body.extra_seconds=Math.round(Math.min(capMin, m)*60);
+  }
+  if(action==='rollback'||action==='attest'){
+    // ★ 空值必须拦住：没有推荐值时不预选，下拉停在一个占位项上；照发会让服务端拿到空 stage。
+    if(!stage){ msg.textContent='请先在「目标阶段」里选一个阶段。'; return; }
+    // ★ 回退目标必须是**严格前序**：同一只下拉也服务于「人工认证」，
+    //   而认证的目标可以是**当前阶段自己**（服务端为它补了一条 candidates，见 only_attest）。
+    //   原先照发 ⇒ 服务端 `_target_index` 抛「必须是有效前序阶段」→ 400，
+    //   用户看到的是一个**必然失败**的按钮。这里先拦下来并说清为什么。
+    if(action==='rollback'){
+      const cur=(typeof STAGE_ORDER!=='undefined'?STAGE_ORDER:[]).indexOf(_curStage);
+      const tgt=(typeof STAGE_ORDER!=='undefined'?STAGE_ORDER:[]).indexOf(stage);
+      if(cur<0||tgt<0||tgt>=cur){
+        msg.textContent='回退只能打到**当前阶段之前**的阶段 ——「'
+          +(STAGE_NAME[stage]||stage)+'」不在其列（它只能用于「人工修复」）。';
+        return;
+      }
+    }
+    if(action==='attest' && STAGE_GATE[stage]){
+      msg.textContent='门禁阶段不能人工认证 —— 要放行门禁请用「接受并披露」。'; return;
+    }
+    // 回退会**清空该阶段及之后的产物**（先暂存到 cache/），代价不小 —— 必须让用户
+    // 在点下去之前看见目标阶段的名字，而不是点完了才知道打到了哪儿。
+    const verb=action==='rollback'?'回退':'重新认证';
+    if(!confirm(`${verb}到「${STAGE_NAME[stage]||stage}」？\n`
+               +(action==='rollback'
+                 ? '该阶段及之后的产物会被清空并重跑（前序未变的自动跳过），\n'
+                   +'残留会移进：'+deliveryCacheHint()+'（可恢复）。'
+                 : '将先跑客观校验，通过后以当前盘面重新认证该阶段，并留下审计痕。')))
+      return;
+  }
+  msg.textContent='提交中…';
+  try{
+    const r=await fetch('/api/decision',{method:'POST',headers:{'Content-Type':'application/json'},
+                                        body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    msg.textContent=r.ok?('已受理：'+action+(j.attested?(' → '+j.attested):''))
+                        :('被拒：'+(j.detail||r.status));
+    if(r.ok) loadState();
+  }catch(e){ msg.textContent='提交失败：'+e; }
+}
+function _tickTimer(){
+  const st=lastSt;
+  let sec=st&&st.elapsed_total!=null?st.elapsed_total:null;
+  if(st&&st.running&&st.elapsed_total!=null){ sec=st.elapsed_total+(Date.now()-(lastTickMs||Date.now()))/1000; }
+  const el=$('timer');
+  if(!el) return;
+  if(sec==null){ el.textContent=''; return; }
+  el.textContent='总耗时 '+fmtHMS(Math.round(sec));
+}
+let lastTickMs=0,lastSt=null;
+setInterval(()=>{ if(lastSt&&lastSt.running){ lastTickMs=Date.now(); _tickTimer(); } },1000);
+function fmtHMS(s){const h=Math.floor(s/3600),m=Math.floor(s%3600/60),ss=s%60;
+  return (h>0?(h+'h '):'')+(m>0?m+'m ':'')+ss+'s';}
+/* 日志渲染加固（前端自愈，防大日志/高频写入卡死页面）：
+   - 日志装进独立滚动框（自带下拉条），不占浏览器页面滚动；
+   - 超长行截断 + 120ms 合并渲染 + 内容没变不重画；
+   - 贴底才自动滚（新的把旧的顶上去）；往上翻历史时暂停刷新，滚回底部自动续更。 */
+const LOG_MAX=400, LOG_LINE_MAX=3000;
+let _logTimer=null, _logPainted=-1;
+function sanitizeLog(t){ t=(t==null?'':String(t)); if(t.length>LOG_LINE_MAX) t=t.slice(0,LOG_LINE_MAX)+' …[截断]'; return t; }
+function logAtBottom(p){ return p.scrollHeight - p.scrollTop - p.clientHeight < 40; }
+function logPane(){
+  if(!view._lp){
+    view.className=''; view.innerHTML='';   // 清掉上一标签页的 DOM（否则图片会从透明日志框底下透出来）
+    view.style.position='relative'; view.style.padding='0'; view.style.overflow='hidden';
+    const d=document.createElement('div');
+    d.style.cssText='position:absolute;inset:0;overflow-y:auto;white-space:pre-wrap;word-break:break-word;box-sizing:border-box;padding:10px 14px;font:13px/1.6 Consolas,Menlo,monospace;';
+    d.onscroll=()=>{ syncLogJump(d); if(logAtBottom(d) && logBuf.join('\n').length!==_logPainted) renderLog(false); };
+    // ★ 「↓ 回到最新」浮动按钮（用户 2026-09-28：「经常往上翻，然后回到下面还得往下翻」）。
+    //   日志是**贴底才自动滚动**的（见 renderLog：不贴底就暂停重画，让你安心翻历史），
+    //   于是往上翻之后就没有回底部的入口了 —— 这个按钮补上。
+    //   ★ 它挂在 `view` 上、**不是**挂在滚动容器 `d` 里：挂在 `d` 里会跟着内容一起滚走。
+    //     `view` 是 `position:relative` 的，所以 `position:absolute` 正好浮在右下角。
+    //   ★ 只在**离开底部**时出现：贴在底部还杵着它，会挡住最新几行。（App 里都是这个行为。）
+    const b=document.createElement('div');
+    b.textContent='↓ 回到最新';
+    b.title='滚到最底下（往上翻历史之后用）';
+    // 配色：**蓝色框 + 黄字**（用户 2026-09-28 拍板；黄字用 `--run` #f1c40f，比纯白更醒目）。
+    // 配色：**蓝框 + 荧光黄字**（用户 2026-09-28 拍板）。
+    //   · 框 `--acc` #4da3ff —— 主题里"可点"的信号色（`a{color:var(--acc)}`）
+    //   · 字 `#eaff00` 荧光黄 + 黄色 text-shadow 辉光，在几乎全黑的日志底色上最跳
+    // ★ 走过的弯路记一下（免得再退回去）：最初是 `--panel` 底 + `--line` 边框
+    //   （#1a2027 / #2a323b），而日志底色 `--bg` 是 #0f1419 —— 三者几乎同色，
+    //   按钮在暗底上根本看不见（用户：「现在有点暗」）。
+    b.style.cssText='position:absolute;right:16px;bottom:14px;display:none;cursor:pointer;'
+      +'background:rgba(77,163,255,.12);border:1.5px solid var(--acc);border-radius:14px;'
+      +'padding:4px 12px;font-size:12px;font-weight:700;color:#eaff00;'
+      +'text-shadow:0 0 6px rgba(234,255,0,.55);box-shadow:0 0 10px rgba(77,163,255,.45);z-index:5;';
+    b.onmouseenter=()=>{ b.style.background='rgba(77,163,255,.26)';
+                         b.style.borderColor='#8cc6ff';
+                         b.style.boxShadow='0 0 16px rgba(77,163,255,.85)'; };
+    b.onmouseleave=()=>{ b.style.background='rgba(77,163,255,.12)';
+                         b.style.borderColor='var(--acc)';
+                         b.style.boxShadow='0 0 10px rgba(77,163,255,.45)'; };
+    // forceScroll=true：跳过"不贴底就别重画"与"内容没变就别重画"两道短路，
+    // 于是既补上你翻历史期间**暂停掉的那些行**，又贴回底部。
+    b.onclick=()=>renderLog(true);
+    view.appendChild(d); view.appendChild(b);
+    view._lp=d; view._lb=b;
+  }
+  return view._lp;
+}
+// 按钮只在离开底部时出现；状态由滚动与重画两处一起维持。
+function syncLogJump(d){
+  const b=view._lb; if(!b) return;
+  b.style.display = logAtBottom(d) ? 'none' : 'block';
+}
+function exitLogPane(){
+  if(view._lp){ view._lp.remove(); view._lp=null; }
+  if(view._lb){ view._lb.remove(); view._lb=null; }   // ★ 按钮也要跟着走，否则切到别的页签它还在
+  view.style.position=''; view.style.padding='14px 18px'; view.style.overflow='auto';
+}
+function scheduleLog(){ if(curTab!=='log'||_logTimer) return; _logTimer=setTimeout(()=>{ _logTimer=null; renderLog(false); },120); }
+function appendLog(t){ logBuf.push(sanitizeLog(t)); if(logBuf.length>LOG_MAX) logBuf.shift(); scheduleLog(); }
+function renderLog(forceScroll){ forceScroll=(forceScroll===undefined)?true:forceScroll;
+  if(curTab!=='log') return;
+  try{
+    const pane=logPane();
+    if(!forceScroll && !logAtBottom(pane)) return;              // 正在翻历史，暂停自动刷新
+    const text=logBuf.join('\n');
+    if(!forceScroll && text.length===_logPainted) return;       // 无新内容，跳过重画
+    _logPainted=text.length; pane.textContent=text; pane.scrollTop=pane.scrollHeight;
+    syncLogJump(pane);   // 画完就贴底了 ⇒ 「回到最新」该收起来（别等 scroll 事件，它是异步的）
+  }catch(e){ if(view._lp) view._lp.textContent='(日志渲染失败: '+e.message+')'; }
+}
+
+async function loadState(){ const r=await fetch('/api/state'); const s=await r.json();
+  renderStages(s);
+  if(s.log&&Array.isArray(s.log)){ logBuf=s.log.slice(-LOG_MAX).map(sanitizeLog); if(curTab==='log') renderLog(false); }
+}
+// 质量护栏面板已按用户 2026-09-27 要求删除（`toggleGuard`/`loadGuard` 一并移除；
+// 服务端 `/api/guardrails` 端点保留，需要时可直接调接口）。
+// 侧栏 = **报告 + 图**两份清单（标题本来就写着「Reports / 图」）。
+// ★ 2026-09-27 的三次返工都发生在这个小函数上，一并记下免得再踩：
+//   ① 原先没有 try/catch：`/api/files` 一失败，`d.files.map` 当场抛错 ⇒ 侧栏**静默留空**，
+//      用户看到的是"什么都没有"而不是"拉取失败了、点这里重试"。
+//   ② 「图片」页签原先复用同一个 `#files` 容器 ⇒ 切过去把**报告列表冲掉**成 png 列表，
+//      切回来没有入口恢复。我第一版加 `quiet` 只取数据、不动侧栏 —— 结果**把用户本来
+//      在用的能力也掐掉了**（他在「图片」页签下靠侧栏那份 png 清单翻图）。
+//   ③ 现在**两样同时列**，谁也不冲谁：报告进「报告查看」、图进「图片」。
+async function fetchList(kind){
+  try{ const r=await fetch('/api/files?kind='+kind); const d=await r.json();
+       return Array.isArray(d.files)?d.files:null; }catch(_){ return null; }
+}
+// ★ 两组各自**可展开/收起**（用户 2026-09-28：「图和报告都加那个展开和收缩的功能，
+//   这样就不用直接展开堆在一起」）—— 报告 18 条 + 图 19 条平铺 = 37 行，侧栏被顶得很长。
+//   状态存 `localStorage`：刷新页面 / 重启驱动之后不用每次重新点（这台机器是单人使用，
+//   没有多用户隔离的问题）。缺省见 SIDE_DEFAULT —— 报告是要天天看的，图不是。
+const SIDE_OPEN_KEY='fma_side_open';
+const SIDE_DEFAULT={reports:true, figs:false};
+function sideOpenMap(){
+  try{ const o=JSON.parse(localStorage.getItem(SIDE_OPEN_KEY)||'{}');
+       return (o&&typeof o==='object')?o:{}; }catch(_){ return {}; }
+}
+function sideIsOpen(key){
+  const o=sideOpenMap();
+  return (key in o) ? !!o[key] : !!SIDE_DEFAULT[key];
+}
+function toggleSide(key){
+  const o=sideOpenMap(); o[key]=!sideIsOpen(key);
+  try{ localStorage.setItem(SIDE_OPEN_KEY, JSON.stringify(o)); }catch(_){}
+  renderSidebar();
+}
+// 上一次拉列表**是不是失败了**（区别于"拉到了、但真的是空的"）。
+// ★ 没有它就会谎报（2026-09-28 审出来的 low）：`filesList` 与 `figList` 都空时原先是直接
+//   报「列表读不出来」—— 可**空是合法的**（⑨ 还没跑时 reports/ 和 figures/ 本来就没有
+//   东西，用户清理过工作区之后更是如此）⇒ 面板把"还没跑"说成"读不出来"，还让人去点重试。
+let _sideFetchFailed=false;
+function renderSidebar(){
+  const el=$('files');
+  if(!el) return;
+  if(!filesList.length && !figList.length && _sideFetchFailed){
+    el.innerHTML='<div class="file" style="color:var(--dim)" onclick="loadFiles()">'
+      +'⚠️ 列表读不出来 —— 点这里重试</div>';
+    return;
+  }
+  // 文件名进 HTML 属性前**必须转义**：`title="..."` 里一个引号就能把后面整段甩到标签外面，
+  // 而 `onclick='openFile(`...`)'` 里一个单引号就能让整条侧栏的点击全失效（一个坏名字连累全部）。
+  const group=(key,title,items,ico,onclick)=>{
+    if(!items||!items.length) return '';
+    const open=sideIsOpen(key);
+    // 收起时把条数写进标题 —— 不然收起后完全看不出里面有多少东西
+    const head=`<div class="grp" title="点一下展开／收起" onclick="toggleSide('${key}')">`
+             + `<span class="caret">${open?'▾':'▸'}</span>${title} (${items.length})</div>`;
+    if(!open) return head;
+    return head + items.map(f=>{
+      const jsAttr=esc(f.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")).replace(/\n/g,'');
+      return `<div class="file" title="${esc(f.name)}" onclick="${onclick(jsAttr)}">`
+           + `${ico} ${esc(f.name.split('/').pop())}</div>`;
+    }).join('');
+  };
+  // ★ 拉到了、但两样都空：给一行**能刷新**的说明（2026-09-28 审出来的 low）。
+  //   原先这里是整块空白 —— 用户分不清"还没跑"还是"坏了"，而且整轮运行期间这份清单
+  //   本来就不会自己刷新，连一个手动入口都没有。
+  if(!filesList.length && !figList.length){
+    el.innerHTML='<div class="file" style="color:var(--dim)" onclick="loadFiles()">'
+      +'（还没有报告或图 —— ⑨ 跑完这里会列出来。点一下刷新）</div>';
+    return;
+  }
+  el.innerHTML = group('reports','报告',filesList,'📄',n=>`openFile('${n}',false)`)
+               // 图标是 `🖼️` = U+1F5BC **+ U+FE0F（变体选择符 VS16）**。
+               // ⚠️ 那个 VS16 **不能省**：U+1F5BC 同时有"文本呈现"和"表情呈现"两种形态，
+               // 不跟 VS16 时浏览器按**文本呈现**走 ⇒ 渲染成单色细线稿，夹在 `📄`（U+1F4C4，
+               // 永远是彩色）旁边又细又灰（用户 2026-09-28「🖼这个符号有点丑啊」就是这个原因）。
+               // 编辑这一行时别把后面那个不可见的 U+FE0F 删掉 —— 删了就退回原来那个丑样子。
+               + group('figs','图',figList,'🖼️',n=>`openFigure('${n}')`);
+}
+async function loadFiles(){
+  const [reps,figs]=await Promise.all([fetchList('reports'),fetchList('fig')]);
+  if(reps) filesList=reps;
+  if(figs) figList=figs;
+  // `null` = 这一次真的没拉到；`[]` = 拉到了、就是空的（合法）。两者不能混为一谈。
+  _sideFetchFailed = (!reps&&!figs);
+  renderSidebar();
+}
+// ---------------- 报告查看：markdown 粗渲染 ----------------
+// ★ 这两个页签原先**没有区别**（用户 2026-09-27 问「有什么区别」时查出来的真缺陷）。
+//   证据：CSS 里那三条 `#view.markdown h1/h2/table` 说明**渲染器是设计里就该有的**，
+//   但全文件搜 `mdToHtml|marked|md2html` **0 命中** —— 从来没实现过；
+//   而 `openFile` 无条件 `curTab='raw'` + `textContent` ⇒ 点「报告查看」也会被立刻拽回原文，
+//   于是两个页签长得一模一样（面板在撒谎 ✗）。
+//   现在补上：**先整体转义、再做白名单替换**（agent 写的 md 直接 innerHTML = 把仓库内容当
+//   代码执行），支持标题 / 粗体 / 行内码 / 链接 / 无序列表 / 管道表 / 围栏代码块 ——
+//   报告里实际用到的就这几种，不值得引一个 40KB 的 md 库进来。
+let curText='';                          // 当前文件原文：切页签时复用，不重发 /api/read
+function mdEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function mdInline(s){
+  return mdEsc(s)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+function mdToHtml(src){
+  const out=[]; let inCode=false,inTable=false,inList=false;
+  const closeTable=()=>{ if(inTable){out.push('</tbody></table>');inTable=false;} };
+  const closeList =()=>{ if(inList){out.push('</ul>');inList=false;} };
+  for(const line of String(src).replace(/\r\n?/g,'\n').split('\n')){
+    if(/^\s*```/.test(line)){ closeTable(); closeList();
+      out.push(inCode?'</code></pre>':'<pre><code>'); inCode=!inCode; continue; }
+    if(inCode){ out.push(mdEsc(line)); continue; }
+    const h=line.match(/^(#{1,6})\s+(.*)$/);
+    if(h){ closeTable(); closeList(); const n=Math.min(h[1].length+1,6);
+      out.push('<h'+n+'>'+mdInline(h[2])+'</h'+n+'>'); continue; }
+    if(/^\s*\|.*\|\s*$/.test(line)){
+      if(/^[\s|:-]+$/.test(line)) continue;                 // 表格分隔行 |---|---|
+      if(!inTable){ out.push('<table><tbody>'); inTable=true; }
+      const cells=line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim());
+      out.push('<tr>'+cells.map(c=>'<td>'+mdInline(c)+'</td>').join('')+'</tr>');
+      continue;
+    }
+    closeTable();
+    const li=line.match(/^\s*[-*+]\s+(.*)$/);
+    if(li){ if(!inList){out.push('<ul>');inList=true;} out.push('<li>'+mdInline(li[1])+'</li>'); continue; }
+    closeList();
+    out.push(line.trim()?'<p>'+mdInline(line)+'</p>':'');
+  }
+  closeTable(); closeList();
+  if(inCode) out.push('</code></pre>');
+  return out.join('\n');
+}
+function renderFile(){
+  const isMd=!!curFile&&curFile.toLowerCase().endsWith('.md');
+  if(curTab==='md'&&isMd){ view.className='markdown'; view.innerHTML=mdToHtml(curText); }
+  else { view.className=''; view.textContent=curText; }
+}
+async function openFile(name,img){
+  exitLogPane();
+  curFile=name;
+  if(img){ curTab='fig'; markTabs('fig'); view.className='';
+    view.innerHTML=`<img class="grid" src="/api/read?path=${encodeURIComponent(name)}" style="max-width:100%"/>`; return; }
+  const r=await fetch('/api/read?path='+encodeURIComponent(name)); const d=await r.json();
+  // ★ `await` 期间 SSE 可能**又建了一个**日志面板（`renderLog` → `logPane()`），而下面
+  //   写 `view.innerHTML` / `view.textContent` 会把那个节点从 DOM 里摘掉、却**不清
+  //   `view._lp`** ⇒ 之后 `logPane()` 以为它还在、直接返回那个孤儿 ⇒ 运行日志页签**
+  //   永久空白**、"↓ 回到最新"也一起消失 ✗（2026-09-28 审出来的）。所以再清一次。
+  if(view._lp) exitLogPane();
+  curText=d.text||'';
+  // ⚠️ 直接改 `curTab`，**不能**调 `setTab(...)`：setTab 的 'md' 分支会回调 openFile，
+  // 而 openFile 又调 setTab —— 无终止条件，点一次报告就会无限循环发 /api/read
+  // （历史实测每秒数百次，拖慢 /api/state 与 SSE），只能刷新页面才停。
+  // 保留用户当前选的页签（报告查看 / 图片 / PDF），只有从别处（如日志）点进来时才落到报告查看。
+  if(curTab!=='md'&&curTab!=='fig'&&curTab!=='pdf') curTab='md';
+  markTabs(curTab);
+  renderFile();
+}
+function markTabs(t){ document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===t)); }
+// 点侧栏的一张图：直接大字显示这一张（不进图片网格，免得"点的是哪张"看不出来）
+function openFigure(name){
+  exitLogPane(); curFile=name; curTab='fig'; markTabs('fig'); view.className='';
+  view.innerHTML=`<div style="margin-bottom:6px;color:var(--dim)">${name}</div>`
+    +`<img class="grid" src="/api/read?path=${encodeURIComponent(name)}" style="max-width:100%"/>`;
+}
+function setTab(t){ curTab=t; markTabs(t);
+  if(t!=='log') exitLogPane();
+  // ★ 切页签**只重渲染、不重新拉文件**（`renderFile` 用已缓存的 `curText`）——
+  //   否则每点一次页签就多发一次 /api/read，而且「上次读的」与「现在在看的」可能不是同一份。
+  if(t==='md'){
+    if(curFile) renderFile();
+    else { view.className='markdown';
+           view.innerHTML='<i style="color:var(--dim)">在左侧点一个报告查看（markdown 已粗渲染）</i>'; }
+  }
+  else if(t==='fig'){ view.className=''; view.innerHTML='<i style="color:var(--dim)">加载图片…</i>';
+    loadFiles().then(()=>{ if(curTab!=='fig') return;   // 等列表回来再渲染，否则第一次切过去是空
+      view.innerHTML=figList.map(f=>`<img class="grid" src="/api/read?path=${encodeURIComponent(f.name)}"/>`).join('')||'(无图)'; }); }
+  else if(t==='pdf'){ loadPDF(); }
+  else if(t==='log'){ renderLog(); }
+  else { view.className=''; }
+}
+async function loadPDF(){
+  view.className=''; view.innerHTML='<i style="color:var(--dim)">加载论文 PDF…</i>';
+  const r=await fetch('/api/pdf'); const d=await r.json();
+  if(!d.pdfs||!d.pdfs.length){ view.innerHTML='<i style="color:var(--dim)">尚无论文 PDF（跑完 9Paper-writing+15Verification 编译后出现）</i>'; return; }
+  const p=d.pdfs[d.pdfs.length-1];
+  view.innerHTML=`<div style="margin:6px 0"><a target="_blank" href="/api/read?path=${encodeURIComponent(p.name)}">在新标签打开 ${p.name}</a></div>`+
+    `<object data="/api/read?path=${encodeURIComponent(p.name)}" type="application/pdf" style="width:100%;height:calc(100% - 40px)">PDF 预览不可用，点上面链接打开</object>`;
+}
+
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>setTab(b.dataset.v));
+$('start').onclick=async()=>{
+  $('stop').style.display='';
+  // 产物设置随本轮一起提交 —— 用户可能是先填了路径、没点保存就点开始。
+  const r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:dvPayload()});
+  if(!r.ok){ const d=await r.json().catch(()=>({})); alert('无法开始：'+(d.detail||r.status)); }
+  // ★ `/api/start` 会把这两个框的设置**落盘**（见它的实现）⇒ 服务端那份已经等于用户填的，
+  //   脏标记到此为止。不在这里清的话，它会在本次会话里**再也不回填**，而且每次 ▶
+  //   都把用户手填的那个值原样回写一遍（2026-09-28 审出来的 low）。
+  else clearDeliveryDirty();
+  loadState();
+};
+$('pause').onclick=async()=>{
+  if(!confirm('暂停？\n\n当前阶段会在收尾后停下并弹出决策面板，你可以接着选「再试一次 / 回退到某阶段 / 接受并披露 / 我已手工修好」。\n（当前阶段正在跑的进程会被收掉，回来时从它重试）')) return;
+  const r=await fetch('/api/pause',{method:'POST'});
+  if(!r.ok){ const d=await r.json().catch(()=>({})); alert('无法暂停：'+(d.detail||r.status)); }
+  loadState();
+};
+$('stop').onclick=async()=>{
+  if(!confirm('硬停？\n\n不给决策面板；黄灯若亮着也一并收起。要「停下但保留出口」请用「暂停」。')) return;
+  await fetch('/api/stop',{method:'POST'}); loadState();
+};
+$('cleanup').onclick=async()=>{
+  const dv=(lastSt&&lastSt.delivery)||{};
+  const L=dv.resolved||dv.output_dir||'<产物>';   // 要显示落点全路径 ⇒ 用 resolved
+  if(!confirm('把这一轮的生成物从项目根**移动**到：\n'+L+'\\其他产物\\\n\n'
+    +'会搬：reports/ code/ results/ figures/ paper/ paper_appendix/ demo/ 运行说明.md\n'
+    +'（框架本体：lib/ skills/ docs/ regression/ config/ 不动）\n\n'
+    +'移动后项目根就干净了；提交件与已归档的内容不受影响。\n\n'
+    // ★ 用户 2026-09-27：这里原来只夸"项目根干净了"，**没说代价** —— 而搬走的正是
+    //   stage_discipline 第一节要求"返修时直接复用"的那批产物；且回退暂存（cache/）与这里
+    //   是两个地方 ⇒ 清理之后若再回退重跑，代理会以为盘上什么都没有，重算受影响的量（④ 是小时级）。
+    +'⚠️ 代价：清理后再「回退/从某阶段重跑」，上一版产物**不在工作区里**了 ——\n'
+    +'   驱动的回退暂存只找 cache/，找不到这里的。要复用就先手动捞回来：\n'
+    +'   cp -r "'+L+'\\其他产物\\<阶段中文名>"/* <对应工作区目录>/\n'
+    +'   （或直接让它重算，但 ④ 编码计算 那种是小时级）\n\n确认？')) return;
+  const r=await fetch('/api/cleanup',{method:'POST'});
+  const d=await r.json();
+  if(!r.ok){ alert('清理失败：'+(d.detail||r.status)); return; }
+  alert(d.moved && d.moved.length ? ('已移入：'+d.moved.join('、')+'\n→ '+d.dest)
+                                  : '没有可清理的残留');
+  loadState();
+};
+$('dc_retry').onclick    =()=>decide('retry');
+$('dc_confirm').onclick  =()=>decide('confirm');   // ⓪ 读题：收集分类表/题面/更正说明并提交
+$('dc_extend').onclick   =()=>decide('extend');
+// 轻微建议默认折叠 —— 点标题行展开/收起。不拦链的东西不该占满面板；
+// 但也不能藏死（用户要拿成本估计决定加不加），所以给一行"共几条 + 类别分布"当入口。
+$('dc_advhead').onclick =()=>{
+  const el=$('dc_adv'), head=$('dc_advhead'), open=el.style.display!=='none';
+  el.style.display=open?'none':'block';
+  head.textContent=(open?'▸ ':'▾ ')+(head._txt||'');
+};
+// 最后输出：点标题行展开/收起（进程失败时默认已展开）
+$('dc_tailhead').onclick =()=>{
+  const el=$('dc_tail'), head=$('dc_tailhead'), open=el.style.display!=='none';
+  el.style.display=open?'none':'block';
+  head.textContent=(open?'▸ ':'▾ ')+(head._txt||'');
+  if(!open) el.scrollTop=el.scrollHeight;
+};
+$('dc_rollback').onclick =()=>decide('rollback');
+
+// ---- 手工修复面板（用户 2026-09-23 要求）------------------------------------
+//   黄灯上的判词说的是「§8 第 5 条」「§5.6 的 (v) 行」这类**章节坐标**，而报告 1700+ 行 ——
+//   光有按钮等于让人拿判词去整篇里翻。这里把位置机械地算出来：每条给「文件:行 + 上下文 + 判词」。
+//   位置**每次打开都现算**（人每改一处，下面的行号就挪了）；`attest_default` 同理现算
+//   —— 那个字段的 docstring 早就写着「人总是先改文件、再点认证」，可面板一直读的是快照。
+const _esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function openHil(){
+  $('hilpanel').style.display='';
+  $('hil_body').textContent='正在定位…'; $('hil_msg').textContent='';
+  let d={}; try{ d=await (await fetch('/api/hil')).json(); }catch(e){ d={issues:[]}; }
+  const tgt=d.attest_default;
+  $('hil_sub').textContent=`卡在「${d.stage_name||d.stage||''}」`+(tgt
+      ? `｜改完将重新认证「${STAGE_NAME[tgt]||tgt}」（不让它重跑）`
+      : '｜没有可认证的产物改动，改完将直接重试');
+  const out=[`<div style="color:var(--dim);font-size:12px">判词：${_esc(d.reason||'')}</div>`];
+  (d.issues||[]).forEach((it,k)=>{
+    out.push(`<div style="margin:10px 0;padding:9px;background:#0d1117;border:1px solid var(--line);border-radius:6px">
+      <div><b>${k+1}. [${_esc(it.severity)}/${_esc(it.category)}] ${_esc(it.id)}</b></div>`);
+    if(it.fix)      out.push(`<div style="margin-top:5px"><b>怎么改：</b>${_esc(it.fix)}</div>`);
+    if(it.evidence) out.push(`<div style="margin-top:5px;color:var(--dim)"><b>依据：</b>${_esc(it.evidence)}</div>`);
+    if((it.targets||[]).length){
+      it.targets.forEach(t=>{
+        out.push(`<div style="margin-top:7px"><b>改这里：</b><code>${_esc(t.file)}:${t.line}</code>
+          <button data-open="${_esc(t.file)}" style="padding:2px 8px;font-size:12px">在查看器打开</button>
+          <div style="margin-top:4px;font:12px/1.5 Consolas,monospace;white-space:pre-wrap;
+                      border-left:2px solid #5a4520;padding-left:8px">`
+          +(t.context||[]).map(l=>`<div${l.hit?' style="background:#3a2f10"':''}>${String(l.n).padStart(5)}│ ${_esc(l.text)}</div>`).join('')
+          +`</div></div>`);
+      });
+    }else{
+      out.push(`<div style="margin-top:7px;color:#e67e22">未自动定位到位置 —— 判词里给了章节坐标（§…），按它手工检索。</div>`);
+    }
+    if(it.recheck) out.push(`<div style="margin-top:5px;color:var(--dim)"><b>怎么算改好了：</b>${_esc(it.recheck)}</div>`);
+    out.push('</div>');
+  });
+  $('hil_body').innerHTML=out.join('');
+  $('hil_body').querySelectorAll('button[data-open]').forEach(b=>{
+    b.onclick=()=>openFile(b.getAttribute('data-open'));
+  });
+}
+async function hilApply(){
+  const msg=$('hil_msg'); msg.textContent='正在认证…';
+  let tgt=null; try{ tgt=(await (await fetch('/api/hil')).json()).attest_default; }catch(e){}
+  const action=tgt?'attest':'retry';            // 没有可认证的目标 → 退化为"再试一次"
+  let r={}; try{
+    r=await (await fetch('/api/decision',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:action,stage:tgt,note:''})})).json();
+  }catch(e){ r={ok:false,detail:String(e)}; }
+  msg.textContent = r.ok
+    ? (action==='attest'?'✓ 已按当前盘面重新认证，链条继续。':'✓ 没有可认证的产物改动，已直接重试。')
+    : ('⚠ '+_esc(r.detail||'失败'));
+}
+$('dc_attest').onclick  =()=>openHil();
+$('hil_close').onclick  =()=>{$('hilpanel').style.display='none';};
+$('hil_apply').onclick  =hilApply;
+$('dc_disclose').onclick =()=>decide('disclose');
+
+// ---------------- 目录选择器：产物路径"点着选" ----------------
+// 浏览器出于安全**不会**把本地绝对路径交给网页（`webkitdirectory` 只给相对路径）⇒ 只能让
+// 服务端列目录（`GET /api/browse`）。这里只管渲染与跳转；路径合不合法由服务端说
+// （`is_dir` + 不跟随软链 + 只回目录名）。
+let _dpPath='';
+async function dpBrowse(p){
+  const m=$('dp_msg'); m.textContent='';
+  try{
+    const r=await fetch('/api/browse?path='+encodeURIComponent(p||''));
+    const d=await r.json();
+    if(!r.ok){ m.textContent='⚠ '+(d.detail||('HTTP '+r.status)); return; }
+    _dpPath=d.path;
+    $('dp_path').textContent=d.path;
+    $('dp_up').disabled=!d.parent;
+    $('dp_list').innerHTML = d.dirs.length
+      ? d.dirs.map(n=>'<div class="dp-row" data-dp="'+esc(n)+'">📁 '+esc(n)+'</div>').join('')
+      : '<div class="dp-empty">（这一层没有子目录）</div>';
+    if(d.truncated) $('dp_list').innerHTML+='<div class="dp-empty">（目录太多，只列了前 500 个）</div>';
+  }catch(e){ m.textContent='⚠ '+e.message; }
+}
+function dpOpen(){
+  $('dirpop').style.display='block';
+  dpBrowse($('dv_dir').value.trim() || ((lastSt&&lastSt.delivery&&lastSt.delivery.resolved)||''));
+}
+function dpClose(){ $('dirpop').style.display='none'; }
+$('dv_pick').onclick=dpOpen;
+$('dp_close').onclick=dpClose;
+$('dp_list').addEventListener('click',e=>{
+  const row=e.target.closest('[data-dp]'); if(!row) return;
+  const sep=_dpPath.indexOf('\\')>=0?'\\':'/';     // 跟着服务端回来的分隔符风格走
+  dpBrowse(_dpPath.replace(/[\\/]+$/,'')+sep+row.dataset.dp);
+});
+$('dp_up').onclick=()=>{ const p=$('dp_path').textContent||_dpPath;
+  const cut=p.replace(/[\\/][^\\/]+$/,''); if(cut&&cut!==p) dpBrowse(cut); };
+$('dp_home').onclick=()=>dpBrowse('');
+$('dp_out').onclick=()=>dpBrowse((lastSt&&lastSt.delivery&&lastSt.delivery.resolved)||'');
+$('dp_use').onclick=()=>{
+  const p=$('dp_path').textContent||''; if(!p) return;
+  $('dv_dir').value=p;
+  // ★ 必须置脏：不置脏的话，4 秒一次的 `fillDelivery` 会把刚选的值**冲回旧值**（它只在
+  //   元素没聚焦且没改脏时才回写 —— 见它的注释）。
+  $('dv_dir').dataset.dirty='1';
+  $('dv_msg').textContent='选中：'+p+'（点「📦 归档本题并换新」或开始跑链时会一起存下来）';
+  dpClose();
+};
+
+// ---------------- 不归档删除本题（不可逆） ----------------
+$('dv_wipe').onclick=async()=>{
+  const nm=((lastSt&&lastSt.delivery&&lastSt.delivery.problem_id)||'本题');
+  if(!confirm('**不归档**，直接删掉「'+nm+'」的产物与状态？\n\n'
+    +'会删：reports / code / results / figures / paper / demo / 运行说明.md、'
+    +'两个「最新」里的内容、产物/cache 与 产物/其他产物、runtime/quality 的全部回执与黄灯。\n\n'
+    +'会留：request/（你传的题面与附件）、data/、框架本体。\n\n'
+    +'这一步**不可恢复**（不是归档、不进 cache）。')) return;
+  const word=prompt('确认删除：请原样输入「删除本题」四个字（不加字、不改字）。');
+  if(word===null) return;
+  $('dv_msg').textContent='删除中…';
+  const r=await fetch('/api/wipe-problem',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:word})});
+  const d=await r.json();
+  $('dv_msg').textContent = !r.ok ? ('⚠ '+(d.detail||'删除失败'))
+    : ('🗑 已删 '+d.removed.length+' 项；保留：'+d.kept.join('、'));
+  if(r.ok){ clearDeliveryDirty(); loadState(); refreshDelivery(); }
+};
+
+// ---------------- 开屏页（品牌 + 配置向导） ----------------
+let _cfgSuffix='[1m]', _mainStarted=false, _inMain=false, _cfgProbeFailed=false;
+function splShow(mode){
+  const s=$('splash');
+  s.dataset.mode=mode;                       // boot = 只看一眼动画；config = 表单模式
+  // 「直接进入」：**配置页上常驻**（用户 2026-09-29 把它改叫"直接进入"——
+  // 一个只在异常情况下才出现的按钮不该叫这个名字）。它也是"机器上 claude CLI 已登录、
+  // 没有 .env"那条路的出口：那种情况下三个键本来就是空的，没有它就会被**锁死在开屏页**。
+  $('cf_back').style.display=(mode==='config')?'inline-block':'none';
+  s.classList.remove('leaving'); s.classList.add('on');
+}
+function splHide(){
+  const s=$('splash');
+  s.classList.add('leaving');
+  setTimeout(()=>s.classList.remove('on','leaving'),480);
+}
+function fillCfg(st){
+  $('cf_base').value=st.base_url||'';
+  const m=/\[[^\]]*\]\s*$/.exec(st.model||'');
+  _cfgSuffix=m?m[0].trim():'[1m]';           // ★ 保留**原来的写法**（盘上现在是 [1M]，别悄悄改大小写）
+  $('cf_model').value=(st.model||'').replace(/\[[^\]]*\]\s*$/,'');
+  $('cf_1m').checked=!!m;
+  // ★ 装载时**也要把后缀写进框里**（2026-09-30 用户报的：「刷新页面后 [1M] 就不显示在模型后面了」）。
+  //   原先这里只把后缀剥掉，写回只发生在勾选框 change 时 ⇒ 刷新后框里是 `deepseek-flash`、
+  //   勾选框却勾着。**这不只是显示问题**：`modelFromForm()` 取的是**框里的值**，
+  //   在这个状态下点「保存并进入」会把 `[1M]` 悄悄丢掉（写回 .env 的模型名少了后缀）。
+  syncSuffixBox();
+  $('cf_key').value='';
+  $('cf_key').placeholder=st.has_key?('已设置（'+st.key_masked+'）—— 留空保持不变'):'留空保持不变';
+  $('cf_msg').textContent='';
+}
+// 勾选框：**当场把后缀写进模型框**（用户 2026-09-29：「点这个的时候模型后面会出现 [1m]」）
+// ⇒ 看到的就是会存下去的，不再是"勾了但框里没变"。取消勾选就摘掉。
+// `_cfgSuffix` 是从原值里**原样**取的后缀（盘上现在是 `[1M]` 大写），不会把大小写改掉。
+function syncSuffixBox(){
+  const el=$('cf_model'), cb=$('cf_1m');
+  if(!el||!cb) return;
+  const base=el.value.trim().replace(/\[[^\]]*\]\s*$/,'').trim();
+  el.value = cb.checked ? (base+_cfgSuffix) : base;
+}
+$('cf_1m').addEventListener('change',syncSuffixBox);
+// 保存/测试用的模型名就是框里那串 —— 后缀已由 `syncSuffixBox` 写进去了，这里**不再**拼一次
+// （再拼一次就成了 `x[1m][1m]`）。
+function modelFromForm(){ return $('cf_model').value.trim(); }
+$('cf_test').onclick=async()=>{
+  const btn=$('cf_test'); btn.disabled=true;
+  $('cf_msg').textContent='测试中…（调用一次 claude，可能要几秒）';
+  try{
+    const r=await fetch('/api/model_config/test',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({base_url:$('cf_base').value.trim(),
+                           auth_token:$('cf_key').value.trim(), model:modelFromForm()})});
+    const d=await r.json();
+    $('cf_msg').innerHTML = d.ok
+      ? ('<b style="color:#2ecc71">✓ 连通正常</b>（'+(d.ms||0)+' ms）')
+      : ('<b style="color:#e74c3c">✗ 不通</b>'+((d.detail||d.reply)?'<br>'+esc((d.detail||d.reply).slice(0,300)):''));
+    // 「配置来源」那行用户要求去掉了（2026-09-29）⇒ 只在**测试失败**时把代理策略附在错因后面，
+    // 那是排查"不通"最有用的一条信息；成功时不显示任何多余的话。
+    if(!d.ok && d.proxy) $('cf_msg').innerHTML+='<br><span style="color:var(--dim)">'+esc(d.proxy)+'</span>';
+  }catch(e){ $('cf_msg').textContent='⚠ '+e.message; }
+  btn.disabled=false;
+};
+$('cf_save').onclick=async()=>{
+  const body={base_url:$('cf_base').value.trim(),auth_token:$('cf_key').value.trim(),
+              model:modelFromForm()};
+  if(!body.base_url||!body.model){ $('cf_msg').textContent='端点和模型都要填。'; return; }
+  $('cf_msg').textContent='保存中…';
+  try{
+    const r=await fetch('/api/model_config',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!r.ok){ $('cf_msg').textContent='⚠ '+(d.detail||('HTTP '+r.status)); return; }
+    fillCfg(d);
+    // ★ 保存成功 ≠ 配好了：`POST` 的 `None` 语义是"留空 = 不改"，所以用户只填了模型、
+    //   没填密钥时这一趟照样 200，但 `configured` 仍是 false。不看这一条就进主界面，
+    //   等于**从侧门绕过 boot() 的门控**（没密钥也能进去，第一次跑阶段才炸）。
+    if(!d.configured){
+      $('cf_msg').innerHTML='⚠ 已保存，但还差：<b>'+esc((d.missing||[]).join('、'))+'</b>'
+        +' —— 三项都齐了才能开跑。';
+      return;
+    }
+    $('cf_msg').textContent='✓ 已保存（写进 .env 并当场生效）';
+    setTimeout(()=>{ splHide(); setTimeout(startMain,520); },420);
+  }catch(e){ $('cf_msg').textContent='⚠ '+e.message; }
+};
+// ★ 「← 回主界面」必须**先把主界面起起来**再隐层（2026-09-29 排查抓出来的 medium）：
+//   原先只有 `splHide()` ⇒ 主界面从没 `startMain()` 过（不建 SSE、不起 4 秒轮询、也不 loadFiles），
+//   用户进去看到的是一个**死界面**，而且回不到配置页。`startMain` 自己有 `_mainStarted` 幂等守卫，
+//   重复调用无害（这正是"配置状态读不到"那个出口的安全前提）。
+$('cf_back').onclick=()=>{ startMain(); splHide(); };
+$('brand').onclick=()=>{ if(_inMain) splShow('config'); };   // 主界面标题 → 回展示页
+$('splash_brand').onclick=()=>{ if(_mainStarted) splHide(); };  // 展示页标题 → 回主界面
+
+function startMain(){
+  if(_mainStarted){ _inMain=true; return; }
+  _mainStarted=true; _inMain=true;
+  const es=new EventSource('/api/stream');
+  es.onmessage=e=>{ const m=JSON.parse(e.data);
+    if(m.evt==='log'){appendLog(m.data);}
+    if(m.evt==='state'){renderStages(m.data);}
+    if(m.evt==='end'){loadState();}
+  };
+  loadState(); loadFiles();
+  setInterval(loadState,4000);
+}
+// ★ 启动时**先问一次配置**，再决定进不进主界面：没配好就先停在开屏页，**不**建 SSE、**不**起轮询
+//   —— 否则主界面会在配置页后面同时活着（轮询照跑、日志照刷），"没配好"这件事就只是个摆设。
+// ---------------- GitHub 标识：赠言浮层 + 项目链接（用户 2026-09-30） ----------------
+// 点标识 = ①弹浮层 ②新开项目标签页。整链跑完（⑯ 结束）时也自动走一次同样的动作。
+const GH_URL='https://github.com/Cyllevantie/NewMathAgent';
+function showGhCard(openTab){
+  $('ghmodal').style.display='flex';
+  if(!openTab) return;
+  // ★ 链尾自动那一下**没有用户手势**，这一句可能被浏览器拦掉 —— **不提示**（用户 2026-09-30
+  //   明确要求删掉那句提示）。浮层里那个链接本来就能点，够用了。
+  try{ window.open(GH_URL,'_blank','noopener'); }catch(e){}
+}
+$('ghbadge').onclick=()=>showGhCard(true);
+$('gh_close').onclick=()=>{$('ghmodal').style.display='none'};
+$('ghmodal').onclick=(e)=>{ if(e.target===$('ghmodal')) $('ghmodal').style.display='none' };
+addEventListener('keydown',(e)=>{ if(e.key==='Escape') $('ghmodal').style.display='none' });
+
+(async function boot(){
+  let st={configured:false};
+  try{ st=await (await fetch('/api/model_config')).json(); }
+  catch(e){ _cfgProbeFailed=true; }        // ★ 读不到配置状态 ⇒ **不能**把用户锁在开屏页
+  fillCfg(st);
+  if(_cfgProbeFailed){
+    $('cf_msg').textContent='⚠ 读不到配置状态（服务端 /api/model_config 没响应）'
+      +' —— 可以直接进主界面，或先看看服务端日志。';
+  }
+  if(st.configured&&!_cfgProbeFailed){     // 配好了：直接播过渡动画进主界面
+    splShow('boot');
+    setTimeout(()=>{ splHide(); setTimeout(startMain,520); },1300);
+  }else{
+    splShow('config');                     // 没配好（或读不到）：停在配置页等用户填
+  }
+})();
+</script>
+</body>
+</html>

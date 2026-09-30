@@ -1,0 +1,24 @@
+{
+  "title": "NewMathAgent Skills",
+  "description": "数学建模竞赛全流程 Skills：文献定向、建模设计、建模评审门禁、编码、结果可信度审计、稳健性、绘图、写作、排版版式、数学论证门禁、跨问一致性审查、验收、评分标终审、按评分判词返修。",
+  "sections": [
+    {
+      "title": "工作流 Skills（按顺序使用）",
+      "skills": [
+    "0Start-mathmodel", "1Literature-orientation", "2Modeling-design", "3Modeling-review-gate", "4Coding-and-computation", "5Result-credibility-audit", "6Robustness", "7Route-diagram", "8Figure-gate", "9Paper-writing", "10Math-proof-gate", "11Cross-question-check", "12Rubric-final", "13Repair-by-rubric-verdict", "14Layout-and-format", "15Verification", "16Web-demo"
+  ]
+    },
+    {
+      "title": "工具 Skills",
+      "skills": [
+        "doctor"
+      ]
+    },
+    {
+      "title": "内部依赖",
+      "skills": [
+        "_references"
+      ]
+    }
+  ]
+}

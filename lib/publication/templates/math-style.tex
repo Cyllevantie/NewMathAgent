@@ -1,0 +1,23 @@
+% Presentation only. Copy into paper/; contest-specific font requirements prevail.
+\RequirePackage{amsmath,amssymb}
+% Match the Times-style Latin text used by the CUMCM template.
+% XeLaTeX/LuaLaTeX only; other engines retain their existing math fonts.
+\RequirePackage{iftex}
+\ifPDFTeX\else
+  \IfFileExists{unicode-math.sty}{%
+    \RequirePackage{unicode-math}%
+    \IfFontExistsTF{TeX Gyre Termes Math}{\setmathfont{TeX Gyre Termes Math}}{}%
+  }{}%
+\fi
+\AtBeginDocument{%
+  \setlength{\abovedisplayskip}{8pt plus 3pt minus 2pt}%
+  \setlength{\belowdisplayskip}{8pt plus 3pt minus 2pt}%
+  \setlength{\abovedisplayshortskip}{4pt plus 2pt}%
+  \setlength{\belowdisplayshortskip}{6pt plus 2pt minus 2pt}%
+}
+% One numbered group, aligned relations, optional brace conveys joint constraints.
+\newenvironment{modelconstraints}
+  {\begin{equation}\left\{\begin{aligned}}
+  {\end{aligned}\right.\end{equation}}
+\newcommand{\modelunit}[1]{\,\mathrm{#1}}
+% Use \numberwithin{equation}{section} only when compatible with the chosen template.

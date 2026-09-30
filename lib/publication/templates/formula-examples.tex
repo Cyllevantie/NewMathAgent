@@ -1,0 +1,21 @@
+% Reference snippets, not a replacement for the problem's mathematical model.
+% Requires math-style.tex. Keep original symbols, bounds and quantifiers.
+\begin{modelconstraints}\label{eq:constraint-example}
+  0 \le x_i &\le a_i z_i, \\
+  \sum_i x_i &\le A, \\
+  z_i &\in \{0,1\}.
+\end{modelconstraints}
+% Put the scope i in I in the surrounding prose; use a separate group if long.
+\begin{equation}\label{eq:piecewise-example}
+  f(x)=\begin{cases}
+    x, & x\ge 0,\\
+    0, & x<0.
+  \end{cases}
+\end{equation}
+% Derivations use aligned; independent constraints above use one row each.
+\begin{equation}
+  \begin{aligned}
+    R &= p v + \lambda p(P-v) \\
+      &= \lambda pP + (1-\lambda)pv.
+  \end{aligned}
+\end{equation}

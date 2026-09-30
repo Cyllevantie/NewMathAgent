@@ -1,0 +1,41 @@
+% !TEX program = xelatex
+% =============================================================================
+%  附录 A —— 独立工程，单独编译成 `附录A.pdf`。
+%
+%  为什么是独立工程：提交件是两个 PDF ——
+%    · `正文.pdf`  摘要 + 正文(一～七) + 八/九 + 末页「支撑材料文件清单」表
+%    · `附录A.pdf` 补充推导 / 补充图表 / 补充结果（就是本工程）
+%  9Paper-writing 把本目录连同 `_base/` 复制到 `paper_appendix/`，在那里编译两遍。
+%
+%  公式编号要接续正文，否则附录里出现「式(1)」与正文第 1 式撞号。下面的
+%    `\setcounter{equation}{N}` 里 N 是正文公式总数，由 14Layout-and-format 阶段算出来
+%    写进去（位置在第一个公式之前）。**不要写死** —— 正文公式增减一次就要重算。
+%    图不用管：`\appendixAcn` 里已经 `\thefigure` 重置成 A1、A2。
+%
+%  这里不排「附录」大标题 —— 文件名已经叫 `附录A.pdf`，正文末页的清单表也
+%    单独指向它，再排一个「附录」只会重复。章节一律用 `\subsection*{A.1\quad …}`。
+%
+%  源码不排进这里：「源码不再排进论文」——代码以散装 `.py` 提交，
+%    在正文末页的清单表里逐项登记。`_base/macros.tex` 里没有 `\appendixBcn`
+%    （附录 B 完整源程序）这条宏。
+%
+%  本文件与 `paper/main.tex` 一样，导言区归 14Layout-and-format 独占，write 只写 sections/。
+% =============================================================================
+\documentclass[12pt, a4paper]{ctexart}
+
+\input{_base/preamble.tex}
+\input{_base/macros.tex}
+
+% 结果登记值：附录里引用的数值同样走 \ResultValue，不写裸数字。
+\IfFileExists{result-values.tex}{\input{result-values.tex}}{}
+\providecommand{\ResultValue}[1]{\textbf{[未生成 result-values.tex：\detokenize{#1}]}}
+
+\begin{document}
+\hypersetup{pdftitle={},pdfauthor={}}
+
+% N = 正文公式总数，由 14Layout-and-format 填。这里放 0 只是占位。
+\setcounter{equation}{0}
+
+\input{sections/A_appendix}
+
+\end{document}

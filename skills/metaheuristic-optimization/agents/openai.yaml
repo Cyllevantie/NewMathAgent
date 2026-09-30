@@ -1,0 +1,4 @@
+interface:
+  display_name: "智能优化算法"
+  short_description: "查阅匹配版本的官方文档，构建、运行并验证可复现的智能优化实验"
+  default_prompt: "使用 $metaheuristic-optimization 查询匹配版本的官方文档，为当前项目建立并验证智能优化方案。"

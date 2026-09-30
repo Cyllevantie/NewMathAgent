@@ -1,0 +1,294 @@
+% =============================================================================
+%  _base/preamble.tex —— 所有模板族共享的排版规范层
+%
+%  这一层的作用是把格式规则变成机械保证，而不是留给写作者自觉。
+%  使用方式：模板族的 main.tex 写完 \documentclass 后立即 \input{_base/preamble.tex}
+%            （9Paper-writing 复制模板时会把 _base/ 一并复制到 paper/_base/）。
+%
+%  本文件里几乎每条设置都带「现象 → 原因 → 改法」注释。改动前先读注释：
+%  多数看似多余的设置都是为了修具体的排版问题（行距不齐、标点出界、图表标题不统一、
+%  表内压行等），删掉会静默复现。format 阶段独占本文件的所有权，write 不碰。
+% =============================================================================
+
+% ---------- 页面：A4，页边距按「框架模板.pdf」对齐 ----------
+% 量测值(33 页完全一致，是硬边界)：左 70.9pt=25.0mm、右 61.6~62.4pt=21.7~22.0mm、
+% 上 68.5pt=24.2mm、下 38.1pt=13.5mm ⇒ 内容宽 163.2mm、内容高 259.3mm。
+\usepackage[a4paper, top=2.42cm, bottom=2.27cm, left=2.50cm, right=2.18cm]{geometry}
+% 页脚(页码)位置对齐模板：模板页码基线距纸张底边 13.5mm ⇒ footskip = 22.7 − 13.5 = 9.2mm
+\setlength{\footskip}{23.5pt}
+
+% ---------- 数学 ----------
+\usepackage{amsmath}
+% 行间公式的上下文间距按正文紧凑化（不改字号、不改页边距，仅收紧公式前后的空白）
+%
+% 下面几条事实由受控探针（paper/_probe*.tex，用完即删）量出，改这里前先看：
+%
+% ① 公式前面有没有空行，决定了这个参数管不管用。
+%    TeX 只在"公式紧接上文（同一段落）"时才插 `\abovedisplayskip`；公式自己起一段
+%    （前面空一行）时完全不插，净空只剩段间行距 ≈ `\baselineskip`（19.9pt）。
+%    同一份探针：紧接上文 → 净空 13.2pt；前面空一行 → 23.1pt（且把 skip 从 14pt
+%    改到 2pt 也纹丝不动，因为压根没用到它）。**本项目 91% 的公式前面都有空行**，
+%    所以"公式离上面的字非常远"主要来自这里 —— 修法在源文件：公式紧跟引出它的
+%    那句话，不要在中间留空行（规则见 docs/WRITING_QUALITY.md「公式的三种间距」）。
+%
+% ② `align` 那种多行对齐还有一段额外的上方空档，与 ①②两个参数都无关（把 skip
+%    设成 0、把 \jot 设成 0 都不动它，恒为 28.8pt）。症结是正文那套刚性行距
+%    `\lineskiplimit=-20pt`/`\lineskip=0pt` —— 它在追加对齐盒子时让 TeX 算不出正确的
+%    行间胶。显示公式里那套 hack 本来就无用，故在环境内局部恢复成正常值（见下），
+%    同一处 28.8 → 8.8pt。
+%
+% ③ `\jot` 只管多行公式内部相邻两行的附加间距；`align`/`gather` 内部的基线间距只有
+%    12.1pt（≈ 字号），`\jot=0` 时高行互相压住（净空 -4.4 ~ -19pt）。抬到 14pt ⇒
+%    26.1pt，与正文 19.9pt 同档。
+%
+% ④ 刚性行距还会让公式盒之后的行间胶算错（四值同取的
+%    `\jot`/skip 与 ② 的显示环境保护都治不了它）：末行以分式分母收尾的公式，字形实际
+%    下探到末行基线以下 9.4pt，而 TeX 按刚性行距算出的净空只有 −8.36pt ⇒ 与后续正文叠印
+%    （交付件式(14)，逐页目检可见分式横线穿过正文）。对照实验（沙箱副本、只改全局参数）：
+%    把 `\lineskiplimit` 全局恢复 0pt 后同一处净空变 **+11.14pt** ⇒ 病根是刚性行距，
+%    不是公式写错；所以不能靠改本节全局参数修 —— 那会推翻「全文统一行距」这条硬要求。
+%    修法：在那一式之后补一个定点位移；三种写法的位移不同，别写错：
+%      · `\vspace{Xpt}` 直接跟在 `\end{equation}` 后（仍是横向模式）⇒ 位移 = X + 19.9
+%        （TeX 另补一条 \baselineskip）。代价大得多：8.5pt 就让正文多出一页；
+%      · `\par\vspace{Xpt}` ⇒ 位移恰好 X（现行做法：式(14) 取 9pt ⇒ 墨迹净空 +0.60pt，
+%        与正文相邻两行常规墨迹净空 ≈2.7pt 同量级）；
+%      · 再加一句 `\nointerlineskip` 会退回 X + 19.5，更糟。
+%    另一条零代价路子是把高行排在非末行（末行矮就不会溢出）。
+%    这类补偿只治"末行带深下探"的那一式，别推广成全局加间距。
+%
+% 三处净空的验收标准（同一页里应当落在同一条带内，18.7~21.6pt）：
+%    文字→公式 / 公式→公式 / 公式→文字 ≈ 20pt。量法见 docs/WRITING_QUALITY.md。
+\AtBeginDocument{%
+  \setlength{\abovedisplayskip}{12pt}%
+  \setlength{\belowdisplayskip}{14pt}%
+  \setlength{\abovedisplayshortskip}{12pt}%
+  \setlength{\belowdisplayshortskip}{14pt}%
+  \setlength{\jot}{14pt}%
+  % 显示公式内部恢复行距保护（病因见上面 ②；\setlength 在环境内是局部的，出环境自动还原）
+  \AtBeginEnvironment{equation}{\lineskiplimit=0pt \lineskip=3pt}%
+  \AtBeginEnvironment{equation*}{\lineskiplimit=0pt \lineskip=3pt}%
+  \AtBeginEnvironment{align}{\lineskiplimit=0pt \lineskip=3pt}%
+  \AtBeginEnvironment{align*}{\lineskiplimit=0pt \lineskip=3pt}%
+  \AtBeginEnvironment{gather}{\lineskiplimit=0pt \lineskip=3pt}%
+  \AtBeginEnvironment{multline}{\lineskiplimit=0pt \lineskip=3pt}%
+}
+\input{_base/math-style.tex}
+
+% ---------- 图表 ----------
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+% 表格列型：文字列的不做两端对齐。
+% 用 p{} 时该列会被两端对齐，中文行会被拉伸，出现「字的间距忽大忽小」
+% (速查表里「问 题 三： 末 端 平 衡 含 水 率」)。改成 L/C/R 后行尾自然留白，
+% 全表字号与「主要符号说明」一致取 \small。@{} 去首尾多余边距。
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+\usepackage{float}
+% 符号说明表用 longtable 排版：该表高约 20cm，整表不可分割时会被整页推走，
+% 在本节标题后留下半页空白；longtable 允许表体断页并自动重复表头。
+\usepackage{longtable}
+% 数据表的「时间/h」表头跨两行表头竖直居中，使其中心落在 \cmidrule 上
+\usepackage{multirow}
+\usepackage{caption}
+% 图题规格与各表表题一致：同为 10.5pt、黑体加粗（图题默认是 10.95pt 宋体常规，
+% 与表题不统一）。改一处即可，全篇 31 张图统一生效。
+\DeclareCaptionFont{capstyle}{\fontsize{10.5pt}{12.6pt}\bfseries}
+\captionsetup{font=capstyle, labelsep=quad}
+% 图题用全角冒号连接编号与题目（图 3：预热平衡阶段…），表题仍用空格。
+\DeclareCaptionLabelSeparator{cncolon}{：}
+% 多行图题各居中对齐：默认是两端对齐，短的第一行会贴在左边、看着不像在图正下方
+\captionsetup[figure]{labelsep=cncolon, justification=centering}
+% 三线表的行距：正文行距为模板给定的 1.43，表格内沿用会明显偏松，故按 0.88 收紧
+\renewcommand{\arraystretch}{1.08}
+\setlength{\tabcolsep}{4pt}
+% 浮动体排布：允许单页容纳更多浮动体，减少因浮动体不可放置而留下的大片空白
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.92}
+\renewcommand{\textfraction}{0.06}
+\renewcommand{\floatpagefraction}{0.72}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
+
+% ---------- 参考文献的排面：字号与行距 ----------
+% 文献的间隔与字号以 <参考件> 为准。对比（同一批条目）：**本文 12.0pt / 行距 19.9pt**
+% （跟着正文走），**参考件 10.0pt / 12.2pt** —— 字号大 20%、行距松 63%，故按下值收紧。
+% 两个坑：
+%   ① `\fontsize{10pt}{12.2pt}` 的第二个参数会再乘全文的 \linespread{1.375} ⇒ 实际行距
+%      16.7pt（不是 12.2）。所以第二个参数要反算：12.2 ÷ 1.375 ≈ 8.9pt ⇒ 正好 12.2pt。
+%   ② `thebibliography` 内部走 `\list`，它自己在 `\begin` 之后才设 \itemsep/\parsep ⇒
+%      在 `\AtBeginEnvironment` 里设这两个长度会被覆盖（条间空隙仍有 ~10pt）。
+%      可靠做法是包一层 \bibitem：每个条目开跑前把长度设回去（\item 读的就是那一刻的值）。
+\AtBeginEnvironment{thebibliography}{\fontsize{10pt}{8.9pt}\selectfont}
+\let\FMAorigbibitem\bibitem
+\renewcommand{\bibitem}{%
+  \setlength{\itemsep}{0pt}\setlength{\parsep}{0pt}\setlength{\parskip}{0pt}%
+  \FMAorigbibitem}
+
+% ---------- 字体（fontspec + ctex，xelatex 编译） ----------
+% 正文宋体(SimSun)小四(12pt)、标题黑体(SimHei)：国赛格式规范的要求。
+% 中文一侧不再做任何 \setCJK*font 覆盖，全部交给 ctex 的 windows 字体集(本机默认)：
+%   \rmfamily / \bfseries      SimSun / SimHei        —— 正文、论文标题、表题、摘要标题
+%   \heiti                     SimHei / Microsoft YaHei —— 各级标题、关键词
+%   \emph                      KaiTi  / Microsoft YaHei —— 中文强调
+%   \sffamily / \ttfamily      Microsoft YaHei / FangSong
+% 说明：把 \setCJKmainfont 指向「微软雅黑 Light」会让上述四条全部失效——
+% 正文变雅黑 Light(字重偏细、印刷偏淡)、黑体与楷体一并消失，并引出 DejaVuSans 等回退字体。
+% 故按规范只保留西文与数学的 Times New Roman，中文一侧交给 ctex。
+\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{}
+% 取消 xeCJK 在中文与英文/数字之间自动插入的间隙（中西文之间不留空格）。
+% 注意：仅去间隙，不改断行规则；中西文边界仍允许换行。
+% 中西文之间：保留可断行的粘胶但宽度取 0。
+% 不能设成空的 {} —— 那会连换行点一起删掉，使「写入\texttt{results/robustness/}、再由…」
+% 成为一整块不可断内容，导致行末溢出纸边(最右超出 19.8mm)。
+% 零宽粘胶既看不出空格，又保留了断行机会。
+\xeCJKsetup{CJKecglue={\hskip 0pt}}
+% 取消行首标点的「悬挂」(xeCJK 默认会把行首的(〈“ 等挤出正文左边界，偏出 2.4mm)。
+% PunctStyle=plain 关闭标点的位置与压缩调整，使每行都严格从左边距起排，与模板一致。
+% 注意：不设此项(默认 quanjiao)会让标点左右两端都"悬挂"出版心
+% (左边界 22.1mm vs 版心 25.0mm，右端最多探出 20.5mm)，
+% 这正是"上一行和下一行格式不一样"的来源；模板没有这个行为，故显式关闭。
+\xeCJKsetup{PunctStyle=plain}
+% 强调不用楷体：ctex 把 \emph 映射到 KaiTi，正文里就成了第三种中文字体
+% （摘要里「以全内部最大值」「各处」两处最扎眼）。改为加粗，全文中文字体只剩
+% 宋体（正文）与黑体（标题/加粗）两种，与已有的 \textbf 用法一致。
+\renewcommand{\emph}[1]{\textbf{#1}}
+% 等宽：MS Gothic（对中文注释覆盖最好）。它仍缺 ⇒/∈/≪/≫/⌊/⌋/℃/∝/𝒥/Ṙ/Ṽ，
+% 重印源码时由下方 literate=* 映射到数学字体，避免 PDF 出现空白/豆腐块。
+\IfFontExistsTF{MS Gothic}{\setmonofont{MS Gothic}}{%
+  \IfFontExistsTF{Consolas}{\setmonofont{Consolas}}{\IfFontExistsTF{Menlo}{\setmonofont{Menlo}}{}}}
+
+% 下列字符不在等宽（MS Gothic）与正文（Times New Roman）的覆盖内，重印源码时会掉字成空白。
+% 用 newunicodechar 做全局字形映射：listings 的 literate 对"字母类"字符（Ṙ/Ṽ/⌊/⌋/𝒥）不生效，故不用它。
+\usepackage{newunicodechar}
+\newunicodechar{⇒}{\ensuremath{\Rightarrow}}
+\newunicodechar{∈}{\ensuremath{\in}}
+\newunicodechar{≫}{\ensuremath{\gg}}
+\newunicodechar{≪}{\ensuremath{\ll}}
+\newunicodechar{℃}{\ensuremath{^\circ\mathrm{C}}}
+\newunicodechar{∝}{\ensuremath{\propto}}
+\newunicodechar{⌊}{\ensuremath{\lfloor}}
+\newunicodechar{⌋}{\ensuremath{\rfloor}}
+\newunicodechar{𝒥}{\ensuremath{\mathcal{J}}}
+\newunicodechar{Ṙ}{\ensuremath{\dot R}}
+\newunicodechar{Ṽ}{\ensuremath{\tilde V}}
+
+% ---------- 正文：首行缩进 2em，行距与段距 ----------
+% 行距对齐「框架模板.pdf」：12pt 正文的相邻基线间距为 19.9pt(比值 1.66，即 1.65 倍字号)。
+% LaTeX 的 \linespread 以 1.2 倍字号为基数缩放，故取 1.65/1.2 = 1.375 才得到 19.9pt。
+% 全文统一此值，不再分正文/表格/摘要/附录各设一套。
+\linespread{1.375}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0pt}
+% 关键：让每一行的基线距都严格等于 \baselineskip。
+% 默认 \lineskiplimit=0 时，含下标/上下标的行(行内公式)一旦超高，TeX 就改用 \lineskip(1pt)
+% 而不是 \baselineskip，导致该行被挤紧——同一段里出现 19.4pt 与 15.0pt(=1.25 倍) 两种行距，
+% 这就是"不同行的段前段后间距不一样"的来源。把下限设成足够负即可强制统一。
+\setlength{\lineskiplimit}{-20pt}
+\setlength{\lineskip}{0pt}
+% ctexart 默认 \flushbottom（双面排版）会把页内胶水拉伸/压缩以填满版心，
+% 于是同一段里出现 18.3pt 与 20.4pt 这类"成对"偏差（两者之和 ≈ 2×行距）。
+% 改成 \raggedbottom 后每行严格等于 \baselineskip，页尾自然留白。
+\raggedbottom
+% ctex 会在 \AtBeginDocument 阶段重设 \parskip（前言里设的会被覆盖），
+% 故这里再设一次；同时把 \baselineskip 固定为无伸缩的值，
+% 否则段首行会比正文行多 1.05pt、含深下标的行会少 1.05pt（20.41 / 18.31 vs 19.36）。
+\newlength{\rigidbaselineskip}
+\AtBeginDocument{%
+  \setlength{\parskip}{0pt}%
+  % 先把当前自然行距读进一个长度寄存器（\setlength 取的是自然宽度，丢掉 plus/minus），
+  % 再写回 \baselineskip，从而保留 \linespread 的缩放又去掉伸缩量。
+  % 不能直接写死 19.36pt——那会把 \linespread 整个覆盖掉。
+  \setlength{\rigidbaselineskip}{\baselineskip}%
+  \setlength{\baselineskip}{\rigidbaselineskip}%
+  \setlength{\lineskip}{0pt}%
+  \setlength{\lineskiplimit}{-20pt}%
+}
+
+% ---------- 标题编号 ----------
+\ctexset{
+  section/number       = \chinese{section},
+  subsection/number    = \arabic{section}.\arabic{subsection},
+  subsubsection/number = \arabic{section}.\arabic{subsection}.\arabic{subsubsection},
+}
+
+% ---------- 标题格式 ----------
+\usepackage{titlesec}
+% 大标题(一、问题重述 …)：17pt、行距 1.2(20.4pt)、段后 18pt
+\titleformat{\section}
+  {\centering\fontsize{17pt}{20.4pt}\bfseries}
+  {\chinese{section}、}{0.5em}{}
+% 小标题(1.2 问题提出 …)：15pt、行距 1.2(18pt)、段后 7pt
+\titleformat{\subsection}
+  {\fontsize{15pt}{18pt}\bfseries}
+  {\arabic{section}.\arabic{subsection}}{0.6em}{}
+% 三级标题：按同比例取 13pt、行距 1.2、段后 4pt
+\titleformat{\subsubsection}
+  {\fontsize{13pt}{15.6pt}\bfseries}
+  {\arabic{section}.\arabic{subsection}.\arabic{subsubsection}}{0.6em}{}
+\titlespacing{\section}{0pt}{1em}{18pt}
+\titlespacing{\subsection}{0pt}{1em}{7pt}
+\titlespacing{\subsubsection}{0pt}{0.8em}{4pt}
+
+% ---------- 代码 ----------
+\usepackage{xcolor}
+\usepackage{placeins,etoolbox,needspace}
+% ---------- 列表（enumerate）的间距与缩进：与正文段落一致 ----------
+% 要求：相邻假设之间的距离与正文段落一致（中间不加空距），
+%   每段开头空两格、折行顶格（= 首行缩进两格、折行顶格）。
+% `enumerate` 默认会吃文档类的 `\itemsep`/`\parsep`（article/ctexart 约 4pt 上下）
+%   ⇒ 假设条目之间多出一条空距；且默认是悬挂缩进（折行对齐到「1.」之后），
+%   与正文段落（首行缩进两格、折行顶格）不一致。
+% 改法：全局把项目间距清零（中文论文惯例：列表项之间不加空距）；缩进由用到的地方按需给
+%   —— 假设节写 `[leftmargin=0pt,itemindent=2em,labelsep=0.5em]`（见 sections/3_assumptions.tex）。
+%   `\setlist` 需要 enumitem；与本模板已加载的宏包（ctexart / titlesec / caption / longtable）无冲突。
+\usepackage{enumitem}
+\setlist[enumerate]{itemsep=0pt,parsep=0pt,topsep=0.3\baselineskip,partopsep=0pt}
+% 缩进也机械保证：一级列表 = 首行缩进两格、折行顶格（与正文段落同款），
+% 这样写手写裸 `\begin{enumerate}` 也是对的 —— 不依赖它在每个 section 里记得带选项。
+% 二级列表保留缩进（否则嵌套列表会跟一级齐平、层次看不出来）。
+\setlist[enumerate,1]{leftmargin=0pt,labelindent=2em,labelwidth=*,align=left,labelsep=0.5em}
+\setlist[enumerate,2]{leftmargin=2em,itemindent=0pt,labelsep=0.5em}
+% 断行参数：emergencystretch 取 3.5em 时，一旦某段排不下，TeX 会把整段每一行都拉松，
+% 「优点一」那行汉字间距会达 2.62pt（全文正常中位数 0.12pt），非常扎眼。
+% 故放宽 tolerance、同时把 emergencystretch 收到 1.5em：允许个别行自己松一点，
+% 不再牵连整段。全文最松的一行从 2.62pt 降到 1.70pt，且不产生 Overfull。
+\setlength{\emergencystretch}{1.5em}
+\tolerance=2500
+
+\usepackage[hidelinks,bookmarksnumbered]{hyperref}
+% 表格行距不单独收紧：全文统一使用正文行距
+% run-in 小标题：与其它标题一致用粗体(雅黑 Bold)。
+% 不用 titlesec 的 [runin]——它会把标题推到左边界之外 2em(16.6mm vs 正文 25.0mm)；
+% 改为普通段首行内小标题，严格从左边距起排。
+\titleformat{\paragraph}[block]{}{}{0pt}{}
+\titlespacing*{\paragraph}{0pt}{0.6em}{0pt}
+\makeatletter
+\renewcommand{\paragraph}[1]{\par\noindent{\bfseries #1}\quad}
+\makeatother
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  backgroundcolor=\color{black!3},
+  frame=single,
+  framesep=6pt,
+  rulecolor=\color{black!30},
+  framerule=0.6pt,
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true,
+  extendedchars=true,
+  numbers=left,
+  numberstyle=\tiny\color{black!55},
+  numbersep=8pt,
+  language=Python,
+  % 缺字形映射改由导言区的 newunicodechar 全局处理（见"字体"一节）
+  language=Python
+}
+
+% ---------- 页码：底部居中 ----------
+\pagestyle{plain}
+

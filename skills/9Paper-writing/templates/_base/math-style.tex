@@ -1,0 +1,21 @@
+% 数学样式（所有模板族共享）。由 _base/preamble.tex 在导言区 \input。
+% 本文件只管字体与数学环境；行间公式的上下间距由 _base/preamble.tex 统一为
+% 四个参数同取刚性 14pt（此处不再设，否则两处 \AtBeginDocument 互相覆盖、谁后谁赢）。
+\RequirePackage{amsmath,amssymb}
+% 数学字体与正文西文（Times New Roman）协调：XeLaTeX/LuaLaTeX 下用 TeX Gyre Termes Math。
+% 仅 xelatex/lualatex 生效；其它引擎保留原有数学字体。
+% （要求见 docs/WRITING_QUALITY.md。）
+\RequirePackage{iftex}
+\ifPDFTeX\else
+  \IfFileExists{unicode-math.sty}{%
+    \RequirePackage{unicode-math}%
+    \IfFontExistsTF{TeX Gyre Termes Math}{\setmathfont{TeX Gyre Termes Math}}{}%
+  }{}%
+\fi
+
+% 一个编号、关系对齐，可选大括号表达联合约束。
+\newenvironment{modelconstraints}
+  {\begin{equation}\left\{\begin{aligned}}
+  {\end{aligned}\right.\end{equation}}
+\newcommand{\modelunit}[1]{\,\mathrm{#1}}
+% \numberwithin{equation}{section} 仅在所选模板兼容时使用。

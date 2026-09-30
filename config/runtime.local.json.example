@@ -1,0 +1,11 @@
+{
+  "_说明": "把本文件复制成同目录的 runtime.local.json 再填。run.ps1 启动时读它，只影响本机，不随仓库分发。",
+  "_python": "项目专用解释器。不要用系统 python：依赖清单在 requirements.lock.txt，装法见 docs/ENVIRONMENT.md。",
+  "python": "<项目 venv 里的 python 完整路径，例如 C:\\\\venvs\\\\NewMathAgent\\\\Scripts\\\\python.exe>",
+  "_tool_directories": "外部工具的 bin 目录，按需增删；启动器会把它们**拼进本进程的 PATH**（不写全局 PATH）。缺哪个都只是那个功能不可用，不影响别的。",
+  "tool_directories": [
+    "<XeLaTeX 的 bin 目录，例如 C:\\\\texlive\\\\2026\\\\bin\\\\windows>",
+    "<Pandoc 解压目录，例如 C:\\\\tools\\\\pandoc-3.6.4>",
+    "<draw.io 桌面版解压目录，例如 C:\\\\tools\\\\draw.io-31.3.2>"
+  ]
+}

@@ -1,0 +1,115 @@
+% !TEX program = xelatex
+% =============================================================================
+%  全国大学生数学建模竞赛（CUMCM）模板 —— 电子版
+%
+%  排版引擎：XeLaTeX（编译两遍以解决交叉引用）
+%  编译：在 paper/ 目录内  xelatex -interaction=nonstopmode main.tex  （跑两遍）
+%
+%  本文件只管赛事差异（文档类、封面/摘要页约定、章节骨架、附录编号口径）。
+%    所有通用排版规范在 _base/ 里，由下面的 \input 引入：
+%      _base/preamble.tex   页面/字体/行距/标题/caption/表格/浮动体/代码
+%      _base/macros.tex     \papertitle \abstractcn \referencescn \appendixAcn
+%                           \threelinetable \paperfigure \paperfigurepair…
+%      _base/math-style.tex 数学字体与环境
+%    9Paper-writing 复制模板时必须把 _base/ 一并复制到 paper/_base/。
+%
+%  格式规则是机械保证的（写在 _base 里），不是靠写作者自觉。
+%    format 阶段独占 _base/ 与本文件导言区的所有权；write 只写 sections/ 和摘要。
+%    「正文所有东西的间距、距离上下行、大小都一样，标题统一」——这条
+%    由 preamble 保证，不要在每个 section 里手工 \vspace 调间距。
+% =============================================================================
+\documentclass[12pt, a4paper]{ctexart}
+
+\input{_base/preamble.tex}
+\input{_base/macros.tex}
+
+% ---------- 结果登记值（由 `python -m lib.result_contract export` 生成，禁止手工编辑） ----------
+% 正文里的数值一律写 \ResultValue{<指标ID>}，不写裸数字 —— 这样改结果时只需重建登记表，
+% 不会出现「正文数字与 results/*.json 不一致」。文件不存在时给一条可读的提示而不是报错。
+\IfFileExists{result-values.tex}{\input{result-values.tex}}{}
+% 未生成时给一条可读提示而不是致命错误。\providecommand 在文件已定义 \ResultValue 时不覆盖。
+% 必须用 \detokenize：#1 是指标 ID，而本项目所有真实 ID 都带下划线
+%   （q1_surface_moisture_1800s…）。直接排进文本模式会因 `_` 触发
+%   `! Missing $ inserted` + `! Extra }, or forgotten $` —— 也就是这个"可读提示"
+%   恰好在它唯一的用途（result-values.tex 尚未生成的早期写作）下变成硬编译错误。
+\providecommand{\ResultValue}[1]{\textbf{[未生成 result-values.tex：\detokenize{#1}]}}
+
+% ---------- 断行与孤行控制 ----------
+\clubpenalty=10000
+\widowpenalty=10000
+\pretocmd{\section}{\Needspace{8\baselineskip}}{}{}
+% 附录里定义的图号（图 A1、A2…）若正文要提前引用，把 \newlabel 桩放在 labels_appendix.tex，
+% 由本行引入。没有该文件时静默跳过（多数题目不需要）。
+% 两种命名都支持：下划线写法 `labels_appendix.tex` 与连字符写法 `labels-appendix.tex`。
+% 桩文件名写错会被 IfFileExists 静默跳过，
+% 后果是正文里提前引用的附录图号全变成 ??，而且只留一条 LaTeX 警告。
+\IfFileExists{labels_appendix.tex}{\input{labels_appendix.tex}}{%
+  \IfFileExists{labels-appendix.tex}{\input{labels-appendix.tex}}{}}
+
+\begin{document}
+\hypersetup{pdftitle={},pdfauthor={}}
+
+% =============================================================================
+%  标题 + 摘要（电子版第一页；摘要限 1 页；关键词单独一行）
+% =============================================================================
+\papertitle{<论文标题>}
+
+\abstractcn{%
+% 结构：总起一句（本文做了什么）→ 逐问一段（方法 + 精确数值）→ 收尾一句（评价/推广）。
+% 每问一段必须以「针对问题N，」开头。数值必须来自 RESULTS_REPORT.md，不得编造。
+% 篇幅：约 801 字用正文行距正好排满首页，超过就会溢到第 2 页（那是硬错误）。
+<摘要正文：总起句。>
+
+\textbf{针对问题一，}<方法一句话 + 关键结果数值。>
+
+\textbf{针对问题二，}<方法一句话 + 关键结果数值。>
+
+\textbf{针对问题三，}<方法一句话 + 关键结果数值。>
+%
+}{<关键词1>；<关键词2>；<关键词3>；<关键词4>}
+
+% =============================================================================
+%  正文
+% =============================================================================
+\input{sections/1_restatement}
+\input{sections/2_analysis}
+\input{sections/3_assumptions}
+\FloatBarrier
+\input{sections/4_symbols}
+
+\section{模型的建立与求解}
+\input{sections/5_problem1}
+\input{sections/5_problem2}
+\input{sections/5_problem3}
+% 题目不止三问时按同样的命名往后加 5_problem4…；子问题数由题面决定，不硬凑。
+
+\input{sections/6_check}
+\input{sections/7_evaluation}
+
+% =============================================================================
+%  八、AI 工具使用说明；九、参考文献（合计不超过 1 页）
+%  这里不加 \clearpage —— 强令另起一页会把参考文献与附录各顺延一页。
+% =============================================================================
+\section{AI 工具使用说明}
+本参赛队在竞赛过程中使用了 AI 工具，主要用于文献搜集、语言美化、图表优化、代码测试，
+详细使用情况见支撑材料。
+
+\referencescn
+
+% =============================================================================
+%  附录（正文的最后一页）
+%
+%  只放一张「支撑材料文件清单」表：逐项登记提交出去的文件名 + 它做什么用。
+%  表体由 14Layout-and-format 阶段据 reports/SUBMISSION_MANIFEST.json 生成 —— 那份清单同时是
+%  打包依据，两边必须逐项一致（`python -m lib.delivery check` 会对账）。
+%
+%  详细的补充推导 / 补充图表不在这里，它们单独编译成 `附录A.pdf`
+%     （工程在 `paper_appendix/`，模板见 `appendix/`）。两个 PDF 的公式编号要接续，
+%     起始编号写在本行之前的 `\setcounter{equation}{N}`（N = 正文公式总数）。
+%
+%  这里没有「附录 B 完整源程序」：源码不再排进论文 ——
+%     代码以散装 `.py` 提交，在本表里逐项登记即可。
+% =============================================================================
+\appendixAcn[支撑材料清单]{A1_materials}
+
+\end{document}

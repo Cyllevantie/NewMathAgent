@@ -1,0 +1,61 @@
+{
+  "date": "2026-09-11",
+  "type": "manual_exemption",
+  "scope": "跳过 6robustness 重复执行、进入 7audit",
+  "not_claimed": "稳健性检验通过 / 数值收敛已验证",
+  "artifacts": {
+    "reports/ROBUSTNESS_REPORT.md": "02472f4151f820a6",
+    "code/outputs/robustness_2d.json": "3c1f048d9c230433",
+    "results/robustness.json": "b7d8f71cd5935a96",
+    "code/robustness.py": "24f4e610789c0b81",
+    "code/robustness_2d.py": "c6b75f003ba1c5e1",
+    "reports/HIL_DECISION.md": "b11fdc61adecc91b"
+  },
+  "receipt_refresh_20260911_1130": {
+    "reason": "W3 措辞降级（05:55）改了 ANALYSIS_MODELING_REPORT.md ⇒ analysis 输出/completion 及 review/code/drawio 输入指纹失效；另 drawio 新图改变了 code 的输出指纹",
+    "scope": "仅刷新这 4 阶段的回执，使其指向盘上现有产物；不代表重新验证",
+    "backup": "tmp/stages.before_refresh.json",
+    "changed": {
+      "analysis": {
+        "old": {
+          "inputs": null,
+          "outputs": null
+        },
+        "new": {
+          "inputs": "c16eb171e123f4b04cc2a45bbfc2f65f6f7b8ebef6697cedb92703beeeba9637:c729669d4408",
+          "outputs": "db506566fdd0a1905058ee6d2329c84fadf111f3f9073407942c17317b39f211"
+        }
+      },
+      "review": {
+        "old": {
+          "inputs": "3b70512ef159ec45ceadb03bb936a54c89280b2f86ff28bb1feb8069e8e7cfb5:c729669d4408:95c221c812df",
+          "outputs": "cafc6e7c109fa10e1a5b94e1aa2c3b12c3f9fa536f2eae5254e6aa8c1b9e069a"
+        },
+        "new": {
+          "inputs": "9eb0bf2924ff020e796c02a2179acf652dabb550b9cd7324dec50be3d34facd4:c729669d4408:95c221c812df",
+          "outputs": "cafc6e7c109fa10e1a5b94e1aa2c3b12c3f9fa536f2eae5254e6aa8c1b9e069a"
+        }
+      },
+      "code": {
+        "old": {
+          "inputs": "06aa1caf76865328a597e1247acaba684c8cd7ebb5f6f8fbee66cbb3ee92fad9:c729669d4408",
+          "outputs": "5afd3ef37d9767517b937579bcef35a960d9e2cb43fe0cba7de59974f8e478e1"
+        },
+        "new": {
+          "inputs": "c33cb5dd91234afb268c88710751ae67acefebac5d957a325d89cdef2c9f2f44:c729669d4408",
+          "outputs": "4a909aa9032cceb2c839137a5fb639dd6892e84e26092f5cb52692cf01269987"
+        }
+      },
+      "drawio": {
+        "old": {
+          "inputs": "46e7fa218e66e4f30bfcaaa5742f183ca9acdfe48f9082fe86bf9266b694f2e5:c729669d4408",
+          "outputs": "e347ee3e844ea711b606f1270f36399acf768446b0bf11f5a72c1252dc0441b7"
+        },
+        "new": {
+          "inputs": "7e98b9d1c2711f6784b7478c4c712458501ad388e0b6aba4e109020511e43381:c729669d4408",
+          "outputs": "e347ee3e844ea711b606f1270f36399acf768446b0bf11f5a72c1252dc0441b7"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+# `pip install -r requirements.txt`；
+# 复现: `pip install -r requirements.lock.txt`
+# 环境搭建与外部工具配置：docs/ENVIRONMENT.md（含换机迁移清单）。
+# `python runtime/doctor.py` , `python -m unittest discover -s regression`验证
+# Runtime: web driver, scientific computing, figures, spreadsheets, PDF checks.
+numpy>=1.24
+scipy>=1.11
+pandas>=2.1
+matplotlib>=3.7
+sympy>=1.12
+scikit-learn>=1.3
+openpyxl>=3.1
+PyMuPDF>=1.24
+Pillow>=10
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2
+python-multipart>=0.0.9
+httpx>=0.27
+
+# ---------------- 外部软件----------------
+# Claude Code 整条链的驱动（每阶段跑一次 claude -p）  VSCode/Cursor 扩展或独立 CLI  【硬依赖】
+# XeLaTeX     论文编译                 TeX Live 或 MiKTeX，提供 xelatex    【硬依赖】
+# pdftoppm    PDF 逐页转图（目视验收）  Poppler                             【硬依赖】
+# Pandoc      导出其他格式             pandoc.org                          【可选】
+# draw.io     画技术路线图             draw.io desktop                     【可选】
+# `python runtime/doctor.py` 核对
+# Claude Code 自动找不到时，在 `.env` 里设 `WEBDRIVER_CLAUDE=<完整路径>`。
+# 配置方法（含 Windows 路径与换机迁移）见 docs/ENVIRONMENT.md。
