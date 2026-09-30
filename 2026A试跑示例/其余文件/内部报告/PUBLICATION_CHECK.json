@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "status": "PASS",
+  "issues": [],
+  "warnings": [],
+  "prose_issues": [],
+  "kind_fills": {
+    "abstract": {
+      "fill": 0.9244037367068678,
+      "rows": 0,
+      "chars": 1103
+    }
+  },
+  "total_pages": 31,
+  "counts": {
+    "abstract": 1,
+    "ai_statement": 1,
+    "appendix": 1,
+    "body": 28,
+    "contents": 0,
+    "cover": 0,
+    "references": 0
+  },
+  "counted_pages": 29,
+  "limit": 30,
+  "target": 30,
+  "over_limit": 0,
+  "above_target": 0,
+  "min_pages": 25,
+  "below_min": 0,
+  "pdf_bytes": 1101379,
+  "formula_hints": [
+    {
+      "file": "paper/sections/5_problem1.tex",
+      "line": 13,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem1.tex",
+      "line": 19,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem1.tex",
+      "line": 21,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem1.tex",
+      "line": 49,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem1.tex",
+      "line": 124,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem2.tex",
+      "line": 13,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem3.tex",
+      "line": 15,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem3.tex",
+      "line": 23,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem3.tex",
+      "line": 25,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem3.tex",
+      "line": 52,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem3.tex",
+      "line": 90,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem3.tex",
+      "line": 94,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem4.tex",
+      "line": 15,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem4.tex",
+      "line": 17,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem4.tex",
+      "line": 52,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem4.tex",
+      "line": 57,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem4.tex",
+      "line": 59,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem4.tex",
+      "line": 65,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/5_problem4.tex",
+      "line": 111,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/6_check.tex",
+      "line": 5,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/6_check.tex",
+      "line": 7,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/6_check.tex",
+      "line": 11,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    },
+    {
+      "file": "paper/sections/6_check.tex",
+      "line": 19,
+      "message": "检查长公式是否混合定义、推导和数值代入；必要时分组"
+    }
+  ],
+  "style_hints": [],
+  "rule_basis": "计页口径：摘要计入正文页数（赛区补充规定）。国赛《格式规范（2026年修订稿）》只写「正文（一～七）不超过30页」「摘要单独成页1页」，未规定摘要是否计入，故本配置按赛区规定「计入」执行：counted_kinds = [abstract, body]，合计 ≤ 30 页。八、AI 工具使用说明 与 九、参考文献 合计 ≤ 1 页（模板原话「九写在8下面，加起来不超过1页」），**不占**这 30 页额度；附录单独起页、不限页数。A4；PDF 不超过 20MB。\n篇幅目标：**写满 30 页、宁多不少**（多了可以压缩，少了是真少）—— 低于 min_counted_pages=25 只出 warning 不判 FAIL，但必须在报告里写明为什么。此配置用于国赛电子版，其他赛事须另选口径。\n`min_kind_fill`：摘要必须写满一页 —— 直接量**版心填充率**（target=0.90、hard=0.80）；低于 hard 进 issues，由 `_mechanical_floor` 判死并把回退目标改指 ⑨（详见 `lib/publication/checks.py` 的 `kind_fills` 与 `lib/web/server.py` 的 `_has_prose` 分支）。回退目标取 ⑨ 的理由：⑨ 在 ⑩ 上游，回退它会连 ⑩ 一起重跑；判给 ⑩ 则文字那条谁也改不了 ⇒ 死循环。校准依据：参考件 `基于变物性耦合传热传质与动域模型的.pdf` 摘要页填充率 92.7%（1106 个非空白字符，按字数口径约 1034 字，落在官方 rubric 的 >1000 字档）；按本模板版面，0.90 ≈ 整页 1050 个非空白字符。\n`min_kind_chars` 降级为**兜底**：只在量不出填充率（单页/整页图）的 kind 上生效，`inspect` 里与 `min_kind_fill` 互斥，不重复报。\n**页面映射必须按内容实际归属声明**。`classify` 只信声明的区间（校验「铺满、不重叠」后按 `last-first+1` 求和），**它没有办法知道某一页物理上装着两个类别的内容** ⇒ 一页横跨两个类别时**归前一类**（这样正文被少数的一页会现形、超限才判得出来），或者让该类别**另起一页**。守着这条的是 `kind_start_markers` + `boundary_top_tol`（`lib/publication/checks.py::boundary_page_issues`）：某类别的**起始页**上，该类别的起始标记必须就是**这一页最上面那块文字**（容差 6pt），否则 `inspect` 判 FAIL、`bind_map` **直接拒绑**。判据不许放宽成「标记落在页面前 30%」—— 那会把上面仍漏着正文的页判过，正文超限就此漏判。calibration：同一行里块框与字形框差 0.0pt，而「漏两行」差 55.5pt ⇒ 6pt 分得干净。",
+  "pdf_sha256": "a6843a1cc449b535a103bbb4d8e9e77caa8fd6c2e1147ceee745103cc1a28fb9"
+}

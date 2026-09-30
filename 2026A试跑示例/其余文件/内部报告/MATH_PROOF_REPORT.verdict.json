@@ -1,0 +1,171 @@
+{
+ "schema_version": 2,
+ "stage": "mathproof",
+ "input_digest": "e3ada484e8a8320f8e0dfc4aee6dcc94cff8844a40cf74cd2ee3780b94a05171:python=cpython3.11.16;texlive@2026;pandoc@3.6.4;draw.io@31.3.2:7a037d3568c70856956c39c2dfeb1fdac0ff56b96774d535776acc069cb6cc86:270aeb29fabf:db2243d539e4",
+ "status": "APPROVED",
+ "issues": [],
+ "checks": [
+  {
+   "id": "proof_validity",
+   "status": "passed",
+   "reason": "全文唯一的带标签命题（§5.3.2「命题：」，问题三最坏点归约到轴心）带完整等式级推导：通量变量 q=rD∂_rC 的线性抛物型方程 → 抛物边界 q≤0 → 指数吸收与扰动 → 轴心项阶的内区范数界 → 三段时间极限的先后顺序。本阶段不引用正文推导、独立重推（子复核员 + 主审各自从 ∂_tC=(1/r)∂_r(rD∂_rC) 重走一遍；并原样重跑上一轮为同一对象写的 sympy/PDE 探针，输出逐字节相同）：方程逐项一致、扰动项的算子严格负那一支正确、不需要任何关于 D 的二阶导数的符号条件、三条极限的顺序无循环（固定 ε 先取扰动极限、最后再放 ε→0），构造不出反例。材料坐标那组强声称（守恒式展开→同除 ρ_d→换帧→散度改写）与两条守恒恒等式亦为恒等式、程序化残差为 0。没有任何一条以合成谱/拟合/图表充当证明。",
+   "evidence": [
+    {
+     "file": "paper/sections/5_problem3.tex",
+     "quote": "\\textbf{命题：}设 $C$ 是式~(\\ref{eq:q2-pde}) 的水分方程在 $[0,R]\\times(0,T]$ 上的经典解"
+    },
+    {
+     "file": "paper/sections/5_problem3.tex",
+     "quote": "\\textbf{证明要点：}记通量变量 $q(r,t)=rD\\,\\partial_rC$"
+    },
+    {
+     "file": "paper_appendix/sections/A_appendix.tex",
+     "quote": "取极限的顺序为：固定 $\\varepsilon$ 得 $\\tilde q_{\\varepsilon_0}\\le O(\\varepsilon^2)$，再令 $\\varepsilon_0\\to0^+$ 得 $\\tilde q\\le O(\\varepsilon^2)$，最后令 $\\varepsilon\\to0^+$ 得 $\\tilde q\\le0$"
+    },
+    {
+     "file": "paper_appendix/sections/A_appendix.tex",
+     "quote": "式~(\\ref{eq:a-flux}) 是线性抛物型方程，主部由前提 P1 一致抛物，零阶系数是 $c$，且不需要任何关于 $D$ 的二阶导数的符号条件"
+    },
+    {
+     "file": "paper/sections/2_analysis.tex",
+     "quote": "最坏点的位置另有一条带前提的条件命题作结构性依据"
+    }
+   ]
+  },
+  {
+   "id": "proof_applicability",
+   "status": "passed",
+   "reason": "命题的三条前提 P1/P2/P3 逐条在**已求出的解**上被数值验证并印在附录表 A1：P1 的 D 值域、P2 的表面出流最小裕度、P3 的 λ 上包；正文明确写「三条前提只在已求出的解上被数值验证，所以上述结论是带前提的条件命题，不是无条件定理」，且指出轴心项的内区范数必须取不含角点的紧集。前提的实测值本阶段独立复算过（P2 的 1.76e-3 kg/kg 与交付解的表面/环境序列差的最小值同源，P3 由 D(C,T) 经验式给出）。更强的结论（如 P2 失效时最坏点离开轴心）被显式披露为「对 P2 敏感」，没有把条件命题当无条件定理用，也没有把它的适用范围外推到尚未求优的对象上。",
+   "evidence": [
+    {
+     "file": "paper/sections/5_problem3.tex",
+     "quote": "三条前提只在已求出的解上被数值验证，所以上述结论是带前提的条件命题，不是无条件定理"
+    },
+    {
+     "file": "paper/sections/5_problem3.tex",
+     "quote": "正因为 P2 的裕度小，代码不把它当作免检假设，而是逐时刻自检最坏点位置，一旦偏离就退回全场判据并报警"
+    },
+    {
+     "file": "paper_appendix/sections/A_appendix.tex",
+     "quote": "P1 & 扩散系数一致抛物，$0<D_{\\min}\\le D\\le D_{\\max}<\\infty$"
+    },
+    {
+     "file": "paper_appendix/sections/A_appendix.tex",
+     "quote": "P2 的裕度只有 $1.76\\times10^{-3}$ kg/kg，即表面始终为出流这一条几乎是恰好成立，所以代码不把它当作免检假设"
+    },
+    {
+     "file": "paper_appendix/sections/A_appendix.tex",
+     "quote": "但如果把环境改成比初值更湿，则表面通量反向、最坏点离开轴心，所以该命题对 P2 是敏感的，这一点已写进正文的局限"
+    }
+   ]
+  },
+  {
+   "id": "optimality",
+   "status": "passed",
+   "reason": "全文没有把数值最优性说满：t_dry 是确定性 PDE 正问题上的标量事件时刻，论文写的是「目标函数只能通过一次数值求解加一次标量求根实现」，并给出求根容差、独立的首达步物理证据、首根之后的二次变号复核，以及同一实现的连续根/步进首达两个口径的分别登记；没有出现「全局最优」「唯一」「精确最优」式主张。跨问比较被显式限缩为量级上的弱陈述（问题三与问题四的物性经验式本来就不同，不能据此判断哪种组合更好）。可复现性与守恒校核另有三条独立旁证，都不依赖最优化收敛判据。",
+   "evidence": [
+    {
+     "file": "paper/sections/5_problem3.tex",
+     "quote": "其中 $C$ 由问题二的模型给出，不可写成显式表达式，所以目标函数只能通过一次数值求解加一次标量求根实现"
+    },
+    {
+     "file": "paper/sections/5_problem3.tex",
+     "quote": "判据自证由四条独立证据组成。\\textbf{首个满足判据的计算步实测全场最大含水率为 0.149999928226 kg/kg}"
+    },
+    {
+     "file": "paper/sections/5_problem3.tex",
+     "quote": "首根之后判据函数的最大值为 $-7.177\\times10^{-8}$，二次变号 0 次，所以首次达标与稳定达标一致"
+    },
+    {
+     "file": "paper/sections/5_problem4.tex",
+     "quote": "两类数字的定义不同，正文引用时按步进首达给出，并把连续根一并写明"
+    },
+    {
+     "file": "paper/sections/5_problem4.tex",
+     "quote": "跨问结论只能是量级上的弱陈述"
+    }
+   ]
+  },
+  {
+   "id": "narrative_consistency",
+   "status": "passed",
+   "reason": "摘要、正文、表体与结论在本轮改动后互不矛盾，且每一处读数都能指认到唯一一份产物：摘要的「自约 22.2 h 起一直不足 0.02 kg/kg」与 §5.2 的同一穿越事件同值（首次跌破 22.1517 h、其后无回升）；§5.1 的「六成五」= 8.7863/13.5130 = 0.6502；§5.2 的「最大升幅 0.797 / 最大回落 0.450」与附件 1 温度列逐点复算一致；§5.3 的环境延拓读数与跨度已统一到同一份产物（n=320 连续根 57.0055 / 56.9011，跨度 0.2419 → 0.24）；「对流换热系数减半 0.08 h」与同 n 基准的差一致；表 A5 问题四的 ∓0.046 与问题三的 ∓0.048 各自对得上；§6.2 关于「图中该两档是 n=160 对照实现上的读数」与 figures/make_figures.py 实取字段一致。交付 PDF 文本层复核：上述新串全部在、被替换的旧串（24 h 后、六成、0.797 回落、0.03 h、56.9667 与 56.8500）已不出现。另有一处**记号为唯一保留意见**（不是判为假陈述）：表 A5 的「初始含水率 ±1%」格写 ∓0.048 / ∓0.046，按行标签的 ± 顺序读会把 +1% 那一档的方向读反（产物是 +0.0472 / +0.0458），但该记号在写作记录里同时出现过 ± 与 ∓ 两种写法、未定型，且全文没有任何结论依赖这条通道的方向 —— 故记入 advisories 而不判 failed，见该条。",
+   "evidence": [
+    {
+     "file": "paper/main.tex",
+     "quote": "表面与环境之差自约 22.2 h 起一直不足 0.02 kg/kg"
+    },
+    {
+     "file": "paper/sections/5_problem2.tex",
+     "quote": "转折点出现在表面与环境之差降到 0.02 kg/kg 以下的时刻，即约 22.2 h 起一直满足"
+    },
+    {
+     "file": "paper/sections/5_problem1.tex",
+     "quote": "表面温度的抬升幅度约为环境在 30 min 内升幅的六成五"
+    },
+    {
+     "file": "paper/sections/5_problem2.tex",
+     "quote": "单步最大升幅 0.797 $^\\circ$C、单步最大回落 0.450 $^\\circ$C"
+    },
+    {
+     "file": "paper/sections/5_problem3.tex",
+     "quote": "环境延拓三档在 $n=320$ 连续根口径下的跨度为 0.24 h"
+    },
+    {
+     "file": "paper/sections/5_problem3.tex",
+     "quote": "对流换热系数减半时只移动 0.08 h"
+    },
+    {
+     "file": "paper/sections/6_check.tex",
+     "quote": "图中该两档是 $n=160$ 对照实现上的读数，与这个跨度不是同一口径，不能直接相减"
+    },
+    {
+     "file": "paper/sections/3_assumptions.tex",
+     "quote": "放宽后为峰值档或饱和拟合档，达标时刻的跨度为 0.24 h"
+    },
+    {
+     "file": "paper_appendix/sections/A_appendix.tex",
+     "quote": "初始含水率 $\\pm1\\%$ & 自设工程经验档 & $\\mp0.048$ & $\\mp0.046$"
+    },
+    {
+     "file": "reports/ROBUSTNESS_REPORT.md",
+     "quote": "建议按 $t_{\\rm dry}+2\\sigma$ 安排生产"
+    }
+   ]
+  }
+ ],
+ "advisories": [
+  {
+   "id": "adv-tableA5-c0-cell-sign-not-pinned",
+   "category": "claim",
+   "evidence": "paper_appendix/sections/A_appendix.tex 表 A5 现印「初始含水率 $\\pm1\\%$ & 自设工程经验档 & $\\mp0.048$ & $\\mp0.046$」。按行标签「$\\pm1\\%$」的先后顺序读，该格说的是 +1% 那一档把达标时刻**推前** 0.048 h；而 tmp/rob/out/cv_q23_C0_times1.01.json 与 cv_q23_C0_times0.99.json 相对 cv_q23_base.json 的连续根是 +0.0472 / −0.0477 h（问题四 +0.0458 / −0.0463），即**初值越湿、烘干越久**（与水多则需多烘的机理一致）。本阶段另跑 _tmp/mp5_C0.py 独立复算，同结论。同表已改过的两行是**按档位逐数绑定**的写法（扩散系数 $+20\\%$／$-20\\%$ 写 $-8.37$／$+12.67$；环境温度 $-1$／$+1$ 写 $+1.90$／$-1.81$），而本行$&$环境水分浓度行、换热系数行仍用「$\\pm$档位 + $\\mp$值」的记号。写作阶段自己的改动记录对**同一格**同时写过两种记号（reports/EDITORIAL_CHANGES.md 一处写「初始含水率…取的是连续根口径（$\\pm0.048$、$\\pm0.013$）」，另一处写「问题四列写 $\\mp0.048$ … $\\mp0.048$ 是问题三那一列（$+0.0472/-0.0477$）」），说明该记号尚未定型。",
+   "why_not_blocking": "不改任何交付数值：0.048 h / 0.046 h 的量值本身正确（与产物同值），且论文正文只用了它的**量值**（§6.2「对流换热系数与初始含水率的影响都在 0.05 h 之内」），全文没有任何结论、判据、表格或建议时长建立在这条通道的**方向**上；t_dry（57.1383 / 50.8333 h）与其余全部登记值不随之改变。",
+   "fix": "若要把方向钉死，就把该格改成同表已改过那两行的写法（把两个档与各自的数一一绑定，使读者不必依赖 $\\pm$／$\\mp$ 的约定），或把记号换成与产物同向的那一个；由 9Paper-writing 按写作规范自行决定句式，本阶段只给判据。",
+   "recheck": "表 A5 每一行的每个数都能由该行写出的档位唯一指认（含方向），且与 tmp/rob/out/cv_*_times1.01/0.99.json 相对 cv_*_base.json 的差同号同值。"
+  },
+  {
+   "id": "adv-budget-composition-not-bridged",
+   "category": "report_wording",
+   "evidence": "§5.3 写「网格细化给出的移动不超过 ±0.2 h，环境延拓三档在 n=320 连续根口径下的跨度为 0.24 h，两者合计给出约 ±0.32 h」，随后在同段结尾写「所以约定的不确定度约为 ±0.5 h」；附录 A.4 则写「正确的数值预算应为离散化 ±0.2 h 加环境延拓三档的 0.24 h」。三个数都在上游登记（RESULTS_REPORT 写「离散化 + 环境延拓的合计不确定度 ≈ ±0.3 h；把面导度取法也计入则 ≈ ±0.5 h」，ROBUSTNESS_REPORT §8.3 建议把预算改成「离散化 ±0.2 h + 环境延拓 ±0.25 h」合计 ±0.32 h），方向上也偏保守（±0.5 > ±0.32）。另有一处同类：同一句里「界面物性改用调和平均或几何平均时达标时刻分别为 57.5833 与 57.2500 h」取的是 results/sensitivity.json 的 t_dry_step_h（步进首达），而同句后半的「$n=320$ 连续根为 57.0055 与 56.9011 h」与「对流换热系数减半时只移动 0.08 h」取的是连续根 —— 三个通道在一句话里用了两种口径，只有后半标了口径（差 0.014 h，且每个读数都能在产物里唯一指认）。",
+   "why_not_blocking": "没有任何一个数字是假的、也不改任何交付数值：±0.32 与 ±0.5 都是上游登记值，前者是「离散化 + 环境延拓」的合成分量、后者是把面导度取法一并计入的保守整体；t_dry 本身（57.1383 h / 50.8333 h）与全部表格数值都不随之改变。只是「0.2 与 0.24 如何合成 0.32」这半步在正文里没有写出来，读者需自行补上（按半宽相加即 0.2+0.12=0.32）。",
+   "fix": "若要收紧，只需在 §5.3 或 A.4 里把合成方式写成可复算的一句（例如指明 0.24 是跨度、进预算的是它的半宽，或直接给出 0.32 = 0.2 + 0.24/2），使 ±0.32 能由同句的两个分量算出；不动任何数值、不动结论。由 9Paper-writing 按写作规范自行措辞。",
+   "recheck": "读者能用该句给出的两个分量算出 0.32；且全文 ±0.5 h 的口径说明与之一致（或明确写成「把界面物性取法一并计入时的保守上界」）。"
+  },
+  {
+   "id": "adv-figure-registry-caption-stale-caliber",
+   "category": "diagram",
+   "evidence": "figures/make_figures.py 的 fig_caliber_sensitivity 把 caption 写进 figures/manifest.json：「环境延拓三档跨度 0.30 h、面导度三档跨度 0.43 h、$h$ 减半 0.03 h」，而它画的 7 档横排点图里「环境延拓取峰值/饱和拟合」与「h 减半」三档的坐标刻度都写着 (n=160, 60 s)、主档是 (n=320, 60 s)。论文正文现写 0.24 h 与 0.08 h（同 n 口径），并在 §6.2 明写「图中该两档是 n=160 对照实现上的读数，与这个跨度不是同一口径，不能直接相减」。注册图注里的 0.30 / 0.03 正是拿 n=160 的点与 n=320 的主档直接相减得到的，与论文口径不一致。",
+   "why_not_blocking": "该注册图注**不进交付件**：交付正文的图题是 \\paperfigure 的第三个参数「约定敏感性的分档对比」，本阶段用 pdftotext 扫过 paper/main.pdf 与 paper_appendix/main.pdf 的文本层，「0.30 h」「0.03 h」均不出现；图本身画的点值（56.97/56.85/57.18 与各自 n 标签）与论文一致，不改任何数值、方程与判据。它只是图件登记表里的自述落后于正文口径。",
+   "fix": "把 figures/make_figures.py 里 fig_caliber_sensitivity 的 caption/claim 更新为与正文同口径的写法（环境延拓按同 n 口径的跨度、h 减半按同 n 口径的位移），再重渲该图与登记表；或由掌管图件登记的阶段在登记表层面刷新这行自述。注意：重渲会让该图的目检签名失效、需重新目检。",
+   "recheck": "figures/manifest.json 中 caliber_sensitivity 的 caption 与论文 §5.3/§6.2 的口径一致（同一 n、同一读数来源），且交付 PDF 文本层仍不含 0.30 h/0.03 h 这类跨口径差值。"
+  },
+  {
+   "id": "adv-materials-page-placeholder",
+   "category": "presentation",
+   "evidence": "paper/sections/A1_materials.tex 现仍是占位形态（表体为「<由 14Layout-and-format 逐行生成：文件名>」与「<一句话说清它做什么>」），交付 paper/main.pdf 的末页（p31）文本层仍能读到「一句话说清它做什么」。",
+   "why_not_blocking": "这一页按分工由 14Layout-and-format 依据 reports/SUBMISSION_MANIFEST.json 逐行生成，该阶段排在 mathproof 之后（尚未运行）；它不涉及任何数学论证、方程或交付数值。",
+   "fix": "由 14Layout-and-format 在排版阶段按提交清单把该表逐行填满（含 AI 工具使用详情一行）。",
+   "recheck": "交付 PDF 末页的表体逐行是真实文件名与用途，不再是尖括号占位符。"
+  }
+ ]
+}

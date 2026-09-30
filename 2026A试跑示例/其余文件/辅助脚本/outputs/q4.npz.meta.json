@@ -1,0 +1,19 @@
+{
+ "_method": "Q4_动边界_附录4_ξ参考坐标_1overR2前因子+边界R因子_步末层_面值算术平均",
+ "_code_fp": "dc8e04c98fa0",
+ "_params": {
+  "kind": "q4",
+  "n": 320,
+  "dt": 60.0,
+  "t_end": 259200.0,
+  "shrink": true,
+  "face": "arith",
+  "env": "hold",
+  "time_layer": "step-end",
+  "radius": "附件2 分段线性",
+  "rho_d": "rho_d0*(R0/R)^2（干物质守恒+仿射收缩+定长圆柱）"
+ },
+ "_produced_at": "2026-09-29T14:26:34",
+ "_stage": "code",
+ "_note": "滚动续跑状态片（每段覆盖写）"
+}

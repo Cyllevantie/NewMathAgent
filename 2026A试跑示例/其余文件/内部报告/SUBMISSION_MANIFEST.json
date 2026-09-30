@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "stage": "format",
+  "items": [
+    {
+      "path": "AI工具使用详情.pdf",
+      "desc": "说明论文研究与写作过程中 AI 工具的使用情况：用了哪些工具、用在哪些环节、怎么核验。",
+      "source": "paper/ai_tools/AI工具使用详情.pdf"
+    },
+    {
+      "path": "附录A.pdf",
+      "desc": "补充推导与命题前提的数值验证、误差与守恒检验、补充图表，以及二维端面效应和灵敏度分析的详细结果。",
+      "source": "paper_appendix/main.pdf"
+    },
+    {
+      "path": "运行说明.md",
+      "desc": "文件准备、依赖安装、运行程序与补充计算的说明。",
+      "source": "运行说明.md"
+    },
+    {
+      "path": "demo.html",
+      "desc": "交互式演示页面，单文件、离线双击即可打开。",
+      "source": "demo/demo.html"
+    },
+    {
+      "path": "result1.xlsx",
+      "desc": "问题一的温度与水分浓度结果，分为两个工作表；每表 1800 个数据行，时间间隔 1 s，包含 21 个径向位置。",
+      "source": "results/result1.xlsx"
+    },
+    {
+      "path": "result2.xlsx",
+      "desc": "问题二的温度与水分浓度结果，分为两个工作表；每表 259200 个数据行，时间间隔 1 s，包含 21 个径向位置。",
+      "source": "results/result2.xlsx"
+    },
+    {
+      "path": "result3.xlsx",
+      "desc": "问题三的水分浓度结果，单一工作表；3429 个数据行，时间间隔 60 s，包含 21 个径向位置。",
+      "source": "results/result3.xlsx"
+    },
+    {
+      "path": "result4.xlsx",
+      "desc": "问题四的水分浓度结果，单一工作表；3050 个数据行，时间间隔 60 s，包含 21 个径向位置（当前半径之外的格留空）。",
+      "source": "results/result4.xlsx"
+    },
+    {
+      "path": "附件1.xlsx",
+      "desc": "题目给定的输入数据：烘干初期各时间点烘房的温度与水分浓度实测序列。",
+      "source": "request/attachments/附件1.xlsx"
+    },
+    {
+      "path": "附件2.xlsx",
+      "desc": "题目给定的输入数据：烘干过程中各时间点药材半径的采样序列。",
+      "source": "request/attachments/附件2.xlsx"
+    },
+    {
+      "path": "core.py",
+      "desc": "共用内核：环境驱动与物性经验式、柱坐标有限体积离散、半隐式时间推进、达标时刻求根与结果导出。",
+      "source": "code/core.py"
+    },
+    {
+      "path": "q1.py",
+      "desc": "问题一求解：预热平衡段 0 至 1800 s，用附录 2 的常数物性，温度场与水分场解耦。",
+      "source": "code/q1.py"
+    },
+    {
+      "path": "q2.py",
+      "desc": "问题二求解：0 至 72 h 全过程，用附录 3 的变物性经验式，环境前 4 h 取附件 1、其后零阶保持。",
+      "source": "code/q2.py"
+    },
+    {
+      "path": "q3.py",
+      "desc": "问题三求解：在场最坏点首次不高于 0.15 kg/kg 处作事件定位，给出烘干时长。",
+      "source": "code/q3.py"
+    },
+    {
+      "path": "q4.py",
+      "desc": "问题四求解：以材料坐标引入附件 2 的半径收缩并换用附录 4 物性，给出动边界下的烘干时长。",
+      "source": "code/q4.py"
+    },
+    {
+      "path": "run_all.py",
+      "desc": "主程序入口，依次完成附件读取、四问求解、收支核对、结果导出与检验。",
+      "source": "code/run_all.py"
+    },
+    {
+      "path": "sensitivity.py",
+      "desc": "收敛性与口径敏感性诊断、守恒与恒等校核、解析级数校核；只做对照，不改交付口径。",
+      "source": "code/sensitivity.py"
+    },
+    {
+      "path": "summarize.py",
+      "desc": "汇总四问的解与检验结果，登记结构化指标，供正文以登记键引用数值。",
+      "source": "code/summarize.py"
+    },
+    {
+      "path": "validate_results.py",
+      "desc": "独立校验器：不引用求解器，只读交付的结果文件与汇总文件，用另一条路径重算约束与收支。",
+      "source": "code/validate_results.py"
+    },
+    {
+      "path": "基于变物性耦合传热传质与材料坐标的圆柱形药材烘干模型.pdf",
+      "desc": "本文正文：摘要、正文（一～七）、AI 工具使用说明、参考文献，末页为支撑材料文件清单。",
+      "source": "paper/main.pdf"
+    }
+  ],
+  "exclude": [
+    {
+      "path": "request/attachments/附件3/result1.xlsx",
+      "why": "题目给定的结果填写模板（问题一），提交件的 result1.xlsx 已按该模板填写，模板本身不必重复提交。"
+    },
+    {
+      "path": "request/attachments/附件3/result2.xlsx",
+      "why": "题目给定的结果填写模板（问题二），提交件的 result2.xlsx 已按该模板填写，模板本身不必重复提交。"
+    },
+    {
+      "path": "request/attachments/附件3/result3.xlsx",
+      "why": "题目给定的结果填写模板（问题三），提交件的 result3.xlsx 已按该模板填写，模板本身不必重复提交。"
+    },
+    {
+      "path": "request/attachments/附件3/result4.xlsx",
+      "why": "题目给定的结果填写模板（问题四），提交件的 result4.xlsx 已按该模板填写，模板本身不必重复提交。"
+    }
+  ]
+}

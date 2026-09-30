@@ -1,0 +1,158 @@
+{
+  "schema_version": 2,
+  "stage": "audit",
+  "input_digest": "63741962e98070374717ceb3c9df8c181e06c1412cba5fc212f99b36452e62f9:python=cpython3.11.16;texlive@2026;pandoc@3.6.4;draw.io@31.3.2:7af8e64a8dd539220f943ccda049b8edaee45a01863b04932d398d2fcd934ef7:270aeb29fabf:db2243d539e4",
+  "status": "PASS",
+  "issues": [],
+  "advisories": [],
+  "checks": [
+    {
+      "id": "task_fidelity",
+      "status": "passed",
+      "reason": "题面硬条件与交付件逐条对账（在本轮当前盘面上重做，不只看报告措辞）：表 1–6 共 207 格对 results/result1–4.xlsx 同格点 0 格不一致；4 份模板的工作表名、A1、末列表头、A 列首数据行与交付件全等（result1/2 首数据行 1、result3/4 为 60）；Q1 的 7 时刻 × 5 半径、Q2 的 6 时刻 × 5 半径、Q3/Q4 的每 6 h 与距离列集合、每 1 s/60 s 的行集合、四位小数、0.1 cm 列距、附录 2/3/4 的分工全部核过；TASK_CONTRACT.json 的 28 条 requirements 全部 mapped、两侧四语义字段逐条相等。四个交付表相对上一轮基线逐字节未变，故逐格结论由逐字节未变直接承继。",
+      "evidence": [
+        {
+          "file": "request/problem.md",
+          "quote": "在论文中按表1 和表2 的格式分别给出100、300、600、900、1200、1500、1800 s，到药材中心距离0、0.5、1、1.5、2 cm 处的结果"
+        },
+        {
+          "file": "_tmp/au52_checks.txt",
+          "quote": "模板首数据行=60"
+        },
+        {
+          "file": "_tmp/au51_round_verify.txt",
+          "quote": "⇒ 逐字节未变 8 / 变 4"
+        }
+      ]
+    },
+    {
+      "id": "quantifiers",
+      "status": "passed",
+      "reason": "「药材各处的水分浓度应低于 0.15」按全空间（∀）、全场最坏点、未舍入浮点值实现：判据是 g(t)=max_rC-0.15 在时间上的首个零点，取的是 321 个节点的最大值，不是均值、不是表面点、不是「某点曾达标」。本轮独立复算：首达步 t=205698 s 处 max_rC=0.149999928226 ≤ 0.15，其前一步 t=205697 s 处为 0.150000221620 > 0.15（确实未提前达标）。四表的每隔 1 s/60 s/6 h/0.5 h 与四个结果文件的 A 列均为从烘干开始计的绝对过程时间。",
+      "evidence": [
+        {
+          "file": "request/problem.md",
+          "quote": "按照烘干要求，药材各处的水分浓度应低于0.15 kg/kg，请确定药材烘干所需要的时间（单位：h）。"
+        },
+        {
+          "file": "_tmp/au52_checks.txt",
+          "quote": "✅ 判据用的是 maxC（全场最大），不是 C0 或 Cs"
+        },
+        {
+          "file": "_tmp/au52_delivery_crosscheck.txt",
+          "quote": "✅ B2 首达步（内部序列独立重算）：独立重算 t=205698 s（q3.json 登记 t_first_hit_step=205698.0）；该步 max_r C = 0.149999928226 = 0.15-7.177e-08"
+        }
+      ]
+    },
+    {
+      "id": "stochastic_semantics",
+      "status": "not_applicable",
+      "reason": "不适用，但依据是实测而非假定：题面「随机/概率/分布/噪声/误差/不确定」各 0 命中；附件 1（241 点、步长恒 60 s）与附件 2（145 点、步长恒 1800 s）本轮重新装载复核，均为无缺失无重复的确定性序列；模型是确定性抛物型正问题 + 标量求根，主档不含随机量、不含元启发式、无风险度量。交付侧也未把「数据缺口下的口径」当已知事实：t>14400 s 的环境延拓单列并配三档对照与一支证伪档。",
+      "evidence": [
+        {
+          "file": "request/problem.md",
+          "quote": "烘房的温度（单位：°C）和水分浓度（单位：kg/kg）的变化情况见附件1。"
+        },
+        {
+          "file": "_tmp/au52_checks.txt",
+          "quote": "✅ 附件1.xlsx：241 点、步长恒 60 s、无重复无缺失 = True"
+        },
+        {
+          "file": "_tmp/au52_checks.txt",
+          "quote": "✅ 附件2.xlsx：145 点、步长恒 1800 s、无重复无缺失 = True"
+        }
+      ]
+    },
+    {
+      "id": "implementation_fidelity",
+      "status": "passed",
+      "reason": "代码与模型的对齐面逐条正确（时间层取步末、面值物性算术平均、每步先 C 后 T、干基密度口径、ξ=r/R(t) 参考坐标 + 1/R^2 前因子 + 边界因子、求根 xtol/rtol、四位小数 ROUND_HALF_UP、A 列写整数、以模板为底本；code/core.py 顶部对照表逐条查过）。上一轮点名的两条 caption 缺陷已完全落地并经本阶段独立复算逐项确认：figures/make_figures.py 的两条 caption 源串改成 raw 串（AST 求值 321 个字符串常量、控制字符 0 命中）、交付的 figures/manifest.json 该 caption 读出的是完整的 LaTeX 命令（309 个字符串叶子、C0 控制字符 0 命中，源侧与交付侧两处都查，并有改动前副本的负对照证明判据不恒真）、13 条 caption 的定量主张与它自己那张图的参数/数据逐项相等；交付树 code/results/figures/reports 的字节层与 JSON 叶子层控制字符均为 0；13 张 PNG 与修复前快照逐字节相同。全部数值件（4 个 xlsx、code/outputs/q2.npz、results/q3.json、results/validation.json）相对上一轮基线逐字节未变。",
+      "evidence": [
+        {
+          "file": "figures/make_figures.py",
+          "quote": "本 caption 的字符串常量一律用 **raw**（r\"\"）"
+        },
+        {
+          "file": "figures/manifest.json",
+          "quote": "纵轴为**线性**（不能用对数轴：该量在"
+        },
+        {
+          "file": "figures/make_figures.py",
+          "quote": "lines=[0.08, 0.10, 0.12, 0.15]"
+        },
+        {
+          "file": "_tmp/au52_recheck.txt",
+          "quote": "✅ 两条 recheck 全部通过（A 段 6 项 + B 段 12 项）"
+        },
+        {
+          "file": "_tmp/au52_ctrl_scan.txt",
+          "quote": "⇒ JSON 层命中 0 处"
+        },
+        {
+          "file": "_tmp/au51_round_verify.txt",
+          "quote": "⇒ PNG 逐字节相同 13 / 变 0 / 缺 0（13 张）"
+        }
+      ]
+    },
+    {
+      "id": "feasibility",
+      "status": "passed",
+      "reason": "解的独立可行性检查（判据不依赖 code/ 的求解器）：Q3 用交付的 result3.xlsx 自己的 21 列逐行取最大，末行 205740 s 的未舍入 max_rC=0.149987608 ≤ 0.15，首达之后 0 次二次穿越（首根后 max g=-7.177e-08 ≤ 0）；Q4 用 result4.xlsx 复核空格规则与动表面列，违例 0 格、空格数 19987 与登记一致；Q1/Q2 的 C>0、T>0 K 护栏在交付实现里是停机报错（不截断不投影），全链未触发。约束满足的是「全场」而不是取样列 —— 判据走 321 节点，本阶段的 21 列复算只是从交付件能做的下界估计，两者同号。",
+      "evidence": [
+        {
+          "file": "_tmp/au52_checks.txt",
+          "quote": "首达后 max g = 0.000e+00 ≤ 0 ✓；二次变号 = 0 次 ⇒ 首次达标=稳定达标"
+        },
+        {
+          "file": "_tmp/au52_delivery_crosscheck.txt",
+          "quote": "✅ 空格数：独立复算 19987 个空格（q4.json 登记 19987）"
+        }
+      ]
+    },
+    {
+      "id": "optimality",
+      "status": "passed",
+      "reason": "本题无优化目标：t_dry 是 g(t) 的首个穿越点（标量求根），不是最优解 —— 要证的是首个根的唯一性与可复现性。本轮独立复算：变号 1 次、二次变号 0 次、首根后 max g=-7.177e-08 ≤ 0；闭式解与 brentq 之差 0.0 s；区间扫描取首个变号区间、非单调兜底取最小根，不依赖 g 的单调性。报告未使用「全局最优/最小烘干时间最优」一类措辞（本轮对全文做了强断言扫查，未命中）。另外，插值构造值 max_rC_at_root 被明文标为「构造上恒等于阈值、不作独立证据」，并另立首达步的实测值。",
+      "evidence": [
+        {
+          "file": "_tmp/au52_checks.txt",
+          "quote": "Q3：变号次数 = 1；首根后再变号 = 0；首根后 max g = -7.177e-08"
+        },
+        {
+          "file": "results/q3.json",
+          "quote": "\"n_cross\": 1,"
+        }
+      ]
+    },
+    {
+      "id": "comparison_validity",
+      "status": "passed",
+      "reason": "§7.2/§11.5 的比较表同口径可比：全部态统一 n=320、Δt=60 s、步进首达、同一评估判据，并写明「待 robustness 复核」的档位。本轮用 results/sensitivity.json 现算比值：几何收缩 57.1500→25.1333 h（2.274×）、物性 25.1333→50.8333 h（2.023×）、净 0.889×，与报告 2.27/约 2 倍/0.89 一致。对「未达标」的档（附录 4 + 固定 R_0、h_m/10）如实报负结果而不做点值相减；跨问结论只用弱陈述「同量级（0.5–2 倍）」，与实测 0.889 相称。该文件本轮逐字节未变，故结论承继并在本阶段当场复算。",
+      "evidence": [
+        {
+          "file": "_tmp/au52_checks.txt",
+          "quote": "⇒ 几何加速 2.274 倍（报告 2.27）"
+        },
+        {
+          "file": "_tmp/au52_checks.txt",
+          "quote": "✅ 四条分解态同 n=320、Δt=60 s、步进首达同口径 ⇒ 比较表同口径可比"
+        }
+      ]
+    },
+    {
+      "id": "claim_scope",
+      "status": "passed",
+      "reason": "报告把精度限定按侧、按时间分档说清（t=1800 s 档与 t=100 s 档分列），并把取位决定显式交给写作阶段，未把区间估计当点估计、未在求根问题上使用「全局最优」类措辞。本轮另复核三处边界：①「论文对温度只能把前 3 位小数当有效位」——同处印出的时间离散误差是 1.20e-03 K，与「第 4 位仅作格式位」自洽，不构成超范围；②阈值附近显示 0.1500 的格被明确标注「不是严格低于 0.15 的充分条件」，达标判定一律走未舍入数组；③插值构造值被明文标注不作独立证据。其余强断言扫查未发现新的越界。",
+      "evidence": [
+        {
+          "file": "reports/RESULTS_REPORT.md",
+          "quote": "精度取位由**写作阶段**按这两个时刻的实测共同决定"
+        },
+        {
+          "file": "reports/RESULTS_REPORT.md",
+          "quote": "早期行的水分**第 4 位小数误差达 4 个单位**"
+        }
+      ]
+    }
+  ]
+}

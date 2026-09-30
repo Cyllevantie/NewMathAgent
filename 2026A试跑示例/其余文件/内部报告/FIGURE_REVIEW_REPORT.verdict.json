@@ -1,0 +1,396 @@
+{
+  "schema_version": 2,
+  "stage": "figreview",
+  "input_digest": "5fed996e10ef830d77f36de5476b7c1bbdce208ee5791e7f18619ee6beffb0d7:python=cpython3.11.16;texlive@2026;pandoc@3.6.4;draw.io@31.3.2:e81943454e699dc2bcf73f90cf5e58e4d77af7acfe1b5c4a9722eb44119eb018:270aeb29fabf:db2243d539e4",
+  "status": "PASS",
+  "issues": [],
+  "checks": [
+    {
+      "id": "mechanical_floor",
+      "status": "passed",
+      "reason": "驱动在 _gate_decision 里对本阶段直接跑同一个函数；本轮先跑它：PASS、issues 为空、退出码 0（原样输出 _tmp/fig8c_audit.txt）。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_audit.txt",
+          "quote": "  \"status\": \"PASS\","
+        },
+        {
+          "file": "_tmp/fig8c_audit.txt",
+          "quote": "  \"issues\": []"
+        }
+      ]
+    },
+    {
+      "id": "receipt_fig5_baseline_through_label",
+      "status": "passed",
+      "reason": "本轮回执唯一一条 issue（soft/diagram）已落地，按交付像素三级复量：基准线 axvline(57.15) 的中心列 x=1086.33、列区间 [1084.50,1088.17]（dpi=220、lw=1.2 pt）；7 档数值标注里**字框含竖线者 0 档、墨迹含竖线者 0 档**；改前压在字身上的 56.85 已翻到点的左侧（字框 x[980.0,1042.0]、墨迹距线 46.33 px），相邻的 56.97 一字未动且净空反而从 2.44 px 变宽到 3.67 px（回执『不许让它变坏』满足）。实现面：make_figures.py 新增的判据是**按实测字框**（`_box.x0 <= _xline <= _box.x1` 且点在基准线左侧）自适应翻面，不写死档名与下标；对驱动回退快照逐行 diff 只有『标注收进 anns 列表』与这段自适应块，caption/claim/数值/xlim/色阶/参考线本身一字未动。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_geom_final.txt",
+          "quote": "⇒ 字框含竖线的档数 = 0；墨迹含竖线的档数 = 0；最小墨迹净空 = 3.67 px"
+        },
+        {
+          "file": "_tmp/fig8c_geom_final.txt",
+          "quote": "   56.85    4 │    980.0   1042.0 │      982     1040 │     46.33 px │ ✓"
+        },
+        {
+          "file": "_tmp/fig8c_geom_final.txt",
+          "quote": "   56.97    3 │   1088.8   1150.8 │     1090     1149 │      3.67 px │ ✓"
+        },
+        {
+          "file": "_tmp/fig8c_line_text_cross_ref.txt",
+          "quote": "[caliber_sensitivity] 线穿字：无"
+        },
+        {
+          "file": "figures/make_figures.py",
+          "quote": "    ax.axvline(vals[0], color=WARN, lw=1.2, linestyle=\"--\")"
+        },
+        {
+          "file": "figures/make_figures.py",
+          "quote": "        if _box.x0 <= _xline <= _box.x1 and ax.transData.transform(_a.xy)[0] < _xline:"
+        }
+      ]
+    },
+    {
+      "id": "refline_ink_overlap",
+      "status": "passed",
+      "reason": "新探针 fig8c_ink_overlap.py：把每张图的所有参考线（axvline/axhline，label 以 _child 开头）单独 set_alpha(0) 再存一帧，差分即该线的像素；同样办法取非图例文字与图例文字的墨迹 —— 13 张数据图的『参考线墨迹 ∩ 非图例文字墨迹』**全部 0 像素**（参考线∩图例文字也全 0）。每张图先自证『首帧 sha256 == 交付 PNG』（13/13），并加『不改任何东西再存一帧必须逐字节相同』的确定性对照（全过）。caliber_sensitivity 的最小净空 3 px 是全集合最紧的一张。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_ink_overlap.txt",
+          "quote": " [q4_shrinkage]  参考线像素 3818  非图例文字墨迹 14333  图例文字墨迹 5980 | 参考线∩文字墨迹 = 0 像素；参考线∩图例文字 = 0 像素 | 最小净空 = >6 px"
+        },
+        {
+          "file": "_tmp/fig8c_ink_overlap.txt",
+          "quote": "[caliber_sensitivity]  参考线像素 1719  非图例文字墨迹 37303  图例文字墨迹 1836 | 参考线∩文字墨迹 = 0 像素；参考线∩图例文字 = 0 像素 | 最小净空 = 3 px"
+        },
+        {
+          "file": "_tmp/fig8c_ink_overlap.txt",
+          "quote": "⇒ 全图集合计参考线压字 = 0 像素"
+        },
+        {
+          "file": "_tmp/fig8c_ink_overlap.txt",
+          "quote": "[自证] q3_criteria: 沙箱 PNG == 交付 PNG (79b432163cb1)"
+        }
+      ]
+    },
+    {
+      "id": "red_criterion_line_ink",
+      "status": "passed",
+      "reason": "三张场图（q2_moist_field / q3_dryfront / q4_field）的**红色达标阈值线**是 contour(highlight=TH) 另起的一次 ax.contour，住在 ax.collections（ContourSet）而**不在 ax.lines** —— 机器闸 legend_data_overlap 只查图例框与数据线，对它与白 clabel 数字的关系全盲。新探针 fig8c_redline_text.py 按颜色识别该 artist、单独 set_alpha(0) 差分：三张图（红像素 5632 / 4681 / 5400）与全部非图例文字墨迹**相交 0 像素**、最小净空 >8 px。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_redline_text.txt",
+          "quote": " [q4_field]  红判据 artist 1 个、红像素 5400 | 非图例文字墨迹 16294 | 红∩文字 = 0 像素 | 最小净空 >8 px"
+        },
+        {
+          "file": "_tmp/fig8c_redline_text.txt",
+          "quote": " [q2_moist_field]  红判据 artist 1 个、红像素 5632 | 非图例文字墨迹 18074 | 红∩文字 = 0 像素 | 最小净空 >8 px"
+        },
+        {
+          "file": "_tmp/fig8c_redline_text.txt",
+          "quote": "⇒ 13 张图合计「红判据线压文字墨迹」= 0 像素"
+        }
+      ]
+    },
+    {
+      "id": "receipt_fig1_caption_caliber",
+      "status": "passed",
+      "reason": "回执 fig-1（hard，上一轮已结）在现盘复验仍成立：从 figures.make_figures 的 export() 实参现读交付串，抠出口径 |ΔC|>0.1 kg/kg 与厚度 6.19 mm，在 code/outputs/figdata_q1.npz 上按同口径用 moved.min() 现算：最内侧有变化的半径 1.38125 cm ⇒ 厚度 6.1875 mm ⇒ 逐位相等（两位小数 6.19）；同句后半『中心列在 1800 s 内变化小于 1e-5』仍在且为真（实测 7.891e-06）；旧串『最外约 3 mm』已不在交付串里；manifest.caption 与交付串逐字相同。本图 PNG 本轮逐字节未变。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_issue_recheck.txt",
+          "quote": "   · 逐位相等？True   两位小数写法 6.19"
+        },
+        {
+          "file": "_tmp/fig8c_issue_recheck.txt",
+          "quote": "   · 旧串『最外约 3 mm』是否已不在交付串里：True"
+        },
+        {
+          "file": "_tmp/fig8c_issue_recheck.txt",
+          "quote": "   · manifest.caption 与交付串逐字相同？True"
+        }
+      ]
+    },
+    {
+      "id": "receipt_fig2_drydown_caliber",
+      "status": "passed",
+      "reason": "回执 fig-2（soft，上一轮已结）在现盘复验仍成立：q2_drydown 的 caption 与 q2_moist_field 的 claim 两处都写明绝对口径 0.02 kg/kg 与起点『约 22.2 h』、都保留 t=24 h、都已去掉无口径的『贴近』；现算（figdata_q2.npz 的 C_surface/C_inf）t=24 h 处 |差| = 0.016433 < 0.02；『|差|<0.02 此后一直满足』的起点 = 22.1517 h（句子写 22.2）。本两张图 PNG 本轮逐字节未变。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_issue_recheck.txt",
+          "quote": "   · 现算『|差| < 0.02 kg/kg 此后一直满足』起点 = 22.1517 h（句子写「约 22.2 h」）"
+        },
+        {
+          "file": "_tmp/fig8c_issue_recheck.txt",
+          "quote": "   · 两处表述一致（同口径同时刻）？True"
+        },
+        {
+          "file": "_tmp/fig8c_issue_recheck.txt",
+          "quote": "   · 现算 t=24 h：C_s=0.066293、C_∞=0.049860、|差|=0.016433 kg/kg（相对差 32.96%）"
+        }
+      ]
+    },
+    {
+      "id": "receipt_fig3_legend_refline",
+      "status": "passed",
+      "reason": "回执 fig-3（soft，上一轮已结）在现盘复验仍成立：三张图（q3_criteria / caliber_sensitivity / rb_uncertainty）的图例已移到坐标区外（fig.legend(..., loc=\"outside …\")），几何上不可能再与整高参考线相交；复量口径用同时遍历 fig.legends 与各轴图例的探针（避开『只读 ax.get_legend()、图级图例返回 None 就整条跳过』的老假绿），三张图合计图例×参考线命中 = 0。本两张数据图 PNG 本轮逐字节未变，rb_uncertainty 属 ⑥ 产物、本轮亦未变。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_legend_zero.txt",
+          "quote": "⇒ 三张图合计 图例×参考线命中 = 0"
+        },
+        {
+          "file": "_tmp/fig8c_legend_zero.txt",
+          "quote": " [自证] caliber_sensitivity: 沙箱 PNG == 交付 PNG  (39a7dea5766c vs 39a7dea5766c)"
+        },
+        {
+          "file": "figures/make_figures.py",
+          "quote": "loc=\"outside lower center\", frameon=True, fontsize=8)"
+        }
+      ]
+    },
+    {
+      "id": "receipt_fig4_series_styles",
+      "status": "passed",
+      "reason": "回执 fig-4（soft，上一轮已结）在现盘复验仍成立：现读 fig_q1_profiles 每条 Line2D —— 两栏各 7 条、(颜色,线型) 组合数均为 7、标记 ['o','s','^','D','v','P','X'] 互不相同；reports/FIGURE_PLAN.md 的『颜色 + 线型 + 标记三重区分』自述与实装一致。本图 PNG 本轮逐字节未变。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_issue_recheck.txt",
+          "quote": "   axes#0: 折线 7 条；(色,线型) 组合数 = 7；标记 = ['o', 's', '^', 'D', 'v', 'P', 'X']（互不相同？True）"
+        },
+        {
+          "file": "_tmp/fig8c_issue_recheck.txt",
+          "quote": "   axes#1: 折线 7 条；(色,线型) 组合数 = 7；标记 = ['o', 's', '^', 'D', 'v', 'P', 'X']（互不相同？True）"
+        },
+        {
+          "file": "reports/FIGURE_PLAN.md",
+          "quote": "`q1_profiles` 的 7 条剖面用**颜色 + 线型 + 标记**三重区分（灰度打印与色盲可读）"
+        }
+      ]
+    },
+    {
+      "id": "change_face_isolation",
+      "status": "passed",
+      "reason": "拿**驱动自己**在本轮开工时存档的回退快照（产物/cache/2026A_2026.9.29_21.31.50/技术路线图/快照/，.snapshot.json 记 at=2026-09-29T21:10:22）逐文件 sha256 比：code/ 快照 4 项与 results/ 快照 4 项**全部逐字节相同**（变化 0、缺失 0）；figures/** 里唯一变化的 PNG 是 caliber_sensitivity.png（其余 18 张逐字节相同），其余变化全是 13 张数据图的 .pdf/.svg（内嵌时间戳 + make_figures.py 进了每张图的 snapshot 而整批重渲，属既定机制；PNG 逐字节相同即画面零变化）与 make_figures.py 本身；reports/ 快照 3 项中 2 项未变（含 ANALYSIS_MODELING_REPORT.md）、1 项变化 = ⑦ 自己的 DRAWIO_REPORT.md；request/ 2 项未变。⇒ 只重渲染、未重算，也没有越权改前序报告。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_change_face.txt",
+          "quote": "[code] 快照 4 项：相同 4、变化 0、缺失 0"
+        },
+        {
+          "file": "_tmp/fig8c_change_face.txt",
+          "quote": "[results] 快照 4 项：相同 4、变化 0、缺失 0"
+        },
+        {
+          "file": "_tmp/fig8c_change_face.txt",
+          "quote": "  PNG 逐字节相同 18 张、变化 1 张（共 19）"
+        },
+        {
+          "file": "_tmp/fig8c_change_face.txt",
+          "quote": "≠ figures/caliber_sensitivity.png"
+        },
+        {
+          "file": "_tmp/fig8c_change_face.txt",
+          "quote": "[reports] 快照 3 项：相同 2、变化 1、缺失 0"
+        }
+      ]
+    },
+    {
+      "id": "sandbox_repro",
+      "status": "passed",
+      "reason": "走生产入口（lib.visualization 的构图序、产物落 _tmp/）重渲 13 张数据图，与 figures/ 的交付 PNG 逐字节比对：13/13 相同 ⇒ 后面所有按坐标/像素下的判据都落在交付件上。本轮新写探针各自也带同一条硬断言（『首帧 sha256 == 交付 PNG』）。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_repro_check.txt",
+          "quote": "⇒ 沙箱重渲与交付 PNG 逐字节相同：13/13"
+        },
+        {
+          "file": "_tmp/fig8c_geom_final.txt",
+          "quote": "[自证] 沙箱 sha256 == 交付 ? True"
+        }
+      ]
+    },
+    {
+      "id": "render_reproducibility",
+      "status": "passed",
+      "reason": "本轮所有『遮罩差分』探针的共性前提：帧必须**逐字节复现交付件**，否则差分测的是渲染抖动而不是 artist 的去留。三条口径本轮都实测过：① savefig 必须在 charts.style() 的 rc_context 之内（context 外存帧 sha256 != 交付，context 内存 == 交付）；② 每帧按生产 export() 的后缀顺序 .pdf→.svg→.png 存（只存 png 时 13 张里 9 张 != 交付）；③ 每张图先做『不改任何东西再存一帧』的确定性对照。三条都写进 _tmp/fig8c_geom_final.py 等脚本并在每张图上断言。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_geom_final.txt",
+          "quote": "[对照] 不改任何东西再存一帧，逐字节相同 ? True"
+        },
+        {
+          "file": "_tmp/fig8c_geom_final.txt",
+          "quote": "交付 PNG 1299×796  dpi=220"
+        },
+        {
+          "file": "_tmp/fig8c_geom_final.txt",
+          "quote": "基准线 axvline(57.15 h)：中心列 x=1086.33、lw=1.2 pt ⇒ 半宽 1.83 px ⇒ 列区间 [1084.50, 1088.17]"
+        }
+      ]
+    },
+    {
+      "id": "type_selection",
+      "status": "passed",
+      "reason": "本题状态量是 (r,t) 上的两个二维标量场，交付里都走填充等高线（q1_field、q2_moist_field、q2_temp_field、q3_dryfront、q4_field 与 D(C,T) 响应面 q2_diffusivity）；折线只用于沿 r 或沿 t 的切片与指标时程（q1_profiles、q2_drydown、q3_criteria、q4_shrinkage、convergence）；类别比较用横排点图（caliber_sensitivity）与柱状（q4_effects）。每问 ≥2 张数据图、每问至少一张非折线。SKILL 点名的反例形态（12 张 11 张折线、场图一张热力图都没有）不存在。本轮图集未变，结论继承上一轮。",
+      "evidence": [
+        {
+          "file": "reports/FIGURE_PLAN.md",
+          "quote": "- **场** → 填充等高线（`charts.contour`，配 `quantity=` 取语义色阶）；"
+        },
+        {
+          "file": "reports/FIGURE_PLAN.md",
+          "quote": "⇒ 每问 ≥2 张数据图，且每问至少一张非折线图 ✓。"
+        },
+        {
+          "file": "_tmp/fig8c_change_face.txt",
+          "quote": "  PNG 逐字节相同 18 张、变化 1 张（共 19）"
+        }
+      ]
+    },
+    {
+      "id": "dimension_use",
+      "status": "passed",
+      "reason": "逐条查『该用三维却压成二维』：本题唯一真有第三维结构的是圆柱几何（已在 fig_geometry 用轴测圆柱 + 径向截面表达，该图本轮 PNG 逐字节未变）；D(C,T) 是二维响应面 + 色标承担第三维（不是压成折线的二维剖切）；空间维本身只有 r 一维（轴对称），故不存在『空间结构被压平』的问题。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_change_face.txt",
+          "quote": "  PNG 逐字节相同 18 张、变化 1 张（共 19）"
+        },
+        {
+          "file": "figures/make_figures.py",
+          "quote": "    contour(ax, d[\"D_C\"], d[\"D_T_C\"], d[\"D_grid\"] * 1e9,"
+        }
+      ]
+    },
+    {
+      "id": "claim_match",
+      "status": "passed",
+      "reason": "本轮像素变化的唯一一张 caliber_sensitivity 的 caption/claim 与现算值逐条相符（四个跨度 0.30 / 0.43 / 0.03 / 4.1 h，均取自 results/sensitivity.json 的 t_dry_step_h；未改任何数值）；其余 18 张 PNG 逐字节未变、结论继承上一轮。manifest 的 caption/claim 与 export() 交付串逐字相同（本轮重登记后复验）。",
+      "evidence": [
+        {
+          "file": "figures/manifest.json",
+          "quote": "\"claim\": \"环境延拓与面导度取法是 ±0.5 h 级的口径不确定度，h_m 口径是唯一的大幅因子\","
+        },
+        {
+          "file": "figures/manifest.json",
+          "quote": "环境延拓三档跨度 0.30 h、面导度三档跨度 0.43 h"
+        },
+        {
+          "file": "_tmp/fig8c_issue_recheck.txt",
+          "quote": "   · manifest.caption 与交付串逐字相同？True"
+        }
+      ]
+    },
+    {
+      "id": "readability",
+      "status": "passed",
+      "reason": "上一轮此项为 failed（caliber_sensitivity 的基准红虚线切进数值标注 56.85 的字身）；本轮该图已修，且两类判据在**交付像素**上都归零：① 字框级 fig8b_line_text_cross.py ref 模式 13 张全『无』；② 墨迹级 fig8c_ink_overlap.py 参考线∩文字墨迹 13 张全 0；③ 墨迹级 fig8c_redline_text.py 三张场图的红色判据线与文字 0 相交。另两处历史假阳本轮用决定性判据排除：(a) all 模式的 `_nolegend_ 穿过 '53.05'` —— 该 Line2D 的 linestyle 为 'None'（不描连接线段）、实画的 2835 个像素是 7 个蓝色标记点，与文字墨迹相交 0；上一轮给的理由『linestyle=None ⇒ 根本不画』不完整（它确实画了像素），但**结论（假阳）成立**，判据已改为『按该 artist 实画像素过滤』；(b) q3_criteria 的 −0.5 与 rb_uncertainty 的 −5『文字入框』—— 把该 Text 单独 set_alpha(0) 再存一帧，差分像素 = 0（该对象不在任何 Axes 上、根本没绘制）。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_ink_overlap.txt",
+          "quote": "⇒ 全图集合计参考线压字 = 0 像素"
+        },
+        {
+          "file": "_tmp/fig8c_line_text_cross_ref.txt",
+          "quote": "[caliber_sensitivity] 线穿字：无"
+        },
+        {
+          "file": "_tmp/fig8c_line_text_cross_all.txt",
+          "quote": "     ✗ axes#0 数据线 _nolegend_ 穿过 '53.05'（29 点）bbox x[749,811] y[181,206]"
+        },
+        {
+          "file": "_tmp/fig8c_nolegend.txt",
+          "quote": "  axes#0.lines[0] label='_nolegend_' ls='None' visible=True n_pts=7 | 差分像素 = 2835 | 与文字墨迹相交 = 0"
+        },
+        {
+          "file": "_tmp/fig8c_fp_check.txt",
+          "quote": "   bbox x[736.1,777.1] y[44.5,72.0]  不在任何 Axes 上  在坐标区内=None  ⇒ 关掉它差分像素 = 0  (未绘制 ⇒ 假阳)"
+        }
+      ]
+    },
+    {
+      "id": "series_overload",
+      "status": "passed",
+      "reason": "q1_profiles 每栏 7 条虽然仍大于配色循环的 6，但已由『线型 + 标记』补足：(颜色, 线型) 组合每栏 7 个互不相同、7 个标记也互不相同 ⇒ 不再有两条序列只在标记形状上分。其余各栏折线数 ≤6（q2_drydown 6 条、q3_criteria 每栏 3 条、convergence 每栏 2 条）。本图 PNG 本轮逐字节未变。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_delivery_probe.txt",
+          "quote": "  q1_profiles          各栏折线数 [7, 7]（prop_cycle 6 色）  ← 回绕！"
+        },
+        {
+          "file": "_tmp/fig8c_issue_recheck.txt",
+          "quote": "   axes#1: 折线 7 条；(色,线型) 组合数 = 7；标记 = ['o', 's', '^', 'D', 'v', 'P', 'X']（互不相同？True）"
+        }
+      ]
+    },
+    {
+      "id": "field_dead_color",
+      "status": "passed",
+      "reason": "逐栏量化（最大同色占比 / 占面积 ≥1% 的档数）在本轮盘面上与上一轮一致：q2_diffusivity 11.2%/16 档（仍是最活跃的一张）、q2_moist_field 40.2%/5 档、q4_field 35.7%/7 档、q3_dryfront 20% 量级；q1_field 右栏 80.8%、q2_temp_field 左栏 66.6% 两处 >60%，但平区是物理上未受扰动的区域（即该图要讲的结论本身），且信息区仍分得出 5–15 档 ⇒ 判非缺陷（理由与上一轮一致，⑦ 本轮亦未改）。三张场图本轮 PNG 逐字节未变。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_deadcolor.txt",
+          "quote": "80.8%  rgb(np.int64(244), np.int64(230), np.int64(30))"
+        },
+        {
+          "file": "_tmp/fig8c_deadcolor.txt",
+          "quote": "66.6%  rgb(np.int64(252), np.int64(255), np.int64(164))"
+        },
+        {
+          "file": "_tmp/fig8c_deadcolor.txt",
+          "quote": "40.2%  rgb(np.int64(60), np.int64(85), np.int64(132))"
+        }
+      ]
+    },
+    {
+      "id": "font_size",
+      "status": "passed",
+      "reason": "对 13 张数据图的全部可见 Text 现量：最小字号 8.0 pt（多张）、最大 9.0 pt，无一处低于 config/visualization.json 的 min_font_size=8。本轮唯一被改过的图 caliber_sensitivity 字号未变（改的只是标注落点）。",
+      "evidence": [
+        {
+          "file": "_tmp/fig8c_delivery_probe.txt",
+          "quote": "  caliber_sensitivity  最小字号 8.0 pt （'57.15'）  越界 ['60']"
+        },
+        {
+          "file": "_tmp/fig8c_delivery_probe.txt",
+          "quote": "  q1_field             最小字号 9.0 pt （'到药材中心的距离 $r$ / cm'）  越界 无"
+        }
+      ]
+    },
+    {
+      "id": "big_figure_rule",
+      "status": "passed",
+      "reason": "『一张大图（图 1 整栏带配色）、其余半栏以内黑白』这条判据写在 skills/7Route-diagram/SKILL.md 的**非数据图**小节里（第 113 行那节），约束的是技术路线图与示意图；4 张非数据图（fig_roadmap / fig_geometry / fig_coupling / fig_q4_material）本轮 PNG 逐字节未变，上一轮的结论（含 fig_roadmap 6.6 pt 排印折算是延后建议、归 ⑭）继续成立。13 张数据图按 160 mm 整栏是既定设计，不拿这条判它们。",
+      "evidence": [
+        {
+          "file": "skills/7Route-diagram/SKILL.md",
+          "quote": "## 一张大图，其余一律小图黑白（用户 2026-09-22 明确）"
+        },
+        {
+          "file": "_tmp/fig8c_change_face.txt",
+          "quote": "  PNG 逐字节相同 18 张、变化 1 张（共 19）"
+        }
+      ]
+    }
+  ],
+  "advisories": [
+    {
+      "id": "adv-roadmap-print-font",
+      "category": "presentation",
+      "severity": "info",
+      "evidence": "figures/fig_roadmap.pdf 的 MediaBox 687.12×932.88 pt（=242.4 mm），源 FS=16 px ⇒ PDF 内 11.52 pt；按登记宽 138.7 mm（=0.85\\textwidth）排印折算 ≈ 6.6 pt < config/visualization.json 的 min_font_size=8。本阶段独立复算，与 reports/DRAWIO_REPORT.md §7 的 6.6 pt 相符。该图本轮 PNG 逐字节未变。",
+      "fix": "不在 ⑦ 的处置面（实测把渲染字号提到 17/18/19/20 会被 check_layout.py 判 14/24/38/49 条版式失败 ⇒ 等于重排整张图）。按 docs/VISUALIZATION.md 第 6 条归 ⑭：在「整页横排 / 精简重排 / 接受 6.6 pt 并在图注注明」之间定夺。",
+      "recheck": "据 ⑭ 的选择，复量成稿里该图的实际排印宽度与折算字号，并确认图注说明与之一致。"
+    },
+    {
+      "id": "adv-analysis-d-drop-3mm",
+      "category": "report_wording",
+      "severity": "info",
+      "evidence": "reports/ANALYSIS_MODELING_REPORT.md 第 358 行（③ 的产物，本阶段与 ⑦ 都不改，本轮实测该文件逐字节未变）：「本段含水率变化极小，$D$ 的下降只发生在最外层 3 mm」—— 与本轮回执 issue 同族的**无口径量级句**，且按任何可站住的口径都复算不出 3 mm（同表同段自己用的 |ΔC|>0.1 kg/kg 口径下，C 的变化区是 6.19 mm）。",
+      "fix": "只改报告里的这一句：把判据口径写进同句、数按该口径现算，或删去括号里的量级判断。不涉及任何图与数值。",
+      "recheck": "grep reports/ANALYSIS_MODELING_REPORT.md 不再出现无口径的「最外层 3 mm」；若保留量级句，则同句给出的口径在 code/outputs/figdata_q1.npz 上现算可复现。"
+    }
+  ]
+}

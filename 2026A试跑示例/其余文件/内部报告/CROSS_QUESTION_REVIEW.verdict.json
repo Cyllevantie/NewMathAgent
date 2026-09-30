@@ -1,0 +1,145 @@
+{
+  "schema_version": 2,
+  "stage": "cross",
+  "input_digest": "8bd5ef52dfab55d864abf9b16a46fb78ec20e1762e6ba090dfd6e32d5556581f:python=cpython3.11.16;texlive@2026;pandoc@3.6.4;draw.io@31.3.2:d2bede59919c5a2acbe3ee1f6c7b9874c724ba34e3cc6a3d71cf0e40e2442da5:270aeb29fabf:db2243d539e4",
+  "status": "PASS",
+  "reason": "structured",
+  "issues": [],
+  "checks": [
+    {
+      "id": "task_fidelity",
+      "status": "passed",
+      "reason": "四问的交付表与交付文件与题面模板同形同序，全空间量词未被弱化；表 6/表 7 的行时刻格值与 results/result3.xlsx、result4.xlsx 同名行逐格相同，两表末行的口径差（连续达标时刻 vs 60 s 网格点）已在正文写明。上游 ⑩ 与本轮均未发现题意偏差。",
+      "evidence": [
+        {
+          "file": "request/problem.md",
+          "quote": "并将药材内部水分浓度每隔60 s、到药材中心距离每隔0.1 cm 的完整结果保存到文件result3.xlsx 中"
+        },
+        {
+          "file": "paper/sections/5_problem3.tex",
+          "quote": "达标判定一律以未舍入数组为准"
+        },
+        {
+          "file": "paper/sections/5_problem3.tex",
+          "quote": "结果文件的末行落在 60 s 网格点 205740 s 上"
+        },
+        {
+          "file": "paper/sections/1_restatement.tex",
+          "quote": "末列为该时刻的移动表面"
+        }
+      ]
+    },
+    {
+      "id": "comparison_validity",
+      "status": "passed",
+      "reason": "效应分解的四档在同一声明的口径（n=320、Δt=60 s、步进首达）下给出，三个倍数由产物复算闭合；跨问比较被显式限制为量级弱陈述并说明了两问物性经验式不同，未把不同口径的差直接相减。单参数与口径通道均以各档自己的基准相减。",
+      "evidence": [
+        {
+          "file": "paper/sections/5_problem4.tex",
+          "quote": "四档统一在 $n=320$、$\\Delta t=60$ s 的步进首达口径下给出"
+        },
+        {
+          "file": "paper/sections/5_problem4.tex",
+          "quote": "跨问结论只能是量级上的弱陈述"
+        },
+        {
+          "file": "paper/sections/6_check.tex",
+          "quote": "对流换热系数与初始含水率的影响都在 0.05 h 之内"
+        }
+      ]
+    },
+    {
+      "id": "narrative_consistency",
+      "status": "passed",
+      "reason": "上一轮 3 条成稿侧不一致全部落地（源码与两个交付 PDF 的文本层均实测为改后串、旧串命中 0），改后写法与同表同节其余部分不再冲突；摘要的 23 个数字与正文及 results/*.json 同值同源；图注与正文同源。本阶段与独立子 agent 均未发现新的不一致。",
+      "evidence": [
+        {
+          "file": "paper/sections/6_check.tex",
+          "quote": "逐时刻包络的最大宽度（问题四）为 0.0287 kg/kg"
+        },
+        {
+          "file": "paper/sections/5_problem4.tex",
+          "quote": "结果文件的末列是移动表面值、该列在每一行都有值"
+        },
+        {
+          "file": "paper_appendix/sections/A_appendix.tex",
+          "quote": "$-0.013/+0.020$ & $-0.012/+0.018$"
+        }
+      ]
+    }
+  ],
+  "advisories": [
+    {
+      "id": "adv-tableA5-pm-symbol-two-cells",
+      "category": "claim",
+      "severity": "info",
+      "evidence": "paper_appendix/sections/A_appendix.tex 表 A5 的「初始含水率 $\\pm1\\%$ & 自设工程经验档 & $\\mp0.048$ & $\\mp0.046$」与「环境水分浓度 $\\pm0.005$ kg/kg & 数据缺口代理 & $\\mp0.12/+0.13$」两格用 ∓ 给单一幅值。按产品复算：初始含水率 +1% 推迟 +0.0472 h、−1% 提前 −0.0477 h（问题四 +0.0458 / −0.0463）；环境水分浓度 +0.005 推迟 +0.1334 h、−0.005 提前 −0.1184 h。幅值都对，按 ∓ 的读法则方向相反。作者的改动记录对同一格两种记号并存（reports/EDITORIAL_CHANGES.md 一处写 $\\pm0.048$、另一处写 $\\mp0.048$），记号未定型。",
+      "fix": "让这两格的两个数各按档位绑定（每一侧写出该侧自己的位移），或在表下写明该记号与档位的对应关系，使读者不必依赖 ∓ 的对齐约定。不改任何交付数值，不改 §6.2 里只用量值的两条结论，不动其余各行。",
+      "recheck": "这两格的每一个数都能由该行写出的档位唯一指认到 tmp/rob/out/ 的同名产物，且等于该档 t_dry_root_h 与同问基准 t_dry_root_h 之差（同号同值）。",
+      "why_not_blocking": "两格的位移都在 0.13 h 量级以内，正文只用量值（「都在 0.05 h 之内」「只动 0.13 h」），既不引用其方向也不派生出任何结论；四问的交付数值、方程、判据与建议时长都不变。"
+    },
+    {
+      "id": "adv-budget-compose-and-ratio",
+      "category": "claim",
+      "severity": "info",
+      "evidence": "paper/sections/5_problem3.tex 写「两者合计给出约 $\\pm0.32$ h 的数值与约定预算」（$\\pm0.2$ h 与 0.24 h），而 paper_appendix/sections/A_appendix.tex 同一件事写成「离散化 $\\pm0.2$ h 加 环境延拓三档的 $0.24$ h」——「合计」与「加」两种读法给出 0.31 与 0.44 两个数，合成规则（各项是全跨还是半宽、相加还是平方和开根）未写明；摘要、§6.2、§7.1 的「比数值预算大 15 至 25 倍」也没写清分子分母。",
+      "fix": "四处口径统一到同一份产物的同一口径，并把合成规则与比值的分子分母写明。",
+      "recheck": "§5.3、附录 A.4、摘要、§6.2、§7.1 四处给出的合成值与倍数区间，都能由同一份产物的同一组数按同一规则复算出来。",
+      "why_not_blocking": "0.32 这个数与上游登记（reports/ROBUSTNESS_REPORT.md §8.3）一致，不是笔误；缺的只是一句口径说明，改它不动任何交付数值、方程或判据。"
+    },
+    {
+      "id": "adv-table9-q4-tight1pct-rounding",
+      "category": "claim",
+      "severity": "info",
+      "evidence": "paper/sections/7_evaluation.tex 表 9 的「达标阈值相对收紧 1\\% & 58.6 & 51.7」；该档问题四产物的连续根是 51.6439（一位小数为 51.6），只有取步进口径 50.8333 + 0.82 = 51.653 才得 51.7，而同表其余各行取的是连续根口径（59.0 = 57.1429+1.897、62.0 = 50.8225+11.186）。",
+      "fix": "该格与其上下行取同一口径，并把该行用的是哪一口径标清。",
+      "recheck": "该格的值能由同表其余行所用的同一口径产物复算出来。",
+      "why_not_blocking": "差 0.05 h，且不改变「阈值收紧比细化参数标定便宜」这条结论的方向与量级；不动任何交付数值。"
+    },
+    {
+      "id": "adv-aspect-ratio-ratio-definition",
+      "category": "claim",
+      "severity": "info",
+      "evidence": "paper/sections/3_assumptions.tex 写「依据是长径比为 12.5」，该数取的是长与半径之比（25 / 2）；按「长径比」的通常定义（长与直径之比）应为 6.25。同句后文用的是「端部约一个半径之内」，说明作者用的是半径口径，只是未写明。",
+      "fix": "写明该比值的定义，或改用另一支。",
+      "recheck": "该句给出的比值与它写出的定义自洽，且与后文二维对照所用的长度（25 cm 与 50 cm）不矛盾。",
+      "why_not_blocking": "该句只是假设一的依据说明，不进入任何方程、判据、数值或图表。"
+    },
+    {
+      "id": "adv-table-number-gap-no-8",
+      "category": "presentation",
+      "severity": "info",
+      "evidence": "正文 PDF 文本层的表号集合为 1–7、9、10，没有表 8（附录为 表 A1–A5、图 A1–A7，连续无缺）；paper/sections/7_evaluation.tex 的表 9 紧接 §6 的表 7。",
+      "fix": "把正文表号改成连续序列。",
+      "recheck": "正文 PDF 文本层的表号集合连续，且正文与附录的编号接续关系不变。",
+      "why_not_blocking": "改的只是编号字符串，不动任何数值、方程、判据或图件；属排版层的「正文编号接续」。"
+    },
+    {
+      "id": "adv-figregistry-caliber-and-numbering-drift",
+      "category": "report_wording",
+      "severity": "info",
+      "evidence": "figures/manifest.json 里 caliber_sensitivity 的注册图注仍写「环境延拓三档跨度 0.30 h、面导度三档跨度 0.43 h、$h$ 减半 0.03 h」，与现盘正文（0.24 h、0.08 h）不同源；q1_profiles 的注册图注用题面表号「表 1/表 2」，论文重编号后为表 2/表 3。",
+      "fix": "把注册图注的口径与表号对齐现盘正文。",
+      "recheck": "注册图注给出的每一个数都能由它自己写明的口径复算出来，且与正文同值。",
+      "why_not_blocking": "交付 PDF 用的图题取 \\paperfigure 的第二个参数，这串注册文案不进交付件；成稿正文与附录一律 0.24 h / 0.08 h，图件的画法与数据、论文的任何数值与判据都不变。"
+    },
+    {
+      "id": "adv-robustness-report-hc-cell",
+      "category": "report_wording",
+      "severity": "info",
+      "evidence": "reports/ROBUSTNESS_REPORT.md 敏感性清单第 7 行的 $\\mp0.013$ h 与它自己引用的两份产物（tmp/rob/out/sw_q23_hc_0p8/1p2，两侧实为 +0.01978 / −0.01308）不符；该行自记的原始量 −0.0014 / −0.0015 正是这两档的弹性，可证其依据就是这两份产物。论文侧表 A5 已改对，报告侧仍是旧值。",
+      "fix": "按这两份产物如实登记该行，并按它自己写明的档位绑定两个方向。",
+      "recheck": "该行的位移与符号都能由它点名的产物复算出来。",
+      "why_not_blocking": "只改报告里那一格的登记值，不动任何产物；论文侧对应格已由上一条判词落地。"
+    },
+    {
+      "id": "adv-registry-env-peak-caliber",
+      "category": "report_wording",
+      "severity": "info",
+      "evidence": "results/registry.json 的 sens.tdry_env_peak 指向 /calibers/env_peak_n160_dt60/t_dry_step_h（n=160 步进首达 56.9667），而正文 §5.3 引的是 n=320 连续根 57.0055；两者不冲突（§6.2 已说明图中那两档是 n=160 的对照读数）。",
+      "fix": "在该项的标签或口径字段里写清它所属的 n 与口径。",
+      "recheck": "该登记项的口径描述与它 pointer 指向的产物同档同口径。",
+      "why_not_blocking": "该注册值论文未引用，改的只是登记表里的一句口径标注，不动任何产物与成稿数值。"
+    }
+  ]
+}

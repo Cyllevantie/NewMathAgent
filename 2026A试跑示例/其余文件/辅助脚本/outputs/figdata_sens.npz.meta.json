@@ -1,0 +1,9 @@
+{
+  "_method": "口径敏感性 / 收敛性的图件数据（各档 t_dry 与场级收敛差）",
+  "_code_fp": "dc8e04c98fa0",
+  "_produced_at": "2026-09-29T15:12:38",
+  "_stage": "code",
+  "_params": {
+    "source": "results/sensitivity.json + results/convergence.json"
+  }
+}

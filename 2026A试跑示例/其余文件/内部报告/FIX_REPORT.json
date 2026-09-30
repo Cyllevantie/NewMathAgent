@@ -1,0 +1,59 @@
+{
+ "schema_version": 1,
+ "stage": "fix",
+ "source_verdict": "reports/VERIFY_REPORT.verdict.json（stage=verify、status=REVISE_CLAIM）。本轮**不是** ⑫ 判词起头：web_run.log 12:16:39「verify 判词全为论文侧（2 项）且本关之后没有写作阶段 ⇒ 交 13Repair-by-rubric-verdict 定点改写，改完回本门禁复评（第 1 / 3 轮）」⇒ 本轮的 fix_required = [q1-loss-third-caliber-label-mismatch, q2-convergence-subject-misattribution]（⑮ 的 n-a-r-r-a-t-i-v-e_consistency 不在 content_quality.RESULT_CHECK_CATEGORY 反推表里，故两条 claim 判词原样落到本阶段）。",
+ "items": [
+  {
+   "id": "q1-loss-third-caliber-label-mismatch",
+   "disposition": "fixed",
+   "evidence": "判词属实，已按判词定点改 paper/sections/5_problem1.tex:134 —— 原「按 0.1 cm 输出列的粗梯形积分得 \\textbf{12.88\\%}」改为「按 $0/0.5/1.0/1.5/2.0$ cm 五点的粗梯形求积得 \\textbf{12.88\\%}」，取样点集合逐字取自该口径的登记名 results/q1.json :: moisture_loss.calibers[2].name = 「五点梯形求积（0/0.5/1.0/1.5/2.0 cm）」；**数值 12.88% 与同句另两个百分数 8.34% / 10.06% 一字未动**，也未动该口径在 code 侧的实装。复核依据（探针 _tmp/fix13r3_claim_recheck.py，分母按 code/q1.py 的登记口径 m0 = C0/2 = 1.275）：按判词点名的「0.1 cm 全 21 列」从交付件 results/result1.xlsx 的 1800 s 行复算得 ∫Cξdξ = 1.145313750 ⇒ 失水 10.1715%，**不是 12.88%**；按「0/0.5/1.0/1.5/2.0 cm 五点」复算得 ∫Cξdξ = 1.110837500 ⇒ 失水 12.8755% ⇒ 12.88%，且与 q1.json 登记值 1.1108375 逐位相同。判决：判词属实，且数值本身正确、错的只是句子里给的取样点集合。",
+   "recheck": "① 新写法落地：`python _tmp/fix13r3_posttext.py` → 「0/0.5/1.0/1.5/2.0」源侧 1 处 / 交付 PDF p11；「五点的粗梯形求积」源侧 1 处 / PDF p11。② 旧写法清零：`0.1 cm 输出列的粗梯形积分` 源侧 0 命中 / PDF 全 32 页 0 命中。③ 不得动的两个数仍在：8.34 源侧 3 处 / PDF p1、p11；10.06 源侧 3 处 / PDF p1、p11、p19。④ 交付 PDF p11 文本层实读：「…按表面通量积分得8.34%，按归一化半径权重∫10𝐶𝜉d𝜉的变化得10.06%，按0/0.5/1.0/1.5/2.0cm五点的粗梯形求积得12.88%。三者的差异来自求积精度与权重定义…」。⑤ 版式未变：`python _tmp/fix13r3_style_census.py` → (font,size) 组合 48 → 48，新增组合 = 无、消失组合 = 无；改动行 p11 y0=560.5/580.3 与同页正文行同为 SimSun 11.96pt、x0=70.9、行距 19.8–19.9pt。"
+  },
+  {
+   "id": "q2-convergence-subject-misattribution",
+   "disposition": "fixed",
+   "evidence": "判词属实，已按判词定点改 paper/sections/5_problem2.tex:82 —— 原「，两个场在 72 h 末的场级网格收敛量分别为 $2.4\\times10^{-4}$ 与量级更小的表面格 $4.2\\times10^{-6}$ kg/kg。」改为「；水分场在 72 h 末的场级网格收敛量为 $2.4\\times10^{-4}$（全场最大变化），其中量级更小的表面格为 $4.2\\times10^{-6}$ kg/kg。」**两个数值一字未动**，只把主语由「两个场」改成与证据相符的单一对象「水分场」并点明两个量各自的角色。复核依据（探针 _tmp/fix13r3_claim_recheck.py）：reports/ANALYSIS_MODELING_REPORT.md:868 的场级收敛行原文写「72 h 场：$160\\to320$ 最大 $|ΔC|=2.36\\times10^{-4}$（中心格 $5.36\\times10^{-5}$、表面格 $4.20\\times10^{-6}$）」—— 两个量**都是 $|\\Delta C|$（水分场）**，一个是全场最大变化、一个是表面格变化；同行的温度侧只在**取材时刻 $t=1800$ s** 给出（$\\max|\\Delta T|=3.3\\times10^{-6}$ K），成稿附录 A.2 的表 A4 的四个档位也全是 $t=1800$ s / $t=100$ s，**没有任何 72 h 档的温度侧量**；全 paper/ 目录里含「72 h」且含「收敛/网格」的句子只有这一处 ⇒ 判词说「把只属于水分场的两个量归给了两个场」成立。按判词给的第一条路处置（改成单一场主语）；第二条路（补温度侧 72 h 实测值）需要跑求解器，属 code 阶段，本阶段不做也不该用 t=1800 s 那一档顶替。",
+   "recheck": "① 新写法落地：`python _tmp/fix13r3_posttext.py` → 「水分场在72h末的场级网格收敛量」源侧 1 处 / 交付 PDF p14。② 旧写法清零：「两个场在72h末的场级网格收敛量分别为」源侧 0 命中 / PDF 全 32 页 0 命中。③ 不得动的两个数仍在：`2.4\\times10^{-4}` 源侧 1 处、`4.2\\times10^{-6}` 源侧 1 处，均在本句内（PDF 侧渲染成 2.4×10−4 / 4.2×10−6）。④ 交付 PDF p14 文本层实读：「…能量侧为7.4×10−7、相对9.6×10−11；水分场在72h末的场级网格收敛量为2.4×10−4（全场最大变化），其中量级更小的表面格为4.2×10−6kg/kg。」⑤ 逐页文本层差分（`python _tmp/fix13r3_pagetext_diff.py`，基准 = ⑭ 收口那一版）：全 32 页只有 p11 与 p14 有差异，其余 **30 / 32 页逐页文本完全相同**，且两页的差异只落在被判词点名的那一句上（p14 的 opcode 只有 replace「，两个」→「；水分」、delete「分别」、replace「与」→「（全场最大变化），其中」、insert「为」）⇒ 没有连带重排。"
+  },
+  {
+   "id": "budget-ratio-upper-end",
+   "disposition": "deferred",
+   "evidence": "category=claim 的 advisory（非 must/fatal、不在本轮 fix_required 里），与 ⑫ 的 budget-ratio-caliber-not-reproducible（tier=optional）是同一件事，判词属实但不进本轮返修。成本估计：要同时改四处（paper/main.tex:68 摘要、paper/sections/6_check.tex:23、paper/sections/7_evaluation.tex:21 与本稿写分母的 paper/sections/5_problem3.tex:90）并补一句口径说明；且分子分母的新写法会与上游 reports/ROBUSTNESS_REPORT.md 的同一句不再逐字一致，而那份报告按 TARGETS 的 report_wording→analysis 归 3analysis，本阶段改不了它 ⇒ 口径必须与 analysis 的报告层措辞同批定。⑮ 已明写它 why_not_blocking（不进入任何交付数值与判据）。本轮未改一字。"
+  },
+  {
+   "id": "ref15-subtitle",
+   "disposition": "out_of_scope",
+   "evidence": "category=presentation 的 advisory ⇒ 按 lib/web/content_quality.py 的 TARGETS（presentation → format）归 14Layout-and-format；⑮ 自己写明「只改文献表的题录文字」并判为非阻断。本阶段边界表里的「引用位置与格式」指的是**引用点与著录格式**，而这一条是**题录内容与外部真实题名不符**（DOI 10.1016/j.jfoodeng.2019.07.010 的 Crossref 真实题名带副题 'An optimization method for water diffusivity and peel resistance estimation'），属文献真实性面，⑮ 在 checks 里已按项目分工归 15Verification 复核过并判非阻断。且它不在本轮 fix_required 里，改它就是清单外改动。本阶段未改 paper/references.tex 一字。"
+  },
+  {
+   "id": "table-A5-pm-direction",
+   "disposition": "out_of_scope",
+   "evidence": "category=presentation 的 advisory ⇒ TARGETS 映射到 14Layout-and-format。逐字复核：⑮ 记该表 A5「初始含水率 ±1%」行的 $\\mp0.048$/$\\mp0.046$ 与产物实测方向相反，并按本项目既有惯例（上游 ROBUSTNESS_REPORT.md 同一量并存两种写法）记为 advisory 而非 hard。属附录表体的数值方向登记，本阶段只改论文侧措辞、不改数值，故不动（paper_appendix/sections/A_appendix.tex 与开工基线逐字节相同，见 change_surface）。"
+  },
+  {
+   "id": "internal-term-in-tex-comments",
+   "disposition": "out_of_scope",
+   "evidence": "category=presentation 的 advisory ⇒ 14Layout-and-format。⑮ 记 paper/sections/5_problem4.tex:33 与 paper/sections/A1_materials.tex:3 两条 **LaTeX 注释**里引用了 _tmp/fmt_margin_overflow.py、_tmp/fmt_gen_a1.py 与阶段名 14Layout-and-format；⑮ 明写「两条都在 LaTeX 注释里，不进渲染面、不进提交件」，且三份归档 PDF 的文本层对该 deny 词表 0 命中。这两行注释是 ⑭ 自己写的施工备注，删它属 ⑭ 的收口动作，不由本阶段代劳；本阶段未动这两个文件。"
+  },
+  {
+   "id": "paper-math-style-residual",
+   "disposition": "out_of_scope",
+   "evidence": "category=presentation 的 advisory ⇒ 14Layout-and-format（模板/排版层）。⑮ 记 paper/math-style.tex 是 paper/ 根下**未被任何文件引用**的残留副本（正文经 paper/_base/preamble.tex:75 引入的是 paper/_base/math-style.tex，两份 sha256 不同），不参与编译、不进提交件。`paper/_base/` 与 `paper/` 根的文件取舍属 ⑭ 独占的模板层；本阶段未动它（change_surface 显示 paper/math-style.tex 与基线逐字节相同）。"
+  },
+  {
+   "id": "orphan-figure-copies",
+   "disposition": "out_of_scope",
+   "evidence": "category=presentation 的 advisory ⇒ 14Layout-and-format。⑮ 记 paper/figures/ 的 19 张 PDF 里有 7 张在正文未被 \\paperfigure 引用，由附录工程经 \\appfigure 引用、paper/figures/ 内只是同名副本。按 SKILL 边界表，图件副本的增删属文件层与 ⑭ 的收口动作，且删副本有「修 A 坏 B」风险（附录仍要读）；本阶段未动 paper/figures/ 或 paper_appendix/figures/ 的任何一张（change_surface 显示两目录零改动）。"
+  },
+  {
+   "id": "internal-artifact-wording",
+   "disposition": "deferred",
+   "evidence": "category=claim 的 advisory（⑮ 明写 why_not_blocking：两处均未命中 internal_leak_words.md 的 deny 词表、三份归档 PDF 复扫 0 命中，只对评委暴露内部产物存在）。判词性质确属本阶段能改的措辞面（paper/sections/5_problem2.tex:82「与建模报告的登记值逐位一致」与 paper/sections/A1_materials.tex 清单表里 summarize.py 的说明），但它是 **advisory 而非判词**，不在本轮 fix_required 里 ⇒ 按 discipline 五·1「只改回执点名的位置」，不动；且 A1_materials.tex 是 ⑭ 生成的清单表，改动它会与 reports/SUBMISSION_MANIFEST.json 的生成链脱钩。本轮未改这两处。"
+  },
+  {
+   "id": "advice-time-2sigma-arithmetic",
+   "disposition": "out_of_scope",
+   "evidence": "category=report_wording 的 advisory ⇒ 按 TARGETS（report_wording → analysis）归 3analysis。⑮ 记分叉在**上游报告** reports/ROBUSTNESS_REPORT.md:536-538 的自述推导句（50.8+15=65.8 ≠ 67），论文侧 paper/sections/7_evaluation.tex:47 的表 8 末行忠实抄录了报告给的 71 与 67、两格与报告一致 —— 要改的是上游报告的推导句，本阶段不改编 reports/ROBUSTNESS_REPORT.md（只改论文侧）。本轮未改。"
+  }
+ ]
+}

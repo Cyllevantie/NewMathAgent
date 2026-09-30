@@ -1,0 +1,13 @@
+{
+  "_method": "Q4 图件数据：ξ 场快照（每 0.5 h）+ R(t) + maxC/中心/表面时程",
+  "_code_fp": "dc8e04c98fa0",
+  "_produced_at": "2026-09-29T14:26:34",
+  "_stage": "code",
+  "_params": {
+    "n": 320,
+    "dt": 60.0,
+    "t_end": 259200.0,
+    "shrink": true,
+    "snap_every_s": 1800.0
+  }
+}

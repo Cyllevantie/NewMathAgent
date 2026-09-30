@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "receipt": "runtime/quality/feedback/38312eac/2820d1b0/gate_decision.json",
+  "report": "reports/ANALYSIS_MODELING_REPORT.md",
+  "notes": "本轮回执（NEEDS_FIX，target=analysis）共 2 条 must issues + 16 条 report_wording advisories。台账逐条交代 2 条 issues 的处置与可证伪探针；探针一律取自**正文节**（§9.1 第 4 步 / §5.8 第 6 条），不取自 §16.3 的处置复述（那一节标题含「返修」，属记录区，测试会拒收）。16 条 advisories 的落点见表末 advisories 字段与报告 §16.3 的 B 表（不拦链、机器判据不要求，故不占用 items 通道 —— items 必须与回执 issues 的 id 集合严格相等）。",
+  "items": [
+    {
+      "id": "rev-prop1-integral-norm",
+      "disposition": "applied",
+      "probes": [
+        "范数必须取内区范数",
+        "M_\\varepsilon:=\\sup_{[0,\\varepsilon]\\times[0,T]}|\\partial_tC|<\\infty",
+        "在 $t>0$ 的紧子柱体上有限",
+        "\\partial_tC(R,t)\\sim t^{-1/2}"
+      ],
+      "note": "§9.1 证明要点第 4 步：轴心项的范数由**全局** $\\|\\partial_tC\\|_\\infty$ 换成**内区范数** $M_\\varepsilon=\\sup_{[0,\\varepsilon]\\times[0,T]}|\\partial_tC|$（该紧集不含角点 $(R,0)$），括注「在解上有限」改为「在 $t>0$ 的紧子柱体上有限」，并给等价的 $[\\varepsilon,R]\\times[\\delta,T]$ 路径与三段取极限顺序；§9.5 补角点标度作为该有限性的依据。复验（新探针 _tmp/rev6_probe.py）：①A 段 $a_1=3.2334\\times10^{-2}$ ⇒ $C_s-C_0\\approx-0.0323\\sqrt t$、$\\partial_tC(R,t)\\approx-0.0162\\,t^{-1/2}$，数值实测比值 t=1→400 s 为 0.905/0.971/0.975/0.972/0.967/0.936/0.875 ⇒ √t 律成立；②B 段内区界 $\\max|q|/[(r^2/2)M_\\varepsilon]=0.69/0.46/0.30\\le1$（ε=0.1/0.2/0.5 R0）⇒ 该界在解上有效；③全局 $\\sup|\\partial_tC|$ 随 Δt 减小而增大（Δt=1 s 给 2.61e-2、Δt=0.25 s 给 4.29e-2 s⁻¹）⇒ 原范数确实不是有限量；④$O(\\varepsilon^2)$ 与 $\\tilde q\\le0$ 的链条未改。全文已无「未限定取值域的 $\\|\\partial_tC\\|_\\infty$ 被当作有限量」的用法（仅存的两处均写明它**不是**有限量）。"
+    },
+    {
+      "id": "rev-q1-selfcheck-tolerance",
+      "disposition": "applied",
+      "probes": [
+        "不作小量判据、只登记实测值",
+        "内部节点（$r\\le1.9$ cm）",
+        "比 $10^{-4}$ 高 261 倍",
+        "T_\\infty(0)=28.000"
+      ],
+      "note": "§5.8 第 6 条的 $t=1$ s 初值自检改成分节点区判据：温度侧全节点保留 $|T-T_0|<10^{-3}$ K（$T_\\infty(0)=T_0$ ⇒ 可达）；水分侧内部（$r\\le1.9$ cm）保留 $|C-C_0|<10^{-4}$；表面节点及最外约 0.04 cm **不作小量判据**、只登记实测值并与 §9.5 的角点标度对账。复验（_tmp/rev6_probe.py 的 G 段，按**改后的自检实现**跑 Q1 交付档：N=320、Δt=1 s、环境/几何取步末层、0–1800 s）六项断言：①$\\arg\\max_rC$ —— 写死的**护栏判据**（亏量 >1e-10·C(0,t)）**0/1800 违约**，窗口内最大亏量 1.33e-15（门限 2.55e-10）；字面判据在 638/1800 步上误报（正是护栏存在的理由）；②$C$ 关于 r 单调不增 0 违约（最大正向跳变 1.33e-15）；③$T$ 关于 r 单调不减 0 违约（最大反向跳变 2.84e-13 K）；④温度初值 max|T-T0|=2.4594e-04 K <1e-3 PASS；⑤水分内部 max|C-C0|=2.7213e-08 <1e-4 PASS；⑥表面节点 |C-C0|=2.6101e-02（只登记；与连续标度 3.2e-2 同量级、随 Δt 减小向其收敛：Δt=1 给 2.61e-2、Δt=0.25 给 2.93e-2）。另：该条的两种读法都复用上轮主审探针 _tmp/rev5_math_probe1.py 的 E 段原样重跑，逐位复现（表面 |C-C0|=2.6101e-02、|T-T0|=2.4594e-04、步长差 2.0041e-03 / 2.8093e-05），并确认 env(t=0) 为 T_inf=28.0000 C_inf=0.01963。"
+    }
+  ],
+  "advisories": [
+    {"id": "adv-prop1-literals", "disposition": "applied", "where": "§9.1 第 4 步与 P3 行、§9.5"},
+    {"id": "adv-precision-claim-residual-spots", "disposition": "applied", "where": "§0.2 第 4 条、§2.6 评价标准表、§5.4 (iii)"},
+    {"id": "adv-water-4th-decimal-caliber", "disposition": "applied", "where": "§5.8 第 5 条"},
+    {"id": "adv-symbol-table-phi", "disposition": "applied", "where": "§4.2 符号表（Φ 行改写 + 新增 s_T / h_src / v_s 三行）、§4.3"},
+    {"id": "adv-prop2-moving-domain-identity", "disposition": "applied", "where": "§9.2 积分恒等式后"},
+    {"id": "adv-prop1-tau-lambda", "disposition": "applied", "where": "§9.1 P3 行"},
+    {"id": "adv-prop2-title-tone", "disposition": "applied", "where": "§9.2 标题、§9.6（命题 1/2 → 命题 1 + §9.2 沿用同一前提）"},
+    {"id": "adv-similarity-099", "disposition": "applied", "where": "§9.5（0.99 → 0.9782≈0.98）"},
+    {"id": "adv-table5-example-two-spots", "disposition": "applied", "where": "§7.4 末行口径"},
+    {"id": "adv-rounding-4dp-a-column", "disposition": "applied", "where": "§5.8 第 3 条、§13 统一代码契约、§17、reports/TASK_CONTRACT.json 的 rounding_4dp"},
+    {"id": "adv-q26-latent-wording", "disposition": "applied", "where": "§6.3 Q2-6"},
+    {"id": "adv-enthalpy-temp-scale", "disposition": "applied", "where": "§10 第 2 行、§11.3 相变项行"},
+    {"id": "adv-water-cp-4000", "disposition": "applied", "where": "§3.3 第 3 条、§11.3 相变项行"},
+    {"id": "adv-a5-density-basis", "disposition": "applied", "where": "§3.1 A5"},
+    {"id": "adv-113-n-column", "disposition": "applied", "where": "§11.3 表（补 n 列）"},
+    {"id": "adv-env-jitter-acceptance", "disposition": "applied", "where": "§11.6 B 档"}
+  ]
+}

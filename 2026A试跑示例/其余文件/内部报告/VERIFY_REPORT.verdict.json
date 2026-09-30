@@ -1,0 +1,129 @@
+{
+  "schema_version": 2,
+  "stage": "verify",
+  "input_digest": "712705fc02fa636c3a4019405f919a281005738a17349f1979a304263ee3fb7b:python=cpython3.11.16;texlive@2026;pandoc@3.6.4;draw.io@31.3.2:9d61e948d3b78bec84213a5249a165d13c8f854c585eb0267eec21740ffb23c4:270aeb29fabf:db2243d539e4",
+  "status": "PASS",
+  "issues": [],
+  "checks": [
+    {
+      "id": "task_fidelity",
+      "status": "passed",
+      "reason": "原题硬条件与四份交付件逐项闭合，本轮零改动。30 条题意契约要求全部 status=mapped、四语义字段一致、锚点逐字存在（python lib/web/check_contract.py --root . 自检通过）；题面四问的表格式、时标、半径网格、单位都在正文对应表里逐格给出；四份 result*.xlsx 的时间步长、径向列距、行数、工作表名与四位小数与题面附录 1 的模板说明一致（_tmp/vfy_deliverable_closure.py 原样重跑，四份全部相符，result4 的末列为题面要求的『药材表面』移动列）。本轮被返修的是两句散文，不触及任何题面要求；已复算确认句中被点名的数值未动。",
+      "evidence": [
+        {"file": "request/problem.md", "quote": "所有结果保留四位小数"},
+        {"file": "request/problem.md", "quote": "到药材中心距离0、0.5、1、1.5、2 cm 处的结果"},
+        {"file": "reports/TASK_CONTRACT.json", "quote": "q4_surface_column"},
+        {"file": "paper/sections/5_problem1.tex", "quote": "1800 & 33.5765 & 33.7732 & 34.3653 & 35.3631 & 36.7863"},
+        {"file": "paper/sections/A1_materials.tex", "quote": "表 9\\quad 支撑材料文件清单"}
+      ]
+    },
+    {
+      "id": "optimality",
+      "status": "passed",
+      "reason": "全篇未把数值 best-known 说成全局最优。达标时刻的定义是全场最坏点判据函数的首个零点，不是启发式搜索的停止值，论文并给出它在网格与步长细化下的移动量、统一成区间引用；表 8 的生产裕度行显式声明由自设区间的两倍标准差给出、不是统计保证。本阶段对三份归档 PDF 的文本层复扫『全局最优/最优/显著/全覆盖/无空档/保证了/证明了/已证/严格相同/严格一致/一阶无偏/恒成立』，合计 0 命中。本轮两句返修都不涉及最优性表述（改动面只有取样点集合与主语归属）。",
+      "evidence": [
+        {"file": "paper/sections/5_problem3.tex", "quote": "达标时刻定义为 $g$ 的首个零点"},
+        {"file": "paper/sections/5_problem3.tex", "quote": "正文一律给区间而不给伪精确点值"},
+        {"file": "paper/sections/7_evaluation.tex", "quote": "不是统计保证"}
+      ]
+    },
+    {
+      "id": "proof_applicability",
+      "status": "passed",
+      "reason": "5_problem3.tex 的命题是显式的条件命题，三条前提 P1/P2/P3 在本题解上逐条数值验证（附录 A.1 表 A1），论文自述三条前提只在已求出的解上被数值验证、所以结论是带前提的条件命题；代码不把该命题当免检假设，逐时刻自检最坏点位置。同小节内有等式级推导块支撑（式 eq:prop1-flux 与扰动—指数吸收论证），附录 A.1 补全轴心项的阶积分与 M_epsilon 的紧集取法（式 17–19）；5_problem4.tex 的坐标变换等价性有 eq:q4-conserve→eq:q4-rform→eq:q4-pde 三步等式推导演开，附录 A.5 逐项展开。本轮改的是两句散文，两个文件的公式块一行未动：formula-review.json 的 23 条提示项 (file,line,message) 集合与上一版逐一相同，且 23/23 旧登记页仍落在当前 PDF 重测出的命中集合里。",
+      "evidence": [
+        {"file": "paper/sections/5_problem3.tex", "quote": "三条前提只在已求出的解上被数值验证，所以上述结论是带前提的条件命题，不是无条件定理。"},
+        {"file": "paper/sections/5_problem3.tex", "quote": "正因为 P2 的裕度小，代码不把它当作免检假设"},
+        {"file": "paper_appendix/sections/A_appendix.tex", "quote": "三条前提在解上的实测值见表 A1。"}
+      ]
+    },
+    {
+      "id": "narrative_consistency",
+      "status": "passed",
+      "reason": "上一轮判 failed 的两处已在当前盘面落实并逐条复验通过，摘要、正文、图注与结论都与登记证据一致。其一，5_problem1.tex:134 的第三口径取样点集合已改为登记名所指的五点：按改后句子里点名的 0/0.5/1.0/1.5/2.0 cm 五点、在交付件 results/result1.xlsx 的 1800 s 行上独立复算得 1.110837500 ⇒ 失水 12.8755%，与 results/q1.json 的该口径登记值 1.110837500 / drop_pct 12.875490 与论文报出的 12.88% 逐位相符；旧写法『0.1 cm 输出列』在三份归档 PDF 文本层与 paper/ 加 paper_appendix/ 全部 25 份 .tex 源（含注释）里 0 命中。其二，5_problem2.tex:82 的主语已由『两个场』改为证据支持的单一对象：两个量与上游场级收敛表的 72 h 行逐一对应（都是水分场 ΔC 的场级最大变化 2.36e-4 与表面格 4.20e-6），该表 72 h 档并无可比的温度侧量；两个数值均未动（正文 PDF 中各命中 1 次，仍在同一句内）。同句被要求不得改动的另两个百分数 8.34% 与 10.06% 在正文 PDF 中仍在位。其余一致性面：摘要里每个数字都能在 result-values.json 或 reports/ 的登记值里找到出处、四份表与 result*.xlsx 和 q2.json 逐格相符、图注与所画指标一致、无绝对化程度词，python -m lib.result_contract audit --rendered 返回空问题表。",
+      "evidence": [
+        {"file": "paper/sections/5_problem1.tex", "quote": "按 $0/0.5/1.0/1.5/2.0$ cm 五点的粗梯形求积得 \\textbf{12.88\\%}"},
+        {"file": "results/q1.json", "quote": "五点梯形求积（0/0.5/1.0/1.5/2.0 cm）"},
+        {"file": "paper/sections/5_problem1.tex", "quote": "按表面通量积分得 \\textbf{8.34\\%}，按归一化半径权重"},
+        {"file": "paper/sections/5_problem2.tex", "quote": "水分场在 72 h 末的场级网格收敛量为 $2.4\\times10^{-4}$（全场最大变化）"},
+        {"file": "reports/ANALYSIS_MODELING_REPORT.md", "quote": "最大 $|ΔC|=2.36\\times10^{-4}$"}
+      ]
+    },
+    {
+      "id": "figure_coverage",
+      "status": "passed",
+      "reason": "四问与两项横切分析都有图：正文 12 张编号图覆盖分析流程、几何与耦合结构、四问各自的场与判据、约定敏感性，附录另有 7 张（图 A1 至 A7）。每张都带中文图题、放在对应语义章节，正文无孤儿图，三份 main.log 无未解析引用，\\includegraphics 的路径按编译工作目录解析正确，figures/manifest.json 的 19 条 included 全为真；python -m lib.visualization audit 无 issue。脚本每轮报的 19 条『figure PDF not referenced』是假阳（正文经 \\paperfigure 只写 stem）。本轮图件与登记零改动。",
+      "evidence": [
+        {"file": "paper/sections/5_problem1.tex", "quote": "\\paperfigure[\\textwidth]{q1_field}{问题 1 的温度场与水分浓度场}{q1_field}"},
+        {"file": "paper_appendix/sections/A_appendix.tex", "quote": "\\appfigure[\\textwidth]{convergence}{图 A1：达标时刻对空间网格与时间步长的收敛}"},
+        {"file": "figures/manifest.json", "quote": "\"included\": true"}
+      ]
+    },
+    {
+      "id": "content_coverage",
+      "status": "passed",
+      "reason": "每问的必要论证在成稿里齐全：四问各有具体分析、模型准备、模型建立（含决策变量与约束条件）、模型求解、结果分析五段，另有第六节误差与灵敏度分析、第七节优点缺点改进与推广；题面要求的四份结果表（表 2 与表 3、表 4 与表 5、表 6、表 7）与四份 result1 至 result4.xlsx 全部给出，逐秒与逐 0.1 cm 的完整结果在交付件中；附录 A 独立成册并有正式的支撑材料清单表，由 reports/SUBMISSION_MANIFEST.json 生成。本轮改动面是两句散文，不触及章节结构与覆盖度。",
+      "evidence": [
+        {"file": "paper/sections/5_problem3.tex", "quote": "烘干结束时间 & 0.1500 & 0.1477 & 0.1402 & 0.1249 & 0.0525"},
+        {"file": "paper/main.tex", "quote": "\\appendixAcn[支撑材料清单]{A1_materials}"},
+        {"file": "reports/SUBMISSION_MANIFEST.json", "quote": "result4.xlsx"}
+      ]
+    }
+  ],
+  "advisories": [
+    {
+      "id": "budget-ratio-upper-end",
+      "category": "claim",
+      "evidence": "paper/main.tex、paper/sections/6_check.tex:23、paper/sections/7_evaluation.tex:21 写「比数值预算大 15 至 25 倍」。分母取 5_problem3.tex:90 自报的约定不确定度 ±0.5 h 时，7.0/0.5=14、7.5/0.5=15；上端 25 只有换成单参数扩散系数的 +12.7 h 才凑得出，上下端不同源。该条已在 12Rubric-final 登记（reports/RUBRIC_REVIEW.verdict.json 的 budget-ratio-caliber-not-reproducible，tier=optional）。",
+      "why_not_blocking": "该比值不进入任何交付数值与判据：改它不改 t_dry 57.1383 h 与 50.8333 h、不改表 6 至表 8 的任何一格、不改不确定度区间的端点，也不改提交件里四份 result*.xlsx 的任何一个数；它只是两处比较句的措辞。"
+    },
+    {
+      "id": "ref15-subtitle",
+      "category": "presentation",
+      "evidence": "paper/references.tex:15 的 ref15 副标题写作 water diffusivity and shrinkage，而该条给出的 DOI 10.1016/j.jfoodeng.2019.07.010 在 Crossref 的真实题名是 A moving boundary model for fruit isothermal drying and shrinkage: An optimization method for water diffusivity and peel resistance estimation。文献真实存在（Crossref 可解析，非捏造），只有题录副标题文字与真实论文不符。",
+      "why_not_blocking": "只改文献表的题录文字，不改正文任何论断、数值或图表；正文对该条的引用是一般性方法引用，副标题写错不影响引用所承担的支持关系。"
+    },
+    {
+      "id": "table-A5-pm-direction",
+      "category": "presentation",
+      "evidence": "paper_appendix/sections/A_appendix.tex 的表 A5「初始含水率 ±1%」行写 $\\mp0.048$ 与 $\\mp0.046$，而产物实测方向为 +1% 时是 +0.047 h 与 +0.046 h。上游 reports/ROBUSTNESS_REPORT.md 同一量并存「−0.048 / +0.047」与「∓0.048」两种写法，按本项目既有惯例记为 advisory 而非 hard。",
+      "why_not_blocking": "该量级只有 0.05 h，远小于论文全篇引用的 ±0.5 h 约定不确定度，不改变任何结论、排序或建议时长；改它不改表 A5 的其他行，也不改正文与结论。"
+    },
+    {
+      "id": "internal-term-in-tex-comments",
+      "category": "presentation",
+      "evidence": "paper/sections/5_problem4.tex:33 与 paper/sections/A1_materials.tex:3 两条行首为 % 的注释里引用了 _tmp/fmt_margin_overflow.py、_tmp/fmt_gen_a1.py 与阶段名。对三份归档 PDF 的文本层复扫 internal_leak_words.md 的 deny 词表为 0 命中，且 .tex 源不在 reports/SUBMISSION_MANIFEST.json 的 items 里。",
+      "why_not_blocking": "两条都在 LaTeX 注释里，不进渲染面、不进提交件，成稿 PDF 与打包结果与它们无关；留着唯一的代价是 writing_check.sh 每轮多报两条 FAIL。"
+    },
+    {
+      "id": "paper-math-style-residual",
+      "category": "presentation",
+      "evidence": "paper/math-style.tex 是 paper/ 根下未被任何文件引用的残留副本：正文经 paper/_base/preamble.tex 的 \\input{_base/math-style.tex} 引入的是 paper/_base/math-style.tex，两份 sha256 不同。它不参与编译，也不在 reports/SUBMISSION_MANIFEST.json 的 items 里。",
+      "why_not_blocking": "该文件不进编译、不进提交件，对成稿 PDF 与打包结果零影响；删除与否不改变任何交付内容。"
+    },
+    {
+      "id": "orphan-figure-copies",
+      "category": "presentation",
+      "evidence": "paper/figures/ 共 19 张 PDF，其中 7 张（convergence、fig_q4_material、q1_profiles、q2_diffusivity、q4_effects、rb_tornado、rb_uncertainty）在正文未被 \\paperfigure 引用；它们由附录工程 paper_appendix/sections/A_appendix.tex 经 \\appfigure 引用，paper/figures/ 内是同名副本。属 SKILL 警告标准里的「未引用的备用图片」。",
+      "why_not_blocking": "这些副本不被正文任何 \\includegraphics 引用，不参与正文排版的任何一页；成稿 PDF 的画面与它们无关。"
+    },
+    {
+      "id": "internal-artifact-wording",
+      "category": "claim",
+      "evidence": "两处指向内部产物/机制的措辞：paper/sections/5_problem2.tex:82「与建模报告的登记值逐位一致」；paper/sections/A1_materials.tex 清单表里 summarize.py 的说明「登记结构化指标，供正文以登记键引用数值」。二者均未命中 internal_leak_words.md 的 deny 词表（三份归档 PDF 复扫 0 命中），但对评委而言会暴露本工作流存在内部产物。",
+      "why_not_blocking": "只改措辞，不改任何数值、方程或判据：这两句陈述的事实本身为真且已被 result_contract 审计独立复核，改说法不改变它们支持的任何结论。"
+    },
+    {
+      "id": "advice-time-2sigma-arithmetic",
+      "category": "report_wording",
+      "evidence": "reports/ROBUSTNESS_REPORT.md:536-538 自述建议判据是 t_dry+2σ，且 2σ = 14–15 h，给出的建议是问题三约 71 h 与问题四约 67 h；按该判据复算 57.1+14=71.1 ✓ 71，但 50.8+15=65.8 ≠ 67，相差 1.2 h。paper/sections/7_evaluation.tex:47 的表 8 末行忠实抄录 71 与 67，分叉在上游报告那一句。",
+      "why_not_blocking": "只改上游报告的推导句，不改论文的任何数值与措辞：论文侧两格与报告一致，且该行只是建议性余量，不参与达标时刻、判据函数与任何表内场值。"
+    },
+    {
+      "id": "symbol-table-missing-M-epsilon",
+      "category": "claim",
+      "evidence": "writing_check.sh 报「symbols used in formulas but absent from the symbol table (9): D, M, U, e, i, k, m, q, r」。本轮逐条核实（_tmp/vfy3_symbols.py）：D、U、i、k、m、q、r 都在 paper/sections/4_symbols.tex 的表 1 里（以裸字母声明，如 '$D$' 在 :34、'$U$' 在 :41、'$q$' 在 :47、'$r$' 在 :23），e 来自 $\\tilde q=q\\,e^{-\\lambda t}$ 的指数底、不是符号 —— 脚本的抽取式只认「字母紧跟 _ 或 ^」（writing_check.sh:505），故这 8 条是假阳。只有 M（即 $M_\\varepsilon$）确实没进表 1：它出现在 paper/sections/5_problem3.tex:25 的一条行间公式里，正文首次出现处已就地定义（「其中 $M_\\varepsilon$ 取内区紧集 $[0,\\varepsilon]\\times[0,T]$ 上 $\\partial_tC$ 的上确界」）。",
+      "why_not_blocking": "该符号在正文首次出现处就地定义，满足 SKILL Step 5「公式中的符号应在符号说明或正文首次出现处解释」，读者不会遇到未加解释的符号；补一行表 1 只影响符号表的完备性外观，不改任何数值、方程、判据与图表。本项为本轮新登记（上一轮把 9 条一并视作假阳），属既有残留、非 13Repair 的改动引入。"
+    }
+  ]
+}

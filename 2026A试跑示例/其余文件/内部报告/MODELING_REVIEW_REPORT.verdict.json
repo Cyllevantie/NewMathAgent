@@ -1,0 +1,227 @@
+{
+  "schema_version": 2,
+  "stage": "review",
+  "input_digest": "670ffd7930ffed33c16c01e8e537cc80a7ba6f70ca6be689537776969d2b3def:562358dd8b81a8204efb5ca8ad1a5b1f274e310b05646d095831eb37c0ea4d57:270aeb29fabf:db2243d539e4",
+  "status": "PASS",
+  "issues": [],
+  "advisories": [
+    {
+      "id": "adv-162-global-norm-residual",
+      "category": "report_wording",
+      "evidence": "§16.2 A3（被保留的 v1.4 旧处置表，约 1090 行）仍写 `改正后从 $\\lvert q\\rvert\\le\\frac{r^2}{2}\\lVert\\partial_tC\\rVert_\\infty$ 到 $\\tilde q\\le0$ 每一步都是有效不等式`，并逐字用 $\\lVert\\partial_tC\\rVert_\\infty$ 四次；而 §9.1 本轮已判定 `故**全局** $\\|\\partial_tC\\|_\\infty$ 在这个模型上**不是有限量**`。两处直接冲突。全文范数记号扫描（`_tmp/rev6_r_normscan2.py`，`\\partial_tC` 共 41 处、带范数记号 5 处）显示只有这一处仍把它当有限量。",
+      "fix": "在 §16.2 A3 该行末补一句作废注（该行关于范数的说法已被本轮 `rev-prop1-integral-norm` 取代，现行范数是 §9.1 的内区范数 $M_\\varepsilon$），**保留历史表本身**、不要删行；可另加一行指向 §16.3 的 A1。",
+      "why_not_blocking": "只改 §16.2 历史处置表里的一句话；§9.1 的证明、前提 P1–P3、§10 的截断审计与全部已登记交付数值都不变。"
+    },
+    {
+      "id": "adv-selfcheck-tolerance-unwritten",
+      "category": "report_wording",
+      "evidence": "§5.8 第 6 条只把护栏容差写给 argmax 一条（`判「违约」的门限是**亏量** $\\max_rC-C(0,t)>10^{-10}\\cdot C(0,t)$`），而同一句里的 $C$ 关于 $r$ 单调不增、$T$ 关于 $r$ 单调不减两条自检没有写门限；报告同时登记了非零的最大跳变（`最大正向跳变 $1.33\\times10^{-15}$`、`最大反向跳变 $2.84\\times10^{-13}$ K`）——非零就说明无门限的字面判据（任一步任一节点反向即违约）必然报违约。",
+      "fix": "在 §5.8 第 6 条的护栏句里把三条自检的门限一并写死（例如 $C$ 侧以 $10^{-12}\\cdot C(0,t)$、$T$ 侧以 $10^{-10}$ K 作为浮点并列门限），或明写「三条自检共用同一护栏形式」；§16.3 A2 的复验栏同步。",
+      "why_not_blocking": "只补两条自检的数值门限；实测违约步数在加门限前后都是 0（跳变量级 $10^{-15}$–$10^{-13}$），判据定义、求解格式与全部已登记交付数值不变。"
+    },
+    {
+      "id": "adv-Vi-normalization",
+      "category": "report_wording",
+      "evidence": "§11.1 的离散校核式写 `$\\Sigma_iV_i(\\cdot)=\\int_0^1(\\cdot)\\xi\\,d\\xi$`，而 §5.6 定义的是 r 坐标单元体积 `$V_i=\\frac{r_{i+1/2}^2-r_{i-1/2}^2}{2}$`（$\\Sigma V_i=R_0^2/2$）；按 §5.6 的 $V_i$ 直读该式，左端比右端大 $R_0^2=4\\times10^{-4}$ 倍，§11.1 同段登记的「相对残差 $<10^{-6}$」会假失败（独立复量：未归一版与 §11.1 右端的比值＝$R_0^2$）。",
+      "fix": "把 §11.1 该式的归一化写死（例如显式令 $\\tilde V_i=V_i/R_0^2$ 并在式内用它），或把右端改写成 $\\Delta t\\,R_0h(T_\\infty-T_N)$；并在 §4.2 为归一化体积单列一行，避免与 §5.6 的 $V_i$ 同名。",
+      "why_not_blocking": "只改该恒等式的记号/归一写法；恒等式本身、其离散残差与全部已登记交付数值不变。"
+    },
+    {
+      "id": "adv-corner-scale-cinf",
+      "category": "report_wording",
+      "evidence": "§9.5 的角点标度用 `$C_\\infty(1800\\,\\mathrm{s})=0.03307$` 代入 $a_1$ 得 `$C_s-C_0\\approx-0.0323\\sqrt t$`；但该式是 $\\beta\\to0$（即 $t\\to0$）的展开，应取 $C_\\infty(0)=0.01963$ ⇒ $-0.0325\\sqrt t$（上一轮回执 §2.1 引的正是此值）。",
+      "fix": "把该标度的驱动值改取 $C_\\infty(0)$（或同句注明「此处取 $t\\to0$ 的 $C_\\infty$」并给出两个值）。",
+      "why_not_blocking": "只改一个标度常数（差 0.6%）；$O(\\varepsilon^2)$、$M_\\varepsilon<\\infty$ 与 $\\partial_tC\\sim t^{-1/2}$ 发散三条结论都不变。"
+    },
+    {
+      "id": "adv-enthalpy-ratio-precision",
+      "category": "report_wording",
+      "evidence": "§10 第 2 行与 §11.3 写 `差 **6.4 倍**`；而 °C 支的偏移只有 $-0.2667$ h （≈16 min ≈ 一个 $\\Delta t=60$ s），独立实现把 °C 支算成 56.7000 h ⇒ 比值 6.06。",
+      "fix": "把该比值改为「约 6 倍」，或注明它对 ±1 个 $\\Delta t$ 敏感、只作量级说明。",
+      "why_not_blocking": "只改一句比值的精度措辞；K 口径的 $-1.7167$ h、两档实装式与全部交付数值不变。"
+    },
+    {
+      "id": "adv-142-surface-column",
+      "category": "report_wording",
+      "evidence": "§14.2 偏离 1 写 `（两者都在 1800 s 内变化 10% 量级）`；对体积加权均值成立（10.06%），对**表面列**为 $2.55\\to1.51$（41%），两者不是同一量级。",
+      "fix": "把该括注拆成两个量级（表面列约 41%、体积加权均值约 10%），不要合并成「10% 量级」。",
+      "why_not_blocking": "只改一句幅度描述；判据适用范围细化的结论（只对中心点成立）与三个失水口径的数值不变。"
+    },
+    {
+      "id": "adv-04-item-count",
+      "category": "report_wording",
+      "evidence": "§0.4 写 `**共 28 条**`，其下 11 行枚举的 id 逐个数只有 **27** 个（缺 `q3_drying_time`，而 `reports/TASK_CONTRACT.json` 实为 28 条）。",
+      "fix": "在 §0.4 的枚举里补上 `q3_drying_time`（或把「共 28 条」改成与枚举一致的写法）。",
+      "why_not_blocking": "只改报告里一处计数与枚举；契约的 28 条、其锚点与四语义字段都不变。"
+    },
+    {
+      "id": "adv-rounding-4dp-source-side",
+      "category": "report_wording",
+      "evidence": "`reports/TASK_CONTRACT.json` 的 `rounding_4dp` 把交付约定写进了来源侧语义字段：`\"scope\": \"论文各表与四个结果文件中的结果数值（场值；四个结果文件的 A 列时间为过程时间、按模板原样书写）\"`（`source_semantics` 与 `model_semantics` 两侧同文）；同类处置 `q4_table6_output` 的做法是**只**写 `model_convention`、`source` 侧回题面原读。",
+      "fix": "`source_semantics.scope` 只留题面读法（「所有结果」），A 列的书写约定只留在 `model_convention`（两侧语义字段仍逐字相等）。",
+      "why_not_blocking": "只改契约里一个字段的措辞；A 列写整数、场值四位小数的实装口径与全部交付数值不变。"
+    },
+    {
+      "id": "adv-write-list-inner-norm",
+      "category": "report_wording",
+      "evidence": "§12 给 `write` 的第 ⑤ 条要求照抄命题 1 的证明并保留扰动步（`非严格不等号处**必须保留**标准扰动`），但未提轴心项必须用内区范数 $M_\\varepsilon$ ——而轴心项那一步正是本轮回执 `rev-prop1-integral-norm` 指出的、唯一会被照抄错的步骤。",
+      "fix": "在 §12 第 ⑤ 条补一句防错提醒（轴心项的界必须用 §9.1 的内区范数 $M_\\varepsilon$，不得写成未限定取值域的全局范数）。",
+      "why_not_blocking": "只加一句给下游的提醒；证明内容、前提与全部交付数值不变。"
+    },
+    {
+      "id": "adv-q4-lastrow-and-contract-convention",
+      "category": "report_wording",
+      "evidence": "§7.4 有 Q3 的 `**末行口径（Q3-4，交付口径）**` 条，§8 没有与它对称的 Q4 末行条（表 6 的「烘干结束时间」行只出现在 §13 T10 的校验列、§17 锚点与 §15 的检核项里）；且 `q3_result_file` / `q4_result_file` 没有 `model_convention` 字段，而 `q1_result_file` / `q2_result_file` 都有（行起点 60 s、末行 ≥t_dry 的约定未登记）。",
+      "fix": "在 §8.5/§8.7 补一条与 §7.4 对称的 Q4 末行口径；给 `q3_result_file` / `q4_result_file` 补 `model_convention`（行起点取 60 s 整数倍、末行 ≥t_dry 的约定及其落点）。",
+      "why_not_blocking": "只补交付口径的登记位置；表 5/表 6 与 result3/result4 的行列集合、以及全部已登记交付数值不变。"
+    },
+    {
+      "id": "adv-registered-value-caliber",
+      "category": "report_wording",
+      "evidence": "§9.1 前提表内写 `$\\max_rC-C(0,t)\\le4.4\\times10^{-16}$`，而同节正文自述`**$1.9\\times10^{-14}$ 才是 5 个算例的一般界**（$4.4\\times10^{-16}$ 是其中单个算例的重测值，不得当全体上界引用）` —— 表与正文不一致；另 §11.2 网格收敛行的 `$3.3\\times10^{-6}$ K` / `$3.5\\times10^{-5}$` 被独立实现复量为 3.583e-6 / 3.583e-5（差 2–8%）。",
+      "fix": "§9.1 表内改用 $1.9\\times10^{-14}$；§11.2 网格收敛行注明探针名与取值口径（含该行已有的「取样列数不同」注一并写全）。",
+      "why_not_blocking": "只对齐登记值与注记；收敛结论（$\\ll10^{-4}$）与全部已登记交付数值不变。"
+    },
+    {
+      "id": "adv-eps-notation-collision",
+      "category": "report_wording",
+      "evidence": "§9.1 第 4 步同时用 $\\varepsilon$ 表示内区半径、$\\varepsilon_0$ 表示扰动参数，而扰动函数写作 `令 $\\tilde q_\\varepsilon:=\\tilde q-\\varepsilon_0t$` —— 同一个 $\\varepsilon$ 在同一段里承担两个角色。",
+      "fix": "把扰动函数改名为 $\\tilde q_{\\varepsilon_0}$（或把内区半径改用别的字母），使两处记号不撞名。",
+      "why_not_blocking": "只改一个记号；扰动论证、极值原理与结论都不变。"
+    }
+  ],
+  "checks": [
+    {
+      "id": "task_fidelity",
+      "status": "passed",
+      "reason": "题面 28 条硬条件/交付要求与模型侧逐条对账通过（本轮为回执复验轮，题意维度重跑、不因上一轮通过而免检）。契约侧：主审用独立脚本 `_tmp/rev6_reviewer_contracts.py` 复核 —— 28/28 `source.quote` 严格逐字命中 `request/problem.md`、28/28 `model_anchor.quote` 严格逐字命中报告、四语义字段两侧逐字相等、`status` 全 `mapped`、id 唯一；`python lib/web/check_contract.py` 亲跑 exit 0（与门禁共用同一判据）。交付件侧：4 个附件模板用 openpyxl 逐格复核（工作表名与个数、A 列首数据行、表头格、末列、骨架规模、number_format），与 §2.1 / §5.8 第 3 条 / §7.4 / §8.5 第 4 条写死的行列集合一致；模板差别重数为恰好三类；模板全部单元格为 General，故「A 列按模板原样写整数、不补小数位」有实物依据。口径侧：附录 2/3/4 分工、干基口径、h/h_m 的四问沿用、四位小数的适用范围（场值）、四表与四个结果文件的 A 列时间基准（一律绝对过程时间）均正确。§14.2 的两处对文献方向的偏离均有量化证据且独立复现成立。",
+      "evidence": [
+        {
+          "file": "request/problem.md",
+          "quote": "请建立预热平衡阶段药材温度和水分浓度变化规律的数学模型（相关参数见附录2）"
+        },
+        {
+          "file": "request/problem.md",
+          "quote": "为简化问题，相关经验公式统一采用附录3 中的公式"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "模型侧：表 1/表 2 输出 7 个时刻（100–1800 s）与 5 个半径（0–2 cm）的全部组合，共 35 格/表（§5.1、§5.8）"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "模型侧：result1.xlsx 行时间取 1..1800 s 全部整数秒（**不含 t=0**：模板 A 列首行是 1）、列取 0..2.0 cm 每 0.1 cm，共 21 列（§5.8 第 3 条）"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "**A 列时间的书写口径（写死，本轮补）**"
+        },
+        {
+          "file": "reports/TASK_CONTRACT.json",
+          "quote": "1800 s 内每隔 1 s、到药材中心距离每隔 0.1 cm 的全部组合"
+        }
+      ]
+    },
+    {
+      "id": "quantifiers",
+      "status": "passed",
+      "reason": "Q3 的「各处」按全场最坏点实现（max over r，判定用未舍入值），不是平均值、表面点或「某点曾达标」；全文「平均」的 6 处判据语境全是否定/禁令。严格「低于」与模型取 ≤ 的差异只落在 max_r C 横截穿越 0.15 的那一个时刻（零测集），t_dry 取值不变。表 6 的列读法（0/0.5/1.0 三个固定距离 + 动表面列）有物理依据（附件 2 全程 R≥1.198 cm；表 6 行时刻都 ≥6 h 而 R(6h)=1.374<1.5），并已按 model_convention 归位为「读法判断」，两侧语义字段改回题面原读且逐字相等；题面表 6 列名行的省略号按原样、不展开。四表的「每隔 1 s / 0.5 h / 6 h」与四个结果文件的 A 列全部是「从烘干开始计的绝对过程时间」，未混入累积或相对口径；契约 28 条的 time_reference 无一条用基期/累积/相对口径。",
+      "evidence": [
+        {
+          "file": "request/problem.md",
+          "quote": "按照烘干要求，药材各处的水分浓度应低于0.15 kg/kg，请确定药材烘干所需要的时间（单位：h）。"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "且判定用**未舍入**的浮点值（H10 + A10）。"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "达标判据是**全场最坏点** $\\max_{0\\le r\\le R_0}C(r,t)\\le0.15$"
+        },
+        {
+          "file": "reports/TASK_CONTRACT.json",
+          "quote": "**列集合是读法判断、不是题面显式展开项**"
+        },
+        {
+          "file": "reports/TASK_CONTRACT.json",
+          "quote": "省略号按题面原样、不展开"
+        },
+        {
+          "file": "reports/TASK_CONTRACT.json",
+          "quote": "从烘干开始计的绝对过程时间"
+        },
+        {
+          "file": "request/problem.md",
+          "quote": "| 0 | 0.5 | … | 药材表面 |"
+        }
+      ]
+    },
+    {
+      "id": "stochastic_semantics",
+      "status": "not_applicable",
+      "reason": "本题不含随机量 ⇒ 该检查不适用，且不适用有实证依据（不是留白）：题面 随机/概率/分布/噪声/误差/不确定/方差/抽样/蒙特卡洛/扰动 词频 0（唯一命中的「稳定」出自「成品品质不稳定」这一品质描述）；附件 1（241 点、严格 60 s、0 空值、时间戳唯一）与附件 2（145 点、严格 1800 s、严格单调不增、92/144 步 ΔR=0）都是确定性给定序列，无重复测量、无误差列；模型是确定性抛物型正问题 + 单调标量求根，报告显式排除元启发式；正文 概率/CVaR/置信/方差 0 次 ⇒ 无概率性结论；契约 28 条的 time_reference 全为过程起点锚定或not_applicable。报告在 §3.3 第 9 条把该结论写明，并预先封堵唯一可能引入随机性的通道（下游若为环境测量误差引入随机性，只能是 robustness 的扰动档、不得改变主解的确定性口径）。v1.5 新增的 §11.6 验收口径（N≥10 独立实现、登记随机种子、报跨实现极值与上下包络）属扰动实验设计，未把扰动当模型的随机输入；A 档确认为「常数偏移」（加性水平平移、固定基期），未悄悄变成连乘口径。",
+      "evidence": [
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "本赛题**没有随机量**"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "不得改变主解的确定性口径"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "无搜索空间可言"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "把附件 1 的两条序列**整体平移**"
+        },
+        {
+          "file": "request/problem.md",
+          "quote": "烘房的温度（单位：°C）和水分浓度（单位：kg/kg）的变化情况见附件1。"
+        },
+        {
+          "file": "reports/TASK_CONTRACT.json",
+          "quote": "not_applicable"
+        }
+      ]
+    },
+    {
+      "id": "model_assumptions",
+      "status": "passed",
+      "reason": "假设清单本身合法（§5.3/§6.3/§7.3/§8.3 三来源标注齐、题面给定条件 0 条被塞进假设、承重约定与自述条数相符且每条带「放宽影响哪一问」；§10 十三行截断审计三件套齐备；机理主变量与因果方向与文献基线一致；不可识别项四处披露；潜热「不是小项」如实披露）。上一轮判 failed 的两处收口都已完成并经独立复核：(1) §9.1 命题 1 证明要点第 4 步的界改用内区范数 M_ε（角点 (R,0) 不在该紧集内），「有限性」的取值域被显式写明，并补出非严格不等号处的标准扰动与三段取极限顺序 —— 主审逐步重推（含换通量变量那一步的独立重导）+ 子审查员自写求解器双证，数值上内区界比值 0.69/0.46/0.30 ≤1、全局 sup|∂_tC| 随 Δt 减小由 2.6101e-2 增到 4.2919e-2；(2) §5.8 第 6 条的水分初值自检改成分节点区可达判据，交付档（N=320、Δt=1 s、步末层）逐项实测全部通过（温度 2.4594e-4 K、水分内部 2.7213e-8、表面节点只登记）。全文扫描：除 §16.2 那张被保留的历史处置表外，再无处把未限定取值域的 ‖∂_tC‖_∞ 当有限量使用（该残留只改报告一句话，已登记为 advisory、不影响本项通过）。前提 P1–P3 在本模型的实际解上被数值验证（P2 裕度小但非装饰：把 C_∞ 改成 3.0 后最坏点离开中心）；§12 给 write 的清单要求照抄时带上 P1–P3 与「条件命题」限定。",
+      "evidence": [
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "M_\\varepsilon:=\\sup_{[0,\\varepsilon]\\times[0,T]}|\\partial_tC|<\\infty,\\qquad\\text{该紧集不含角点 }(R,0)."
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "在 $t>0$ 的紧子柱体上有限"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "**不作小量判据、只登记实测值**"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "温度侧（全节点）"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "水分侧 · 内部节点（$r\\le1.9$ cm）"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "**护栏容差（写死，沿用 v1.4）**"
+        },
+        {
+          "file": "reports/ANALYSIS_MODELING_REPORT.md",
+          "quote": "必须带前提 P1–P3 与\"条件命题\"的限定"
+        }
+      ]
+    }
+  ]
+}

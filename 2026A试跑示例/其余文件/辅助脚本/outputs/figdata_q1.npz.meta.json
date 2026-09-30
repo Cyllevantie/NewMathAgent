@@ -1,0 +1,12 @@
+{
+  "_method": "Q1 场快照（每 60 s 一帧，ξ 全场）+ 交付表 1/表 2 数值 —— 供 figures 读取",
+  "_code_fp": "dc8e04c98fa0",
+  "_produced_at": "2026-09-29T14:24:38",
+  "_stage": "code",
+  "_params": {
+    "source": "code/outputs/q1.npz",
+    "n": 320,
+    "dt": 1.0,
+    "snap_every_s": 60.0
+  }
+}

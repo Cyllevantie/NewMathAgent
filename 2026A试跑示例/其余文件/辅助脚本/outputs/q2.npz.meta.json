@@ -1,0 +1,17 @@
+{
+ "_method": "Q2_全过程_附录3变物性_两阶段环境(0-4h插值,4h后零阶保持)_步末层",
+ "_code_fp": "dc8e04c98fa0",
+ "_params": {
+  "kind": "q23",
+  "n": 320,
+  "dt": 1.0,
+  "t_end": 259200.0,
+  "face": "arith",
+  "env": "hold",
+  "time_layer": "step-end",
+  "rho_d": "275.04 常数，已从 C 方程约去"
+ },
+ "_produced_at": "2026-09-29T14:26:11",
+ "_stage": "code",
+ "_note": "滚动续跑状态片（每段覆盖写）"
+}

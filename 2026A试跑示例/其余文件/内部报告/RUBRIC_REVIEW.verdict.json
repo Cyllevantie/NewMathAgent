@@ -1,0 +1,116 @@
+{
+  "schema_version": 2,
+  "stage": "rubric",
+  "input_digest": "57adf997121446dfa539c8f85f0929144aedf98d3b1aa325ba46a4d12dfc4b5c:python=cpython3.11.16;texlive@2026;pandoc@3.6.4;draw.io@31.3.2:0bad75a224f32fad27fe9d38277847563d3701f2e4f11f17f26869fa074f687f:270aeb29fabf:db2243d539e4",
+  "status": "PASS",
+  "issues": [
+    {
+      "id": "body-table-number-gap-no-8",
+      "severity": "soft",
+      "category": "presentation",
+      "tier": "must",
+      "check_ids": ["rubric_redline"],
+      "evidence": "交付 PDF paper/main.pdf（32 页、sha256 f2a4b36ed18523166433b03f508695b4a60a6a428d14e753c79482ddce05e89f）的文本层实测正文表号集合为 {1,2,3,4,5,6,7,9,10}，缺表 8（_tmp/rubric12_tabnum_probe.py 在本轮原样重跑复现）；图号 1–12 连续、附录表 A1–A5 连续，唯独正文跳号。源侧两处表题是手工字面而非 \\caption 自动编号，不会被 LaTeX 自动纠正：paper/sections/7_evaluation.tex:36「表 9\\quad 烘干时长的方案查用表」、paper/sections/A1_materials.tex:33「表 10\\quad 支撑材料文件清单」；交叉引用在 paper/sections/7_evaluation.tex:52「表 9 汇总各节数值，只引用正文已给出的结果。」。全文「表 8」命中 0 处，没有一张被删掉的表还留着交叉引用。⑪cross 已把同一现象登记为 adv-table-number-gap-no-8。",
+      "fix": "**要求**：把正文表号恢复成连续序列 —— paper/sections/7_evaluation.tex 的表题与同节的交叉引用都写成表 8，paper/sections/A1_materials.tex 的表题写成表 9。只改编号字符串，不动表体、数值与图件。这两处必须与末页支撑材料清单表被填全的那一次改动合并落地，不要分两轮各改一次。返修阶段为 14Layout-and-format。",
+      "recheck": "重编译后交付 PDF 文本层里正文表号集合连续、无缺号；正文里指不到表题的孤立引用为 0；python -m lib.publication check 仍 PASS、total_pages 与 counted_pages 不变；末页清单表与 reports/SUBMISSION_MANIFEST.json 逐项一致。"
+    },
+    {
+      "id": "appendix-manifest-table-still-placeholder",
+      "severity": "soft",
+      "category": "presentation",
+      "tier": "must",
+      "check_ids": ["rubric_redline"],
+      "evidence": "交付 PDF paper/main.pdf 第 32 页（附录）的文本层实测仍是模板占位符，没有一行真实登记：表题为「表10 支撑材料文件清单」，表体只有「<由14Layout-and-format 逐行」/「生成：文件名>」与「<一句话说清它做什么>」两组字。源在 paper/sections/A1_materials.tex:40。该文件自己的注释 paper/sections/A1_materials.tex:17-18 写明「覆盖要全…这张表**空着或只剩占位符**是最严重的形态问题」，第 20 行写明「`AI工具使用详情.pdf` 必须在表内」，而 paper/main.tex:96 的正文第八节依赖它才有落点：「详细使用情况见支撑材料。」全稿占位符扫描只有这一处，?? 与「未生成 result-values.tex」命中 0。表体由 14Layout-and-format 据 reports/SUBMISSION_MANIFEST.json 生成，⑫ 跑的时候 ⑭ 还没跑，故按驱动协议放行并延后投递。",
+      "fix": "**要求**：在 14Layout-and-format 阶段把附录最后一页的支撑材料文件清单表逐行填全 —— 每一份提交件各占一行，同类可合并，.py 不许漏，说明列写出读者能用的信息，不得留下占位符；并产出与登记 AI工具使用详情.pdf，逐环节列全实际使用，使正文第八节那句指向支撑材料的说法有落点，该文件必须在表内。范围是支撑材料，不含论文本身。",
+      "recheck": "重编译后 paper/main.pdf 末页文本层里「由14Layout」与「一句话说清」命中 0；表体行数与 reports/SUBMISSION_MANIFEST.json 的条目数一致且逐项同名，python -m lib.delivery check 通过；AI工具使用详情.pdf 在盘上且已登记进 manifest；该页填充字符数与用户样板的量级相当。"
+    },
+    {
+      "id": "symbol-table-incomplete-and-unreferenced",
+      "severity": "soft",
+      "category": "presentation",
+      "tier": "optional",
+      "check_ids": ["rubric_redline"],
+      "evidence": "paper/sections/4_symbols.tex 的表 1 逐行核过：表体里没有 $\\mathrm{Fo}$、没有命题用到的 $\\lambda$ 与 $c=\\partial_t\\ln D$、没有通量变量 $q$，而正文正在用它们（paper/sections/5_problem1.tex「1800 s 对应的傅里叶数为 $\\mathrm{Fo}_h=0.76$ 与 $\\mathrm{Fo}_m=0.0222$」；paper/sections/5_problem3.tex 的命题里 $c=\\partial_t\\ln D$ 与 $\\lambda=\\sup c$、证明要点里的 $q(r,t)=rD\\,\\partial_rC$）。表 1 也没有 \\label，正文对它没有任何 \\ref。附录 A.1 只在命题处就地定义、没有回收进表 1。",
+      "fix": "**要求**：表 1 补入傅里叶数、命题用到的对数导数 $c$ 与其上确界 $\\lambda$、以及径向通量 $q$ 四项，含义列只写是什么、单位单独成格；并给表 1 加标签、在正文首次提及处引用它。不得借此改动表 1 既有各行与三列三线表结构。落地措辞服从写作规范。",
+      "recheck": "paper/sections/4_symbols.tex 表体出现 $\\mathrm{Fo}$ 与 $\\lambda$；paper/sections/*.tex 对表 1 至少 1 处 \\ref；重编译后表 1 仍为三列三线表、所在页不越页、counted_pages 不超过 30。",
+      "cost": "要动 9Paper-writing 的 paper/sections/4_symbols.tex（补 4 行 longtable + 加标签与引用），约 20–30 min。表 1 是 longtable，加行会把符号表及其后正文整体下推一页量级，单方面改有超页风险 ⇒ 宜与 14Layout-and-format 的整页重排同批做。本阶段判为轻微项，不返修。"
+    },
+    {
+      "id": "budget-ratio-caliber-not-reproducible",
+      "severity": "soft",
+      "category": "claim",
+      "tier": "optional",
+      "check_ids": ["rubric_redline"],
+      "evidence": "论文把「15 至 25 倍」直接挂在联合抽样标准差后面：paper/main.tex:68「七参数联合抽样的标准差约 7 h，比数值预算大 15 至 25 倍」、paper/sections/6_check.tex:23「这个预算比前面提到的数值预算大 15 至 25 倍」、paper/sections/7_evaluation.tex:21 同式；而分母在本稿里写的是 ±0.5 h（paper/sections/5_problem3.tex:90「两者合计给出约 $\\pm0.32$ h 的数值与约定预算」之后接「所以约定的不确定度约为 $\\pm0.5$ h」）。按该句自己的分子分母复算：7.0/0.5=14、7.5/0.5=15，上端 25 只有把分子换成单参数 $D$ 的 +12.7 h 才凑得出。上游 reports/ROBUSTNESS_REPORT.md 的同一句「把参数取值也计入后，$t_{\\rm dry}$ 的区间宽 **15–25 倍**」也是把单 $D$ 一行与联合 1σ 一行混成一个区间。定性结论（参数不确定度比数值口径预算大一个量级以上）在任何一种读法下都成立，故按轻微项登记。",
+      "fix": "**要求**：把该比值的分子与分母写成同一口径、可复算的一对，并让摘要、问题三的数值口径段、模型检验的灵敏度小节与模型评价的缺点段四处用同一个口径；若某一端确实按另一对算得，须写明是哪一对，不能把「七参数联合抽样的标准差约 7 h」留在比值句的紧邻位置让读者拿它当分子去复算。不引入任何新数值、不改关于量级的结论。口径必须与上游建模报告的同一句同批确定，避免论文与报告各写一个数。落地措辞服从写作规范。",
+      "recheck": "按该口径现算，两个分子 ÷ 分母都落在所写的区间内；摘要、问题三数值口径段、模型检验灵敏度小节、模型评价缺点段四处逐处可指认同一个分子与同一个分母；论文里回算不出区间的写法一处不剩；上游建模报告同一句同步。",
+      "cost": "要动 9Paper-writing 的四处并补一句口径说明，约 +1～2 行正文、约 20–30 min。正文当前 counted 30/30 写满额度，须与 14Layout-and-format 的整页重排同批。单独改还会让论文与上游 reports/ROBUSTNESS_REPORT.md 的同一句不再逐字一致，而口径的最终归属在 analysis 的报告层措辞通道 ⇒ 宜由 analysis 先定口径、9Paper-writing 随其后落地。本阶段判为轻微项，不返修。"
+    },
+    {
+      "id": "ai-statement-on-body-page-30",
+      "severity": "soft",
+      "category": "presentation",
+      "tier": "optional",
+      "check_ids": ["rubric_redline"],
+      "evidence": "本轮返修把假设节压短约 4 行，正文整体上移 ⇒ paper/main.pdf 的「八、AI 工具使用说明」由改前第 31 页页首变成现在第 30 页 y=622.6pt 处，而该页最上面那块文字是「7.3 模型的改进与推广」，y=73.0pt；九、参考文献仍在第 31 页页首，附录仍在第 32 页页首（_tmp/fix13r2_pagebound.py 与本轮逐页文本层复量一致）。页映射按 config/publication.json 的现行规则把该混合页判给前一类，即 paper/page-map.json 声明 body 2–30、ai_statement 31、appendix 32，映射本身仍成立，python -m lib.publication check 实测 PASS 且无 boundary_page_issues、counted 30/30。但 paper/page-map.json 里 ai_statement 段的标题仍写「八、AI 工具使用说明与九、参考文献（两类合计 1 页）」，而该段声明的页范围是 31–31，八、已不在其中。闸看不见这一处的原因是 boundary_page_issues 只在该类别声明的起始页上找起始标记，而 config/publication.json 的 kind_start_markers 把 ai_statement 的标记定为「八、」，它在第 31 页上根本找不到，于是走了「找不到标记时不报」的兜底。13Repair-by-rubric-verdict 已在 reports/FIX_REPORT.md 里如实登记了这一位移。",
+      "fix": "**要求**：在 14Layout-and-format 阶段二选一并说明取舍。第一条路是认下混合页归前一类的现行规则，把 paper/page-map.json 里 AI 工具使用说明那一段的标题改成与实际相符并重新绑定映射。第二条路是在 paper/main.tex 的正文第八节之前显式分页，让它与第九节重新独占一页，代价是正文末页底部空出约 160 点。两条路总页数都不变。",
+      "recheck": "改后重跑 python -m lib.publication check，status 仍 PASS、counted_pages 不超过 30、无 boundary_page_issues；paper/page-map.json 的 ai_statement 段标题与该段声明页范围内实际出现的起始标记一致；若选第二条路，正文末页的空白高度实测登记在报告里。",
+      "cost": "两条路各约 10–15 min。改映射标题只需重新绑定一次 page-map.json，无版式风险；显式分页要重编译，会让正文末页底部空出约 160 点。本阶段判为轻微项，交 14Layout-and-format 按整页重排后的实际版面对酌。"
+    }
+  ],
+  "checks": [
+    {
+      "id": "rubric_adaptation",
+      "status": "passed",
+      "reason": "模型与本题（2026 国赛 A 题·药材烘干，机理型）严格适配，无一处硬套网红模型。全链只用一个物理骨架：一维径向耦合传热-传质抛物型方程 + 第三类对流边界 + 中心对称 + 柱坐标有限体积 / 半隐式欧拉，问题三、四再叠加单调标量求根；四问不是同一模型的复制品，差别只在物性经验式、时间窗、待求泛函与几何是否移动。现盘复核：对灰色预测 / 层次分析 / 熵权 / 神经网络 / 遗传算法 / 粒子群 / 模糊综合 / TOPSIS / 主成分 / ARIMA 等 20 余个与传热传质无关的模型词，paper/ 全目录与交付 PDF 文本层均 0 命中；建模报告显式论证了不采用元启发式的理由。本轮 13Repair 只改假设节措辞，未动任何方程、判据与数值，故上一轮 passed 的依据逐条仍成立；原先唯一拉低适配性的写法问题在本轮已消除。",
+      "evidence": [
+        {"file": "paper/sections/2_analysis.tex", "quote": "四个子问题在物理上是同一个过程的四段切片：环境经表面对流边界驱动药材，热量由导热、水分由有效扩散在体内输运，而水分扩散系数随含水率下降急剧衰减。"},
+        {"file": "paper/sections/5_problem4.tex", "quote": "换到材料坐标之后这两条路都不必走：守恒形式与换帧项恰好逐点相消，方程化为纯扩散形式，只在时间导数前多一个仅依赖时间的因子、在边界通量里多一个半径因子。"},
+        {"file": "reports/ANALYSIS_MODELING_REPORT.md", "quote": "**不使用** GA/PSO/DE/GWO 等元启发式"}
+      ]
+    },
+    {
+      "id": "rubric_originality",
+      "status": "passed",
+      "reason": "创新为真创新（对现有框架的针对性改进 + 问题特化），不是换名字的伪创新，且每条创新都给了可核验的效果数据，四条在 §2 集中列出并在正文各自展开：①以干物质密度为守恒基准写守恒式，并证明它在仿射收缩加定长圆柱下与材料坐标纯扩散形式严格等价，量化证据是半径置常数时两求解器逐位一致、最大偏差 0.0；②全场最坏点判据 + 带显式前提的条件命题归约到轴心，量化证据是逐时刻自检 0 违约；③精度按空间与时间两侧分档声明，量化证据是时间侧 $6.0\\times10^{-4}$ K；④问题三/四差异分解为几何收缩与物性变化两个可独立开关的通道，量化证据是几何 2.27 倍、物性 2.02 倍、净比值 0.89。四项都有具体数与口径，无「列了不展开」。创新层级属标准物理模型上的针对性改进，无跨领域模型融合，故不满分。",
+      "evidence": [
+        {"file": "paper/sections/2_analysis.tex", "quote": "\\textbf{创新点二：}把各处的达标要求写成全场最坏点判据，并在带显式前提的条件下证明最坏点必在轴心，从而把场的最坏值问题降为标量求根。"},
+        {"file": "paper/sections/5_problem4.tex", "quote": "两个效应方向相反、量级相近，净结果是 \\textbf{50.8333 h，即问题四与问题三同量级而略快，比值 0.89}。"},
+        {"file": "paper/sections/5_problem4.tex", "quote": "把半径置为常数时，收缩求解器与固定域求解器在 $C$ 与 $T$ 两个场上都逐位一致，最大偏差为 0.0"}
+      ]
+    },
+    {
+      "id": "rubric_evidence",
+      "status": "passed",
+      "reason": "三大必备检验在成稿里真的写了，且逐处带可核对数字与口径，不是空喊「做了检验」。误差分析（§6.1）把空间侧与时间侧分开声明、并给早期时刻另开一档，附录 A.2 给网格/步长收敛表与守恒残差表，另有无限长圆柱级数解与稳态极限两条独立旁证。灵敏度分析（§6.2）给单参数逐项结果、口径敏感性、七参数独立抽样各 300 次、相变前提的显式披露、环境抖动两档对照、结构结论稳健性，四档对照与各通道见附录 A.4。稳健性在正文与附录都有落点。分工上「检验是否真的做了」归 6Robustness，本项只判「成稿里写没写」—— 已写，且引用的都是成稿自己的数字。本轮 13Repair 未触及 paper/sections/6_check.tex 与附录，四份源文件与开工快照逐字节相同，上一轮结论不变。",
+      "evidence": [
+        {"file": "paper/sections/6_check.tex", "quote": "把七个物性、传递与环境参数按其工程经验区间独立抽样，各抽 300 次，达标时刻的分布见附录 A.4。"},
+        {"file": "paper/sections/6_check.tex", "quote": "方程不含相变项必须作为显式前提披露"},
+        {"file": "paper/sections/6_check.tex", "quote": "把附件 1 的两条序列整体平移 $\\pm1$ $^\\circ$C 与 $\\pm0.005$ kg/kg，六个角点的达标时刻跨度为 3.71 h（问题三）与 3.29 h（问题四）"},
+        {"file": "paper/sections/5_problem3.tex", "quote": "判据自证由四条独立证据组成"}
+      ]
+    },
+    {
+      "id": "rubric_trace",
+      "status": "passed",
+      "reason": "本轮由 failed 转 passed —— 上一轮的唯一触发点已由 13Repair-by-rubric-verdict 消除，且本轮是三条探针各自独立复量后一致的结论。假设节：交付 PDF 第 6 页五条假设实测 2/2/2/2/2 行，超 2 行的条数为 0，而上一轮是 3/3/3/2/3；「放宽后」在 paper/sections/*.tex 与 PDF 文本层均 0 命中，上一轮是 4 处；被移出的量化影响是挪不是删，四处数字逐字仍在正文。AI 痕迹的其余量化面与上一轮逐项一致且都在远离 AI 文的区间：第一人称全稿 0、交付 PDF 文本层引号 0 / 中文破折号 0 / emoji 0、段落长度 CV 0.691、签名过渡词全稿仅 1 处、12 条参考文献与 12 处引用一一对应。不因「五条整齐划一」再判失败：K2 的病灶是全 3 行加句尾量化尾巴，现为全 2 行、汉字 48–62 非等长、句尾已是 K2 明文要求的依据句，三条反驳均不成立。",
+      "evidence": [
+        {"file": "paper/sections/3_assumptions.tex", "quote": "药材按一维径向处理，忽略两端端面效应。依据是长径比为 12.5，端面影响局限在端部一个半径之内；题面要求的输出点都在径向，一维解已足以刻画这些点。"},
+        {"file": "paper/sections/3_assumptions.tex", "quote": "半径按附件 2 分段线性插值，超过 259200 s 后保持 1.198 cm。依据是该曲线是 1800 s 等步长的阶梯型采样，分段线性与其相容；主档达标远在 72 h 之内。"},
+        {"file": "paper/main.tex", "quote": "本文研究圆柱形中药材热风烘干全过程中温度与水分浓度的演化。"}
+      ]
+    },
+    {
+      "id": "rubric_redline",
+      "status": "failed",
+      "reason": "26 条红线里一条存在遗留问题，其余未触碰核心合规面。上一轮因假设写法判失败的那一条本轮已消除：五条假设实测 2/2/2/2/2 行、量化影响已移出假设节，「放宽后」源码与 PDF 均 0 命中。仍失败的是六.3：正文表号跳号缺表 8，交付 PDF 文本层集合为 {1,2,3,4,5,6,7,9,10}，源侧两处是手工字面表题，不会被 LaTeX 自动纠正。匿名合规六.4 合格：两份 PDF 的文本层含嵌入矢量图文字扫匿名词全 0 命中，元数据 title/author/subject/keywords 全空，原始字节扫路径词全 0。摘要五.1 合格：独占 1 页不跨页，fill 0.9183、chars 1099，含量化结果与核心模型。关键词与五.1 的个数、单独一行、逐个可指回题面对象或本文真用的方法，K1 通过。结构五.2 与页数六.1 合格：一至九与附录全部落位、无目录，python -m lib.publication check 实测 PASS、counted 30/30、page-map 声明与逐页文本层一致。另有两条按住不下判：一.3 AI 声明真实性此刻无法核对，第八节只写一句摘要并指向支撑材料，而承载详情的 AI工具使用详情.pdf 由 14Layout-and-format 在交付层产出、当前不在盘面，故记待核实并连同一处未填的末页清单表一起交给它；二.2 文献真实性按项目口径归 15Verification，不重复判。",
+      "evidence": [
+        {"file": "paper/sections/7_evaluation.tex", "quote": "表 9\\quad 烘干时长的方案查用表"},
+        {"file": "paper/sections/A1_materials.tex", "quote": "表 10\\quad 支撑材料文件清单"},
+        {"file": "paper/sections/A1_materials.tex", "quote": "<由 14Layout-and-format 逐行生成：文件名>"},
+        {"file": "paper/main.tex", "quote": "}{热风干燥；变物性耦合传热传质；柱坐标有限体积；材料坐标与动边界；全场最坏点阈值求根}"},
+        {"file": "paper/main.tex", "quote": "\\hypersetup{pdftitle={},pdfauthor={}}"}
+      ]
+    }
+  ]
+}

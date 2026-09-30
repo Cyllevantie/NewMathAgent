@@ -1,0 +1,684 @@
+{
+  "schema_version": 1,
+  "requirements": [
+    {
+      "id": "q1_cylinder_geometry",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "某中药材形状大致呈圆柱形，长为25 cm，半径为2 cm。"
+      },
+      "source_semantics": {
+        "quantifier": "single_body",
+        "scope": "单根圆柱形药材的整个实体",
+        "unit": "cm",
+        "time_reference": "not_applicable"
+      },
+      "model_semantics": {
+        "quantifier": "single_body",
+        "scope": "单根圆柱形药材的整个实体",
+        "unit": "cm",
+        "time_reference": "not_applicable"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：几何取单根无限长圆柱，半径 R0=0.02 m、轴向均匀（§4.1、§5.3 Q1-1）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q1_initial_state",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "烘干开始时，药材的温度为28°C，水分浓度（即干基含水率）为2.55 kg/kg"
+      },
+      "source_semantics": {
+        "quantifier": "all_points",
+        "scope": "整个药材，半径 0 到 2 cm 的全域",
+        "unit": "°C 与 kg/kg（干基含水率）",
+        "time_reference": "初始时刻 t=0"
+      },
+      "model_semantics": {
+        "quantifier": "all_points",
+        "scope": "整个药材，半径 0 到 2 cm 的全域",
+        "unit": "°C 与 kg/kg（干基含水率）",
+        "time_reference": "初始时刻 t=0"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：初值 T(r,0)=28 °C 与 C(r,0)=2.55 kg/kg 施加于整个药材半径全域（§4.3、§5.5）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q1_attachment1_driving",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "烘房的温度（单位：°C）和水分浓度（单位：kg/kg）的变化情况见附件1。"
+      },
+      "source_semantics": {
+        "quantifier": "all",
+        "scope": "附件 1 的全时段 0 到 14400 s，共 241 个时间点",
+        "unit": "°C 与 kg/kg",
+        "time_reference": "0 到 14400 s 的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "all",
+        "scope": "附件 1 的全时段 0 到 14400 s，共 241 个时间点",
+        "unit": "°C 与 kg/kg",
+        "time_reference": "0 到 14400 s 的绝对过程时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：环境 T∞(t)、C∞(t) 取附件 1 的 241 点（60 s 步长、0–14400 s）线性插值（§3.3 第 2 条）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "env_humidity_nonzero",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "水分浓度（单位：kg/kg）的变化情况见附件1"
+      },
+      "source_semantics": {
+        "quantifier": "all",
+        "scope": "附件 1 给出的烘房水分浓度全序列，取值 0.01963 到 0.05025",
+        "unit": "kg/kg",
+        "time_reference": "0 到 14400 s 的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "all",
+        "scope": "附件 1 给出的烘房水分浓度全序列，取值 0.01963 到 0.05025",
+        "unit": "kg/kg",
+        "time_reference": "0 到 14400 s 的绝对过程时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：表面传质驱动势取 C(R,t)−C∞(t)，烘房水分浓度不为零（§5.3 Q1-4）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q1_appendix2_params",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "密度为820 kg/m³、比热容为2600 J/(kg·K)、热传导系数为0.36 W/(m·K)，对流换热系数为25 W/(m²·K)，对流传质系数为 8 × 10⁻⁷ m/s"
+      },
+      "source_semantics": {
+        "quantifier": "all",
+        "scope": "问题 1 的全部物性参数与传递系数",
+        "unit": "kg/m³、J/(kg·K)、W/(m·K)、W/(m²·K)、m/s",
+        "time_reference": "not_applicable"
+      },
+      "model_semantics": {
+        "quantifier": "all",
+        "scope": "问题 1 的全部物性参数与传递系数",
+        "unit": "kg/m³、J/(kg·K)、W/(m·K)、W/(m²·K)、m/s",
+        "time_reference": "not_applicable"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：问题 1 用附录 2 的常数物性与 D(C)=7e-9·exp(-0.89/C)，h=25 W/(m2K)、hm=8e-7 m/s（§5.5）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q1_table12_output",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "在论文中按表1 和表2 的格式分别给出100、300、600、900、1200、1500、1800 s，到药材中心距离0、0.5、1、1.5、2 cm 处的结果"
+      },
+      "source_semantics": {
+        "quantifier": "all_combinations",
+        "scope": "7 个时刻与 5 个半径的全部组合，每个表 35 个数值",
+        "unit": "s 与 cm（温度为 °C、水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "all_combinations",
+        "scope": "7 个时刻与 5 个半径的全部组合，每个表 35 个数值",
+        "unit": "s 与 cm（温度为 °C、水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：表 1/表 2 输出 7 个时刻（100–1800 s）与 5 个半径（0–2 cm）的全部组合，共 35 格/表（§5.1、§5.8）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q1_result_file",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "将1800 s 内每隔1 s、到药材中心距离每隔0.1 cm 的完整结果保存到文件result1.xlsx 中（模板文件见附件3）"
+      },
+      "source_semantics": {
+        "quantifier": "every",
+        "scope": "1800 s 内每隔 1 s、到药材中心距离每隔 0.1 cm 的全部组合",
+        "unit": "s 与 cm",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "every",
+        "scope": "1800 s 内每隔 1 s、到药材中心距离每隔 0.1 cm 的全部组合",
+        "unit": "s 与 cm",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：result1.xlsx 行时间取 1..1800 s 全部整数秒（**不含 t=0**：模板 A 列首行是 1）、列取 0..2.0 cm 每 0.1 cm，共 21 列（§5.8 第 3 条）"
+      },
+      "status": "mapped",
+      "model_convention": "行时间的**起点**与列集合是原文未规定项：行时间取 1..1800 s 的全部整数秒（**不含 t=0**，与模板 A 列首行 `1` 一致）、列取 `0..2.0` cm 每 0.1 cm 共 21 列；见 §5.8 第 3 条与 §17 同行的约定注。"
+    },
+    {
+      "id": "dry_basis_convention",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "水分浓度（即干基含水率）为2.55 kg/kg"
+      },
+      "source_semantics": {
+        "quantifier": "all",
+        "scope": "全部水分浓度量（药材内部场量与阈值判据）",
+        "unit": "kg/kg（每 kg 干物质中的水质量）",
+        "time_reference": "not_applicable"
+      },
+      "model_semantics": {
+        "quantifier": "all",
+        "scope": "全部水分浓度量（药材内部场量与阈值判据）",
+        "unit": "kg/kg（每 kg 干物质中的水质量）",
+        "time_reference": "not_applicable"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：全部水分浓度量一律为干基口径，即每 kg 干物质中的水质量；附录公式中的 C/(1+C) 已是干基到湿基的换算，不得再换算一次（§3.3 第 5 条、§4.3）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "rounding_4dp",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "所有结果保留四位小数（下同）。"
+      },
+      "source_semantics": {
+        "quantifier": "all",
+        "scope": "论文各表与四个结果文件中的结果数值（场值；四个结果文件的 A 列时间为过程时间、按模板原样书写）",
+        "unit": "四位小数",
+        "time_reference": "not_applicable"
+      },
+      "model_semantics": {
+        "quantifier": "all",
+        "scope": "论文各表与四个结果文件中的结果数值（场值；四个结果文件的 A 列时间为过程时间、按模板原样书写）",
+        "unit": "四位小数",
+        "time_reference": "not_applicable"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：论文表与四个结果文件的**场值**一律保留四位小数，按十进制四舍五入；**结果文件的 A 列时间按模板原样写整数、不补小数位**（§5.8 第 2–3 条）"
+      },
+      "status": "mapped",
+      "model_convention": "「四位小数」只约束**场值**；结果文件的 **A 列时间按模板原样写整数、不补小数位**（模板骨架的 A 列是 1/2/3 与 60/120/180）—— 属原文未规定项，约定落在 §5.8 第 3 条，§13 统一代码契约同句。"
+    },
+    {
+      "id": "two_stages",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "该方式主要包括预热平衡和恒温干燥两个阶段，通过调控烘房温湿环境，完成药材的干燥。"
+      },
+      "source_semantics": {
+        "quantifier": "both_stages",
+        "scope": "整个烘干过程的两个阶段，预热平衡段在前、恒温干燥段在后",
+        "unit": "not_applicable",
+        "time_reference": "整个烘干过程的绝对时间"
+      },
+      "model_semantics": {
+        "quantifier": "both_stages",
+        "scope": "整个烘干过程的两个阶段，预热平衡段在前、恒温干燥段在后",
+        "unit": "not_applicable",
+        "time_reference": "整个烘干过程的绝对时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：全过程模型含两个阶段，阶段差别只体现在环境驱动（前段用附件 1 插值、后段环境恒定），物性按题面统一取附录 3（§6.3 Q2-2）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q2_whole_process",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "烘干过程一般持续2-3 天，预热平衡与恒温干燥阶段的参数有所不同。"
+      },
+      "source_semantics": {
+        "quantifier": "whole_process",
+        "scope": "从烘干开始到烘干结束的整个过程，时长量级 2 到 3 天",
+        "unit": "天",
+        "time_reference": "整个烘干过程的绝对时间"
+      },
+      "model_semantics": {
+        "quantifier": "whole_process",
+        "scope": "从烘干开始到烘干结束的整个过程，时长量级 2 到 3 天",
+        "unit": "天",
+        "time_reference": "整个烘干过程的绝对时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：问题 2 的时间窗取 0–259200 s（72 h）覆盖整个烘干过程，并报出达标时刻以核对 2–3 天（§6.5、§7.6）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q2_appendix3_uniform",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "（为简化问题，相关经验公式统一采用附录3 中的公式）"
+      },
+      "source_semantics": {
+        "quantifier": "all",
+        "scope": "问题 2 与问题 3 中出现的全部经验公式",
+        "unit": "kg/m³、J/(kg·K)、W/(m·K)、m²/s",
+        "time_reference": "整个烘干过程"
+      },
+      "model_semantics": {
+        "quantifier": "all",
+        "scope": "问题 2 与问题 3 中出现的全部经验公式",
+        "unit": "kg/m³、J/(kg·K)、W/(m·K)、m²/s",
+        "time_reference": "整个烘干过程"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：问题 2 与问题 3 的 ρ、cp、k、D 全部取附录 3 的经验式，D 的 Arrhenius 项温度用 K（§6.3 Q2-1、Q2-5）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q2_table34_output",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "在论文中按表3 和表4 的格式分别给出3 h 内每隔0.5 h、到药材中心距离0、0.5、1、1.5、2 cm 处的结果"
+      },
+      "source_semantics": {
+        "quantifier": "all_combinations",
+        "scope": "3 h 内 6 个时刻与 5 个半径的全部组合",
+        "unit": "h 与 cm（温度为 °C、水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "all_combinations",
+        "scope": "3 h 内 6 个时刻与 5 个半径的全部组合",
+        "unit": "h 与 cm（温度为 °C、水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：表 3/表 4 输出 0.5–3.0 h 的 6 个时刻与 5 个半径的全部组合（§6.1）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q2_result_file",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "并将每隔1 s、到药材中心距离每隔0.1 cm 的完整结果保存到文件result2.xlsx 中（模板文件见附件3）"
+      },
+      "source_semantics": {
+        "quantifier": "every",
+        "scope": "每隔 1 s 一个时刻、到药材中心距离每隔 0.1 cm 的全部组合",
+        "unit": "s 与 cm",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "every",
+        "scope": "每隔 1 s 一个时刻、到药材中心距离每隔 0.1 cm 的全部组合",
+        "unit": "s 与 cm",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_convention": "行时间的**上界**是原文未规定项，约定为 1..259200 s（整个烘干过程，§3.1 A7 取各候选读法的超集），见 §6.7 与 §17 同行的约定注。",
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：result2.xlsx 行时间取 1..259200 s、列取 0..2.0 cm 每 0.1 cm（§6.7）。**行时间的上界（259200 s）是原文未规定、由本报告约定**（见 §3.1 A7：\"整个烘干过程\"，取各候选读法的超集），原文本身只写\"每隔 1 s\"、无上界"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q3_all_points_below_threshold",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "按照烘干要求，药材各处的水分浓度应低于0.15 kg/kg"
+      },
+      "source_semantics": {
+        "quantifier": "every",
+        "scope": "药材内部的每一个位置（问题 3 为半径 0 到 R0 的全域，问题 4 为 0 到 R(t) 的全域），不是平均值也不是表面点",
+        "unit": "kg/kg（干基含水率）",
+        "time_reference": "达标时刻，同一时刻对全空间成立"
+      },
+      "model_semantics": {
+        "quantifier": "every",
+        "scope": "药材内部的每一个位置（问题 3 为半径 0 到 R0 的全域，问题 4 为 0 到 R(t) 的全域），不是平均值也不是表面点",
+        "unit": "kg/kg（干基含水率）",
+        "time_reference": "达标时刻，同一时刻对全空间成立"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：达标判据对药材内部每一个位置成立，即 max over 0<=r<=R0 of C(r,t_dry) <= 0.15；不是平均值达标、也不是表面点达标（判据定义见 §7.2）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q3_drying_time",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "请确定药材烘干所需要的时间（单位：h）。"
+      },
+      "source_semantics": {
+        "quantifier": "single_value",
+        "scope": "整个药材各处都达标的最早时刻",
+        "unit": "h",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "single_value",
+        "scope": "整个药材各处都达标的最早时刻",
+        "unit": "h",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：t_dry 取使得全药材各处均达标的最早时刻，单位 h（§7.1、§7.5）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q3_table5_output",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "在论文中按表5 的格式给出每隔6 h、到药材中心距离每隔0.5 cm 的水分浓度"
+      },
+      "source_semantics": {
+        "quantifier": "every",
+        "scope": "每 6 h 一个时刻（直到烘干结束）与每 0.5 cm 一个距离",
+        "unit": "h 与 cm（水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "every",
+        "scope": "每 6 h 一个时刻（直到烘干结束）与每 0.5 cm 一个距离",
+        "unit": "h 与 cm（水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：表 5 行取 6 h 的整数倍直到不超过 t_dry 的最后一个倍数，末行为 t_dry，列取 0–2.0 cm 每 0.5 cm（§7.4）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q3_result_file",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "并将药材内部水分浓度每隔60 s、到药材中心距离每隔0.1 cm 的完整结果保存到文件result3.xlsx 中（模板文件见附件3）"
+      },
+      "source_semantics": {
+        "quantifier": "every",
+        "scope": "每 60 s 一个时刻（到烘干结束）与每 0.1 cm 一个距离",
+        "unit": "s 与 cm（水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "every",
+        "scope": "每 60 s 一个时刻（到烘干结束）与每 0.1 cm 一个距离",
+        "unit": "s 与 cm（水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：result3.xlsx 行时间取 60 s 的整数倍且末行不早于 t_dry，列取 0..2.0 cm 每 0.1 cm（§7.4）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q4_shrinkage_given",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "在实际烘干过程中，药材会因水分流失发生尺寸变化。请根据附件2，确定药材的烘干时长"
+      },
+      "source_semantics": {
+        "quantifier": "single_function",
+        "scope": "整个烘干过程内随时间单调不增的半径，由附件 2 给定",
+        "unit": "cm（半径为 cm、时间为 s）",
+        "time_reference": "整个烘干过程 0 到 259200 s"
+      },
+      "model_semantics": {
+        "quantifier": "single_function",
+        "scope": "整个烘干过程内随时间单调不增的半径，由附件 2 给定",
+        "unit": "cm（半径为 cm、时间为 s）",
+        "time_reference": "整个烘干过程 0 到 259200 s"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：半径 R(t) 由附件 2 线性插值直接给定，不作待求量、不由水分浓度反推（§8.3 Q4-1、§8.7）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q4_only_in_problem4",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "在实际烘干过程中，药材会因水分流失发生尺寸变化。"
+      },
+      "source_semantics": {
+        "quantifier": "only_problem4",
+        "scope": "尺寸变化只作用于问题 4 的模型，问题 2 与问题 3 的半径固定",
+        "unit": "not_applicable",
+        "time_reference": "问题 4 的整个烘干过程"
+      },
+      "model_semantics": {
+        "quantifier": "only_problem4",
+        "scope": "尺寸变化只作用于问题 4 的模型，问题 2 与问题 3 的半径固定",
+        "unit": "not_applicable",
+        "time_reference": "问题 4 的整个烘干过程"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：问题 2 与问题 3 的几何固定为 R0，尺寸变化只在问题 4 的模型中出现（§6.3 Q2-4）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q4_appendix4_params",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "（相关经验公式见附录4）"
+      },
+      "source_semantics": {
+        "quantifier": "all",
+        "scope": "问题 4 中出现的全部经验公式",
+        "unit": "kg/m³、J/(kg·K)、W/(m·K)、m²/s",
+        "time_reference": "整个烘干过程"
+      },
+      "model_semantics": {
+        "quantifier": "all",
+        "scope": "问题 4 中出现的全部经验公式",
+        "unit": "kg/m³、J/(kg·K)、W/(m·K)、m²/s",
+        "time_reference": "整个烘干过程"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：问题 4 的 ρ、cp、k、D 取附录 4 的经验式，对流换热与对流传质系数沿用附录 2（§8.3 Q4-3）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q4_table6_output",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "在论文中按表6 的格式给出每隔6 h、到药材中心距离每隔0.5 cm 的水分浓度"
+      },
+      "source_semantics": {
+        "quantifier": "every",
+        "scope": "每 6 h 一个时刻（直到烘干结束；题面表 6 的末行为\"烘干结束时间\"）与表 6 列名行的四个距离格 `0 | 0.5 | … | 药材表面`（省略号按题面原样、不展开）",
+        "unit": "h 与 cm（水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "every",
+        "scope": "每 6 h 一个时刻（直到烘干结束；题面表 6 的末行为\"烘干结束时间\"）与表 6 列名行的四个距离格 `0 | 0.5 | … | 药材表面`（省略号按题面原样、不展开）",
+        "unit": "h 与 cm（水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：表 6 行取 6 h 的整数倍与末行 t_dry，列取当前构形下的 **0 / 0.5 / 1.0 与移动表面列共 4 个距离列**（与题面表 6 列名行的 4 个距离格一致；0.5 cm 网格点中只有 0/0.5/1.0 全程在药材内部，1.5 cm 自 $t=14400$ s 起即在药材之外 ——**该时刻是附件 2 的 1800 s 采样节点**，分段线性口径下的连续首达为 13145.5 s）（§8.5 第 4 条）"
+      },
+      "status": "mapped",
+      "model_convention": "**列集合是读法判断、不是题面显式展开项**：题面表 6 的列名行只有 `| 0 | 0.5 | … | 药材表面 |` 四个距离格、省略号未展开，故交付列集合由**物理**定 —— 附件 2 全程 $R\\ge1.198$ cm，且表 6 的行时刻都 $\\ge6$ h（$R(6\\,\\mathrm{h})=1.374<1.5$）⇒ 0.5 cm 网格点中只有 0/0.5/1.0 **全程在药材内部**（1.5 cm 自 $t=14400$ s 起即在药材之外），末列取动表面 $r=R(t)$；若坚持保留 1.5（或 2.0）列，须在该列逐行写明\"该时刻已超出药材\"。见 §8.5 第 4 条与 §17 同行的落实。"
+    },
+    {
+      "id": "q4_surface_column",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "| 0 | 0.5 | … | 药材表面 |"
+      },
+      "source_semantics": {
+        "quantifier": "single_column",
+        "scope": "表 6 与结果文件末列所表示的移动表面位置",
+        "unit": "cm（表面到中心的距离）",
+        "time_reference": "每个输出时刻"
+      },
+      "model_semantics": {
+        "quantifier": "single_column",
+        "scope": "表 6 与结果文件末列所表示的移动表面位置",
+        "unit": "cm（表面到中心的距离）",
+        "time_reference": "每个输出时刻"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：result4.xlsx 与表 6 的末列是在该时刻的移动表面 r=R(t) 处的值，不是固定 2 cm 处；该列在 result4.xlsx 里占的是 result1/2/3 中数字 2 的那一格（§8.5 第 4 条）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "q4_result_file",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "并将药材内部水分浓度每隔60 s 时间、0.1 cm 距离的完整结果保存到文件result4.xlsx 中（模板文件见附件3）"
+      },
+      "source_semantics": {
+        "quantifier": "every",
+        "scope": "药材内部水分浓度每隔 60 s 时间、0.1 cm 距离的全部组合",
+        "unit": "s 与 cm（水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_semantics": {
+        "quantifier": "every",
+        "scope": "药材内部水分浓度每隔 60 s 时间、0.1 cm 距离的全部组合",
+        "unit": "s 与 cm（水分浓度为 kg/kg）",
+        "time_reference": "从烘干开始计的绝对过程时间"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：result4.xlsx 行时间取 60 s 的整数倍且末行不早于 t_dry，列取当前构形 **0..1.9 cm 每 0.1 cm 共 20 列 + 末列药材表面 = 21 个数据列**（与附件 3 模板逐列对账：模板末列 `药材表面` 占的就是 result1/2/3 里数字 `2` 的那一格，故不再有 2.0 列）、半径之外的格留空（§8.5 第 4 条、§8.7 第 3 条）"
+      },
+      "status": "mapped",
+      "model_convention": "**列集合与空格规则**是原文未规定项：交付件取 **21 个数据列 = `0, 0.1, …, 1.9` + 末列 `药材表面`**（与附件 3 模板逐列对账：模板末列 `药材表面` 占的就是 `result1/2/3` 里数字 `2` 的那一格，故不再有 `2.0` 列），半径之外的格**留空**、末列填 $C(R(t),t)$；行时间取 60 s 的整数倍且末行不早于 $t_{\\rm dry}$。见 §8.5 第 4 条与 §8.7 第 3 条。"
+    },
+    {
+      "id": "template_layout_4files",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "其中A 列为时间（单位：s），第1 行为到药材中心的距离（单位：cm）。"
+      },
+      "source_semantics": {
+        "quantifier": "all_files",
+        "scope": "result1 到 result4 四个交付文件的行列含义",
+        "unit": "s（A 列）与 cm（第 1 行）",
+        "time_reference": "not_applicable"
+      },
+      "model_semantics": {
+        "quantifier": "all_files",
+        "scope": "result1 到 result4 四个交付文件的行列含义",
+        "unit": "s（A 列）与 cm（第 1 行）",
+        "time_reference": "not_applicable"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：四个结果文件都以附件 3 的模板为底本，A 列为时间（s）、第 1 行为到药材中心的距离（cm），工作表名与表头逐字沿用（§5.8 第 3–4 条）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "temperature_unit_kelvin",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "T 为药材温度（单位：K）。"
+      },
+      "source_semantics": {
+        "quantifier": "all",
+        "scope": "附录经验公式中作为温度自变量的取值",
+        "unit": "K（开尔文）",
+        "time_reference": "not_applicable"
+      },
+      "model_semantics": {
+        "quantifier": "all",
+        "scope": "附录经验公式中作为温度自变量的取值",
+        "unit": "K（开尔文）",
+        "time_reference": "not_applicable"
+      },
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：物性经验式的温度自变量一律用 K，仅输出表格时换算为 °C（§6.3 Q2-5、§5.8 第 1 条）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "threshold_display_rule",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "水分浓度应低于0.15 kg/kg"
+      },
+      "source_semantics": {
+        "quantifier": "every",
+        "scope": "药材内部的每一个位置（各处）",
+        "unit": "kg/kg（干基含水率）",
+        "time_reference": "达标时刻"
+      },
+      "model_semantics": {
+        "quantifier": "every",
+        "scope": "药材内部的每一个位置（各处）",
+        "unit": "kg/kg（干基含水率）",
+        "time_reference": "达标时刻"
+      },
+      "model_convention": "判定用**未舍入**的浮点值、显示才用四位小数：这是原文未规定项，约定见 §3.1 A10 与 §7.7 第 1 条（表注规则）。",
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：达标判定使用未舍入值，表中显示为 0.1500 的格其未舍入值仍可能不低于 0.15，表注须写明该规则（§7.7 第 1 条）"
+      },
+      "status": "mapped"
+    },
+    {
+      "id": "no_unstated_parameters",
+      "source": {
+        "file": "request/problem.md",
+        "quote": "（相关参数见附录2）"
+      },
+      "source_semantics": {
+        "quantifier": "all",
+        "scope": "题面为各问指定的参数集（问题 1 的附录 2、问题 2/3 的附录 3、问题 4 的附录 4）",
+        "unit": "not_applicable",
+        "time_reference": "not_applicable"
+      },
+      "model_semantics": {
+        "quantifier": "all",
+        "scope": "题面为各问指定的参数集（问题 1 的附录 2、问题 2/3 的附录 3、问题 4 的附录 4）",
+        "unit": "not_applicable",
+        "time_reference": "not_applicable"
+      },
+      "model_convention": "把该要求泛化为「主解不得使用题面未给的参数」（汽化潜热、空气物性、吸附等温线、面导度取法等只能进对照档并披露来源）：这是原文未规定项，约定见 §0.2 第 3 条与 §3.3 第 3–4 条。",
+      "model_anchor": {
+        "file": "reports/ANALYSIS_MODELING_REPORT.md",
+        "quote": "模型侧：未在题面或附件中出现的参数不得进入主解，只能作为对照档并披露来源（§0.2 第 3 条、§3.3 第 3–4 条）"
+      },
+      "status": "mapped"
+    }
+  ]
+}
