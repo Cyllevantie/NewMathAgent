@@ -479,6 +479,7 @@
       <input id="dv_pid" type="text" size="20" placeholder="2026A" style="background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:4px"></label>
     <button id="dv_archive" title="把两个「最新」（提交作品/最新作品、各阶段产物/最新产物）整目录改名成 <产物>/&lt;题目标识_日期_时间&gt;/，再新建两个空的；同时把这两个框的设置存下来">📦 归档本题并换新</button>
     <button id="dv_wipe" style="color:var(--fail);border-color:#5a2a2a" title="**不归档**，直接把本题的产物与状态删掉（题面与附件保留）。不可恢复">🗑 不归档删除本题</button>
+    <button id="dv_wipe_all" style="color:var(--fail);border-color:#5a2a2a" title="把这道题在机器上留下的一切删干净：产物/reports/code/figures/paper/demo、request/（题面与附件）、data/、runtime 状态。**框架与脚本一个不动**。不可恢复，删完要重新上传赛题">🧨 删除全部内容</button>
   </div>
   <div id="dv_msg" style="margin-top:7px;color:var(--acc);font-size:12px"></div>
 </div>
@@ -2112,7 +2113,7 @@ $('dp_use').onclick=()=>{
 $('dv_wipe').onclick=async()=>{
   const nm=((lastSt&&lastSt.delivery&&lastSt.delivery.problem_id)||'本题');
   if(!confirm('**不归档**，直接删掉「'+nm+'」的产物与状态？\n\n'
-    +'会删：reports / code / results / figures / paper / demo / 运行说明.md、'
+    +'会删：reports / code / results / figures / paper / paper_appendix / demo / 运行说明.md、'
     +'两个「最新」里的内容、产物/cache 与 产物/其他产物、runtime/quality 的全部回执与黄灯。\n\n'
     +'会留：request/（你传的题面与附件）、data/、框架本体。\n\n'
     +'这一步**不可恢复**（不是归档、不进 cache）。')) return;
@@ -2122,9 +2123,36 @@ $('dv_wipe').onclick=async()=>{
   const r=await fetch('/api/wipe-problem',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:word})});
   const d=await r.json();
+  // ★ 顺序：**先刷新、再写摘要**。反过来的话 `loadState→renderStages→fillDelivery`
+  //   会在同一 tick 之内把 dv_msg 改写成「提交件 → …」，用户根本看不到删了什么、留了什么
+  //   （后端特意回传 removed/kept 就是为了给他看的）。
+  if(r.ok){ clearDeliveryDirty(); await loadState(); await refreshDelivery(); }
   $('dv_msg').textContent = !r.ok ? ('⚠ '+(d.detail||'删除失败'))
     : ('🗑 已删 '+d.removed.length+' 项；保留：'+d.kept.join('、'));
-  if(r.ok){ clearDeliveryDirty(); loadState(); refreshDelivery(); }
+};
+
+// ---------------- 删除全部内容（比上面那条更彻底：连题面一起删） ----------------
+//   两条为什么不是一个按钮两种力度：暗号不同、删的面不同，混在一起时"手滑点错"
+//   的代价从"重跑一遍"变成"题面没了"。所以各有各的按钮、各有各的确认文案。
+$('dv_wipe_all').onclick=async()=>{
+  if(!confirm('把这道题在机器上留下的一切**全部删除**（回到刚 clone 的状态）？\n\n'
+    +'会删：产物/ 下的全部内容（两个「最新」、cache 里的**往届归档**、其他产物、\n'
+    +'      以及「归档本题并换新」留下的那些 <题目标识_日期_时间>/ 旧归档目录）、\n'
+    +'      reports / code / results / figures / paper / paper_appendix / demo / 运行说明.md、\n'
+    +'      request/（你传的**题面与附件**）、data/、_tmp/ 与 tmp/（阶段草稿与探针）、\n'
+    +'      plan.md / todo.md（每道题的规划件）、runtime 下的日志与 .watch_*.json、\n'
+    +'      runtime/quality（回执、黄灯、读题快照，以及标为「不动它」的原件副本）。\n\n'
+    +'会留：框架与脚本（lib/ skills/ docs/ regression/ config/）、.env 与本机配置、2026A试跑示例/。\n\n'
+    +'删完**要重新上传赛题**才能再跑。这一步**不可恢复**（不是归档、不进 cache）。')) return;
+  const word=prompt('确认删除全部：请原样输入「删除全部」四个字（不加字、不改字）。');
+  if(word===null) return;
+  $('dv_msg').textContent='删除中…';
+  const r=await fetch('/api/wipe-all',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:word})});
+  const d=await r.json();
+  if(r.ok){ clearDeliveryDirty(); await loadState(); await refreshDelivery(); }
+  $('dv_msg').textContent = !r.ok ? ('⚠ '+(d.detail||'删除失败'))
+    : ('🧨 已删 '+d.removed.length+' 项（含题面与附件）；保留：'+d.kept.join('、'));
 };
 
 // ---------------- 开屏页（品牌 + 配置向导） ----------------

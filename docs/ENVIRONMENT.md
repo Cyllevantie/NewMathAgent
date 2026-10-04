@@ -47,7 +47,7 @@
 
 ## 模型 API 与出站代理（项目根 `.env`）
 
-模型端点和密钥放在项目根 `.env`（模板见 `.env.example`），驱动启动时读进 `os.environ`，各阶段子进程自然继承 —— 配置跟着仓库走，不再依赖这台机器上 Claude CLI 自己的登录与设置。启动日志会打印一行（密钥打码）：`🧩 模型配置来源：…`。认的名字就是 CLI 自己的那几个：`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN`（或 `ANTHROPIC_API_KEY`）、`ANTHROPIC_MODEL`、`ANTHROPIC_SMALL_FAST_MODEL`；**已存在的环境变量优先**（临时 `$env:X=...` 调试时那个生效，不被文件悄悄盖掉）。空值 = 没设（`KEY=` 只是把那行摆出来，不会往环境里塞空串）。`.env` 里有密钥，别连整个目录一起外发。
+模型端点和密钥放在项目根 `.env`（模板见 `.env.example`），驱动启动时读进 `os.environ`，调 `claude -p` 时**再以 `--settings` 递给各阶段子进程**（命令行给的 settings 优先级最高）—— 两条缺一不可：CLI 读的是它自己的 settings 链，用户级 `~/.claude/settings.json` 里的 `env` 块压得过继承来的环境变量，只塞环境变量时 `.env` 里那把钥匙**从未被用过**而链照样跑得出结果（2026-10-04 实测）。两条一起给，配置才真的跟着仓库走、不再依赖这台机器上 Claude CLI 自己的登录与设置。启动日志会打印一行（密钥打码）：`🧩 模型配置来源：…`。认的名字就是 CLI 自己的那几个：`ANTHROPIC_BASE_URL`、`ANTHROPIC_AUTH_TOKEN`（或 `ANTHROPIC_API_KEY`）、`ANTHROPIC_MODEL`、`ANTHROPIC_SMALL_FAST_MODEL`；**已存在的环境变量优先**（临时 `$env:X=...` 调试时那个生效，不被文件悄悄盖掉）。空值 = 没设（`KEY=` 只是把那行摆出来，不会往环境里塞空串）。`.env` 里有密钥，别连整个目录一起外发。
 
 **口径：一个模型走到底。** 上面那三个键就够了 —— 主模型、门禁并行 spawn 的子 agent、后台小活全走同一个端点上的同一个模型；那 8 条档位别名（`CLAUDE_CODE_SUBAGENT_MODEL`、`ANTHROPIC_DEFAULT_{HAIKU,SONNET,OPUS,FABLE}_MODEL` 及 `_NAME`）已从项目里删掉，不再需要。
 

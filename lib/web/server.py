@@ -35,7 +35,10 @@ from content_quality import (enforce as enforce_content, REQUIRED as CONTENT_CHE
 
 # ---------------- 项目自己的模型配置：`.env` ----------------
 # 模型、地址、密钥来自项目根目录的 `.env`：启动时读进来塞进 `os.environ`，
-# 子进程（每个阶段的 agent）自然继承。
+# 调 `claude -p` 时再以 `--settings` 一并递给子进程（`_model_settings_args`）。
+# **两条缺一不可**：CLI 读的是它自己的 settings 链，用户级 `~/.claude/settings.json`
+# 里的 `env` 块压得过继承来的环境变量 ⇒ 只塞环境变量时，`.env` 里那把钥匙**从未被用过**，
+# 而链照样跑得出结果（用的是别人的凭据），查起来极难。
 #
 # 为什么需要它：不读 `.env` 时，`_call()` 里 `env = os.environ.copy()` 起的 `claude -p`
 # 只能拿**这台机器**上 Claude CLI 自己的登录与设置（`~/.claude/`）——换台机器/Runner
@@ -2114,6 +2117,27 @@ def _kill_tree(pid):
         pass
 
 # ---------------- claude 调用（线程读 stdout + 异步看门狗判活/强杀） ----------------
+def _model_settings_args(env):
+    """把模型三键做成 `--settings` 的两个参数；一个键都没配就返回空表。
+
+    为什么**只**放子进程 env 不管用（2026-10-04 实测）：`claude` 读的是**它自己的
+      settings 链**，用户级 `~/.claude/settings.json` 里的 `env` 块压得过继承来的环境变量。
+      把 `ANTHROPIC_BASE_URL` 指到一个本地监听再 spawn，claude **一个请求都不发**、
+      照样把话答完 —— 也就是说 `.env` 里那把钥匙从来没被用过（面板上「测试连接」通了、
+      真跑也出结果，走的却全是 settings 里那套）。命令行 `--settings` 是唯一压得过它的
+      通道：同一把令牌，从这里递进去才会真的出现在请求头上。
+    只带**非空**的键，且**没有令牌就一概不插手**：订阅/登录态用户（以及从仓库克隆下来
+      还没配 `.env` 的人）靠 claude 自己的凭据跑；塞一份空 env 等于把人家的登录顶掉，
+      而只把端点强指过去、又没有令牌可用，只会把他们从"能跑"变成 401 —— 比不改更坏。
+    """
+    cfg = {k: (env.get(k) or "").strip()
+           for k in ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL")}
+    if not cfg["ANTHROPIC_AUTH_TOKEN"]:
+        return []
+    cfg = {k: v for k, v in cfg.items() if v}
+    return ["--settings", json.dumps({"env": cfg})]
+
+
 def _claude_worker(cmd, sh):
     """在线程里跑 claude。Windows 事件循环对管道 readline 的 wait_for 取消不可靠，
     故把阻塞读取移出事件循环；看门狗在外部用 ctypes 探测子进程是否真在干活。
@@ -2139,7 +2163,10 @@ def _claude_worker(cmd, sh):
     #   _effective_limits 默认 30 分钟 → 同样转黄灯（OVERTIME_KILL=False 不杀，等你决定）；
     #   /api/stop 与「取消并重试」随时强杀进程树。这些都比 CLI 那个 600s 更懂"慢但在干活"。
     env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
-    p = subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.PIPE,
+    # 模型三键随 `--settings` 走：光在 env 里递，claude 会用它自己 settings 里那套
+    #   （见 `_model_settings_args`）。放在这里而不是 `_call` 里 —— 两个 spawn 口
+    #   （阶段调用、开屏「测试连接」）都在 subprocess 前一步拿到这份算好的 env。
+    p = subprocess.Popen(cmd + _model_settings_args(env), cwd=str(ROOT), stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env)
     sh["pid"] = p.pid
     # 登记 pid：服务被外部强杀时子进程会变孤儿，下次启动靠这份登记把它们收掉。
@@ -4556,20 +4583,6 @@ async def run_all():
         #   只能重启驱动（而黄灯已被 `_set_start_index` 清掉，看着像"点了没反应"）。
         #   两处一起管：取值兜住链尾 + 整块进 try（任何起跑期异常都转黄灯，不再死线程）。
         pass
-    if index:
-        # 这一块**必须自带兜底**：它在下面那个大 `try:` 之外，
-        #   异常一旦逃出去，`finally`（唯一把 `state["running"]` 置回 False 的地方）就不会执行
-        #   ⇒ 链死了但面板说"在运行" ⇒ 点「开始全链」回「已在运行」、决策回 409、只能重启驱动。
-        try:
-            log(f"▶️ 本次从「{STAGES[index]['name'] if index < len(STAGES) else '链尾'}」起跑"
-                f"（上游不跑、按盘面如实回填状态）。")
-            _backfill_before(index)
-        except Exception as exc:                        # noqa: BLE001
-            _halt(STAGES[min(index, len(STAGES) - 1)], _driver_exc_text(exc), "failed", kind="driver")
-            state["running"] = False
-            state["cur"] = None
-            emit("state", state2dict())
-            return
     normal_end = False
     log(f"开始全链 run_id={state['run_id']}")
     # 本链的**栅栏令牌**。`state["run_id"]` 是全局的，谁后起谁覆盖它；于是「旧链还活着、
@@ -4604,6 +4617,29 @@ async def run_all():
         #     被改过"永远失敏，代价更大。）
         if (_intake_confirmed() or {}).get("digest") == _source_digest():
             _restore_intake_artifacts()
+
+        # 上游回填**必须排在轮转与恢复之后**，不能像原先那样排在 `_prepare_workspace()`
+        #   前面：那条路（首次建立版本记录 / 输入已变更）会 ① 把 `reports/` 整份轮转进
+        #   cache、② `_invalidate_from(0)` 把刚回填上去的状态连同一切刷回 idle。
+        #   排在前面 = ⓪ 先被标成 `done(skip)`、转手又被刷成灰的；而 `_artifact_ok('intake')`
+        #   要的那份读题报告还要等上面这行把快照恢复回来才在盘上。
+        #   确认这一步（把原件搬出 inbox）**必然**改动输入 ⇒ 每道新题第一次「从 ① 起跑」
+        #   都走这条路 ⇒ ⓪ 恒灰。（`regression/test_intake.py` 的
+        #   `..._survives_the_rotation_of_its_own_run` 钉着。）
+        if index:
+            # 兜底照旧：判据算炸了要转黄灯收干净，不能把 `running` 留在 True
+            #   （下面那个大 `try` 的 `finally` 现在也能兜住，这里显式再收一次）。
+            try:
+                log(f"▶️ 本次从「{STAGES[index]['name'] if index < len(STAGES) else '链尾'}」起跑"
+                    f"（上游不跑、按盘面如实回填状态）。")
+                _backfill_before(index)
+            except Exception as exc:                    # noqa: BLE001
+                _halt(STAGES[min(index, len(STAGES) - 1)], _driver_exc_text(exc), "failed",
+                      kind="driver")
+                state["running"] = False
+                state["cur"] = None
+                emit("state", state2dict())
+                return
 
         def _back_to_judge(ret_sid):
             """⑬ 处理完这一轮 ⇒ **回到把它交下来的那一关复评**。返回 True = 已指回 `index`。
@@ -5428,6 +5464,17 @@ def _save_delivery_config(output_dir, problem_id):
                               "problem_id": problem_id or ""})
 
 
+def _is_unc_path(p):
+    r"""是不是网络路径（`\\host\share`）。
+
+    抽成模块级的：`/api/browse` 与**产物路径的写入端**（`_store_output_dir`）共用同一把尺子。
+    写入端也必须挡住 —— 存下一个 UNC 产物根之后，「删除全部内容」的 `rmtree` 会直接打到
+    远端共享上（`\\evil-host\share\cache` 这种），而那是**别人机器上的目录**。
+    """
+    s = str(p).replace("/", "\\")
+    return s.startswith("\\\\") or Path(s).drive.startswith("\\\\")
+
+
 def _store_output_dir(picked):
     """把用户**选/填**的产物目录归一化成要落盘的写法。
 
@@ -5444,6 +5491,10 @@ def _store_output_dir(picked):
     s = str(picked or "").strip()
     if not s:
         return ""
+    if _is_unc_path(s):
+        # 网络路径：产物会写到**别人的机器**上，归档/清理/删除每一步都要过网络；
+        #   「删除全部内容」的 rmtree 更会直接打到远端共享。落盘前就断开。
+        raise HTTPException(400, "不支持网络路径（UNC）—— 产物目录请选本机磁盘上的目录")
     p = Path(s)
     if not p.is_absolute():
         p = ROOT / p
@@ -6671,18 +6722,55 @@ class WipeReq(BaseModel):
 
 #: 删本题要原样打出来的暗号（照 `#wipe_btn` 手输"清空"的先例：不可逆的操作不能一键完成）
 WIPE_CONFIRM_WORD = "删除本题"
+#: 「删除全部内容」的暗号。与上面那个**必须不同**：这条连题面一起删，
+#   用同一个词就拦不住"想删产物、手一滑把题面也删了"。
+WIPE_ALL_CONFIRM_WORD = "删除全部"
+
+#: 「删除全部内容」比「不归档删除本题」**多删**的顶层东西 —— 跑题时吃进来的原件、草稿，
+#: 以及 ⓪/① 自己生成的规划件。都不是框架（`lib/ skills/ docs/ regression/ config/` 一样不在此列）。
+#: `plan.md`/`todo.md` 是 `0Start-mathmodel` 每道题生成在项目根的两份产出（`_input_paths` 里
+#:   ① 的输入清单就有 `plan.md`）；`tmp/`（**不带下划线**那个）是各阶段探针与"改前副本"的落点
+#:   （`skills/_references/stage_discipline.md` 与 7/9/13/14/15 的 SKILL 都明写往这儿写），
+#:   与 `_tmp/` 是**两个**目录，两个都要收（`stage_discipline.md` 自己就提醒过"另有散落的在 tmp/"）。
+WIPE_ALL_EXTRA_RELS = ["request", "data", "_tmp", "tmp", "plan.md", "todo.md"]
 
 
 @app.post("/api/wipe-problem")
 async def wipe_problem(req: WipeReq):
-    """**不归档、直接删掉本题的产物与状态**（「不归档删除本题……清理干净一点」）。
+    """「不归档删除本题」：删产物与状态，**保留题面与附件**（全部口径见 `_wipe`）。"""
+    return await _wipe(req, "products")
+
+
+@app.post("/api/wipe-all")
+async def wipe_everything(req: WipeReq):
+    """「删除全部内容」：把这道题在机器上留下的一切删干净，回到刚 clone 的状态。
+
+    比「不归档删除本题」多删：`request/`（题面、附件、`_inbox/`）、`data/`（数据集落点）、
+      `_tmp/` 与 `tmp/`（阶段草稿与探针）、`plan.md`/`todo.md`（每道题的规划件）、
+      `产物/cache/` 里**全部**归档（含往届，不可恢复）、`runtime/quality/` 整棵
+      （含 `intake/kept/` 那份"不动它"的原件副本）、`runtime/.watch_*.json`。
+    `__pycache__` **不删**：那是 Python 给项目自己的代码做的缓存，不是题的产物
+      （用户 2026-10-04 明确要求"只删题的产物，别动项目自己的东西"）。
+    保留面只剩框架本体与本机配置 —— 也就是说，删完**下一次要重新上传赛题**。
+    另立端点而不给 `wipe-problem` 加参数：两条路的暗号、确认文案、删除面都不同，
+      共用一个入口时面板少传一个字段就从"删产物"变成"连题面一起删"。
+    """
+    return await _wipe(req, "everything")
+
+
+async def _wipe(req: WipeReq, scope: str):
+    """**不归档、直接删掉产物与状态**（`products`）/ 连原件一起删（`everything`）。
 
     这是全仓**第一条真删数据的路径**。别的都是 `rename`（归档）或 `move`（🧹 清理、
       「清空全部」也是移进 cache）—— 所以这里三道闸：运行中 409、必须原样打暗号、
       每一步删了什么逐条回给面板并写日志（人要能看出"到底动了什么"）。
-    边界：**删产物 + 删状态，保留题面与附件**。
-      `request/`（题面、附件、`_inbox/`）与 `data/` **一个字节都不动** —— 那是传进来的原件，
-      删了不可恢复；框架本体（`lib/ skills/ docs/ regression/ config/`、`CLAUDE.md`、`.env`）更不碰。
+    边界随 `scope` 分两档，**框架本体两档都不碰**（`lib/ skills/ docs/ regression/ config/`、
+      `CLAUDE.md`、`.env`、`config/*.local.json`、`2026A试跑示例/` 都是项目自己的东西，不是题的产物）：
+      · `products`（不归档删除本题）：删产物 + 删状态，**保留题面与附件** ——
+        `request/`（题面、附件、`_inbox/`）与 `data/` 一个字节都不动，那是传进来的原件；
+      · `everything`（删除全部内容）：连 `request/`、`data/`、`_tmp/`、`产物/cache/` 的全部归档、
+        `runtime/quality/` 整棵（含 `intake/kept/` 那份"不动它"的原件副本）一起删 ——
+        目标是"回到刚 clone 的状态"，所以下一次要重新上传赛题。
     必须自己补的三件事（归档靠 `rename` 天然办到，删除得显式做）：
       ① 重建两个**空**的「最新」指针 —— `_delivery_status` 与 `lib/delivery/checks.py` 都假定
          那两层结构在（`resolve_output_dir` 只拼路径、不建目录）；
@@ -6691,10 +6779,12 @@ async def wipe_problem(req: WipeReq):
          digest 对不上被当成**换题**，白跑一轮 `_rotate_pointers` + `_invalidate_from(0)`
          （产物已经没了，那一轮转只会产出两个空归档目录）。
     """
+    every = scope == "everything"
+    word = WIPE_ALL_CONFIRM_WORD if every else WIPE_CONFIRM_WORD
     if state["running"]:
         raise HTTPException(409, "有链正在跑 —— 先停掉再删（绝不在它跑着的时候动它的文件）")
-    if (req.confirm or "").strip() != WIPE_CONFIRM_WORD:
-        raise HTTPException(400, f"没确认：请原样输入「{WIPE_CONFIRM_WORD}」")
+    if (req.confirm or "").strip() != word:
+        raise HTTPException(400, f"没确认：请原样输入「{word}」")
     # 一个真正的独占闸：光看 `state["running"]` 是
     #   "先查后做"，中间那个窗口里 `/api/start` 照样能起链 —— 而这条删除要遍历好几个目录，
     #   期间链已经把阶段状态写成 stage2 了，wipe 第⑥步又把它刷回 idle ⇒ 黄灯重新点亮、
@@ -6705,6 +6795,26 @@ async def wipe_problem(req: WipeReq):
     from lib.delivery.core import (STAGES_PARENT, STAGES_POINTER, SUBMISSION_PARENT,
                                    SUBMISSION_POINTER)
     out_root = _delivery_dir()
+    # 产物根**可以被用户设到仓外任意目录**（`resolve_output_dir` 对仓外绝对路径原样返回，
+    #   只挡"等于项目根"这一种）。而「删除全部内容」要在它下面整棵删 `cache/`、
+    #   删两个父目录里**除指针外的所有子目录** —— 万一那是个跟本项目无关的目录，
+    #   里面同名的 `cache/` 就会被连坐 rmtree。所以先把"这是不是本项目的产物根"认出来：
+    #   两个「最新」指针是我们建的，它们在 ⇒ 认作自己的地盘；仓内（默认 `<根>/产物/`）
+    #   也认。**认不出的只做指针本身那点活**（那两处是我们建的路径，删不到别人），
+    #   整棵删一律跳过并在日志里说明 —— 宁可留个尾巴，不可删错别人的目录。
+    def _inside(p, base):
+        try:
+            p.resolve().relative_to(base.resolve())
+            return True
+        except (OSError, ValueError):
+            return False
+
+    ours = (_inside(out_root, ROOT)
+            or (out_root / SUBMISSION_PARENT / SUBMISSION_POINTER).is_dir()
+            or (out_root / STAGES_PARENT / STAGES_POINTER).is_dir())
+    if not ours:
+        log(f"⚠️ 产物根 {out_root} 认不出是本项目的（仓外、且没有两个「最新」指针）"
+            f"—— 只清指针本身，不整棵删 cache/ 与其他归档目录")
     removed = []
 
     def _rm(p, label):
@@ -6721,8 +6831,9 @@ async def wipe_problem(req: WipeReq):
         except OSError as exc:                                        # noqa: BLE001
             log(f"⚠️ 删不掉 {label}：{exc}（被别的程序占着？关掉再删一次）")
 
-    # ① 本题在工作区里的产物（清单与 🧹 清理**同一份**，不另立一套）
-    for rel in CLEANUP_RELS:
+    # ① 本题在工作区里的产物（清单与 🧹 清理**同一份**，不另立一套）；
+    #    「删除全部内容」再带上跑题吃进来的原件与阶段草稿（repo 里那些脚本、skills、文档都不在此列）
+    for rel in CLEANUP_RELS + (WIPE_ALL_EXTRA_RELS if every else []):
         _rm(ROOT / rel, rel + ("/" if (ROOT / rel).is_dir() else ""))
     # ② 两个「最新」指针的**内容**（指针本身马上重建）
     for pointer in (out_root / SUBMISSION_PARENT / SUBMISSION_POINTER,
@@ -6732,6 +6843,22 @@ async def wipe_problem(req: WipeReq):
             pointer.mkdir(parents=True, exist_ok=True)                # 骨架要留
         except OSError as exc:                                        # noqa: BLE001
             log(f"⚠️ 空指针建不回来（{pointer}）：{exc}")
+    # ②b 归档出来的**兄弟目录**（`<产物根>/各阶段产物/<题目标识_日期_时间>/` 这种）。
+    #     换题轮转与「📦 归档本题并换新」都是把两个「最新」**就地改名**成同级目录 ——
+    #     上面的循环只清两个指针本身，这些兄弟一个都碰不到。不清的话，"删除全部内容"
+    #     跑完之后面板上是空的、`产物/` 里却躺着一摞用户认不出来的旧归档
+    #     （2026-10-04 用户原话：「我也不知道要删什么产物」）。
+    #     **只在 `everything` 口径下删**：`products` 的承诺是"删本题的产物"，
+    #     而这些归档正是用户当初**特意**点「📦 归档本题并换新」留下来的东西，
+    #     连坐删掉就与那个按钮上的字和确认框里的承诺都不符（与 cache 那条同一个道理）。
+    if every and ours:                                                # 认不出是谁的地盘就不整棵删
+        for parent in (out_root / SUBMISSION_PARENT, out_root / STAGES_PARENT):
+            if not parent.is_dir():
+                continue
+            for child in sorted(parent.iterdir()):
+                if child.name in (SUBMISSION_POINTER, STAGES_POINTER):
+                    continue                                          # 指针刚重建，跳过
+                _rm(child, f"{parent.name}/{child.name}/")
     # ③ 归档与清理的落点 —— **只清本题的那一份，别动往届**。
     #    `cache/<归档名>/` 里躺着的是**被轮转出去的那道题**的产物原件；`cache/` 下按题分目录，
     #    把整棵 rmtree 会**连带删掉上一题唯一的副本** —— 那正是确认框里承诺"保留"的东西。
@@ -6739,8 +6866,15 @@ async def wipe_problem(req: WipeReq):
     #    （`_recorded_problem_id()`），按前缀精确匹配即可。
     pid_prefix = str(_recorded_problem_id()).strip()
     cache = out_root / "cache"
-    if cache.is_dir():
-        if not pid_prefix:
+    if cache.is_dir() and ours:       # 认不出的产物根：连按前缀删也免了（同 ②b 的理由）
+
+        if every and ours:
+            # 「删除全部内容」的语义就是"一题都不留"。往届归档是不可恢复的，所以**逐条报名字**
+            #   再删 —— 删完就没法再数了，日志是唯一能回看"到底删掉了哪几题"的地方。
+            for child in sorted(cache.iterdir()):
+                log(f"（连往届一起删：cache/{child.name}）")
+            _rm(cache, "cache/（含全部归档）")
+        elif not pid_prefix:
             # 认不出"本题"是谁（`workspace.json` 里没记题目标识）⇒ **一个都不删**。
             #   猜错的代价是删掉上一题唯一的副本，而那是不可恢复的；留着最多是占点空间。
             log(f"⚠️ 认不出本题标识，cache/ 一律保留（{len(list(cache.iterdir()))} 项）")
@@ -6752,12 +6886,21 @@ async def wipe_problem(req: WipeReq):
                 _rm(child, f"cache/{child.name}")
             if cache.is_dir() and not any(cache.iterdir()):
                 _rm(cache, "cache/")             # 空了就把壳也收掉
-    _rm(out_root / "其他产物", "其他产物/")
+    if ours:
+        _rm(out_root / "其他产物", "其他产物/")
     # ④ 本题状态：回执 / 黄灯 / 工作区记录 / 返修台账（`feedback/` 尤其要清 ——
     #    它是**无 run_id 过滤的全目录 glob**，残留一条旧回执会让新一轮 ② 必然假报"缺返修台账"）
     qdir = LOG_DIR / "quality"
     kept_dir = INTAKE_DIR / "kept"
-    if qdir.is_dir():
+    if every:
+        # 「删除全部内容」把这一层整棵收掉 —— **包括** `intake/kept/`（下面是"不删"的理由，
+        #   那一档只属于 `products`）。题面与原件在 ① 已经删了，kept/ 里那份副本留着才是自相矛盾：
+        #   用户要的是"回到刚 clone"，留一份他看不见的原件副本，下次换题只会当垃圾堆在那儿。
+        for child in sorted(qdir.iterdir()) if qdir.is_dir() else []:
+            if child == INTAKE_DIR and kept_dir.is_dir():
+                log(f"（连「不动它」的原件副本一起删：{kept_dir.relative_to(ROOT)}/）")
+        _rm(qdir, "runtime/quality/")
+    elif qdir.is_dir():
         for child in sorted(qdir.iterdir()):
             # `runtime/quality/intake/kept/` **不能删**：
             #   那是"明确要求不动它"（角色选 `ignore`/`needs_manual`）的原件的**唯一一份** ——
@@ -6773,7 +6916,10 @@ async def wipe_problem(req: WipeReq):
                     _rm(sub, f"runtime/quality/intake/{sub.name}")
                 continue
             _rm(child, f"runtime/quality/{child.name}")
-    for name in ("web_run.log", ".runclock.json", "_chk.js"):
+    # `.watch_*.json` 是 `runtime/health_check.py` 写的两个签名文件（`:216` 进度、`:325` 输入指纹）——
+    #   不删的话，下一题首跑会拿上一题的输入指纹比出"输入变更！"的**假警报**。
+    for name in ("web_run.log", ".runclock.json", "_chk.js",
+                 ".watch_progress.json", ".watch_input.json"):
         _rm(LOG_DIR / name, f"runtime/{name}")
     # ⑤ 重建工作区记录（digest 记成**现在**的 —— 见上面第 ③ 条）
     try:
@@ -6802,19 +6948,29 @@ async def wipe_problem(req: WipeReq):
     state["rounds"] = {}
     state["adv_by_stage"] = {}          # 阶段行上的 📝N 建议条数
     state["issues_by_stage"] = {}       # 📝 面板上半段：该阶段未解决的门禁判据
-    state["waived"] = set()
-    state["fix_required"] = set()
+    # 类型必须与初始化（`:508` `"waived": {}`）和唯一的写点（`:7280`
+    #   `state["waived"][sid] = rec`）一致：写成 `set()` 的话，删完之后第一次
+    #   「接受并披露」会在**已经落盘之后**抛 `TypeError`（`'set' object does not
+    #   support item assignment`）⇒ 盘上多一条 waivers.json、内存与 pending 全没更新。
+    state["waived"] = {}
+    state["fix_required"] = []          # 同样是类型对齐：初始化 `:529` 是 `[]`，写点也一律赋列表
     state["elapsed_base"] = 0.0
     for value in state["stage_t"].values():
         value.update(elapsed=0.0, start=None)
     for sid in state["stages"]:
         state["stages"][sid] = "idle"
     state["progress"] = {"done": 0, "total": len(STAGES)}
-    log(f"🗑 不归档删除本题：删了 {len(removed)} 项（{', '.join(removed[:8])}"
-        f"{'…' if len(removed) > 8 else ''}）；**保留** request/（题面与附件）、data/、框架本体")
-    return {"ok": True, "removed": removed,
-            "kept": ["request/（题面与附件）", "data/",
-                     "框架本体（lib/ skills/ docs/ regression/ config/）"],
+    if every:
+        log(f"🗑 删除全部内容：删了 {len(removed)} 项（{', '.join(removed[:8])}"
+            f"{'…' if len(removed) > 8 else ''}）；**保留**框架本体与本机配置 —— 下次要重新上传赛题")
+        kept_txt = ["框架本体（lib/ skills/ docs/ regression/ config/）", ".env 与本机配置",
+                    "2026A试跑示例/"]
+    else:
+        log(f"🗑 不归档删除本题：删了 {len(removed)} 项（{', '.join(removed[:8])}"
+            f"{'…' if len(removed) > 8 else ''}）；**保留** request/（题面与附件）、data/、框架本体")
+        kept_txt = ["request/（题面与附件）", "data/",
+                    "框架本体（lib/ skills/ docs/ regression/ config/）"]
+    return {"ok": True, "removed": removed, "kept": kept_txt, "scope": scope,
             "resolved": str(out_root)}
 
 
@@ -7579,7 +7735,9 @@ async def test_model_config(req: ModelConfigReq | None = None):
     # 代理策略必须按**这次用的端点**推（见 `_apply_proxy_policy` 的 `base_url` 参数）
     _apply_proxy_policy(env, base_url=ov_base or None)
     env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"   # 与真调用同一条（`:2000`）
-    cmd = [str(cbin), "-p", "只回两个字：可以"]
+    # 三键必须随 `--settings` 递（见 `_model_settings_args`）：只靠 env 的话，这里测的是
+    #   claude 自己 settings 里那套 —— 填什么都会"连通正常"，而真跑时压根没用你填的配置。
+    cmd = [str(cbin), "-p", "只回两个字：可以"] + _model_settings_args(env)
     t0 = time.time()
     try:
         # 必须丢线程跑：这是同步阻塞调用，直接放在 async 端点里会把整个事件循环（含 SSE 与
@@ -7633,9 +7791,7 @@ async def browse(path: str = ""):
     #   一路走到了 `is_dir()`）：
     #       `\/evil-host\share`   `/\evil-host/share`   `./\\evil-host/share`
     #   归一化 + `resolve()` 之后再查，这几条、三反斜杠、`\\?\` 扩展前缀就都盖住了。
-    def _is_unc(p):
-        s = str(p).replace("/", "\\")
-        return s.startswith("\\\\") or Path(s).drive.startswith("\\\\")
+    _is_unc = _is_unc_path            # 判据共用模块级那一份（`_store_output_dir` 也认它）
     if not raw:
         base = ROOT
     elif _is_unc(raw):

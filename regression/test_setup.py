@@ -7,6 +7,7 @@
 手法照 `test_intake.py`：用 `load_server` 把 ROOT 指到临时目录，**不碰真工作区**。
 """
 import asyncio
+import io
 import json
 import os
 import shutil
@@ -65,6 +66,22 @@ class StoreOutputDirTests(unittest.TestCase):
         self.assertTrue(Path(got).is_absolute(), f"仓外应当存绝对，实际 {got!r}")
         self.assertEqual(got, str(outside))
 
+    def test_a_unc_path_is_refused_before_it_is_stored(self):
+        """网络路径在**落盘前**就要断掉：存下去之后归档/清理/删除每一步都过网络，
+        `POST /api/wipe-all` 的 rmtree 更会直接打到远端共享。
+
+        对照组：只是"看着像 UNC"的本机相对路径（`./\\\\evil-host/share`，`resolve()` 之后
+        其实是仓内某个目录名）不能被误拒 —— 判据是 `_is_unc_path`，不是"字符串里有反斜杠"。
+        """
+        f = self.s._store_output_dir
+        for bad in (chr(92) * 2 + "evil-host" + chr(92) + "share",
+                    "//evil-host/share"):
+            with self.assertRaises(self.s.HTTPException) as cm:
+                f(bad)
+            self.assertEqual(cm.exception.status_code, 400, bad)
+        # 对照组：本机路径照常
+        self.assertEqual(f(str(self.root / "产物")), "产物")
+
     def test_the_repo_root_itself_falls_back_to_the_default(self):
         """选中仓库根 ⇒ 存空串。
 
@@ -78,6 +95,68 @@ class StoreOutputDirTests(unittest.TestCase):
         self.s._save_delivery_config(self.s._store_output_dir(str(self.root / "我的产物")), "2026A")
         cfg = json.loads((self.root / "config/delivery.local.json").read_text(encoding="utf-8"))
         self.assertEqual(cfg["output_dir"], "我的产物")
+
+
+def _seed_a_run_workspace(s):
+    """造一份"跑过一轮"的盘面：产物 + 题面附件 + 状态 + 草稿各就各位。
+
+    两份删除口径（`products` / `everything`）**共用这一份夹具** —— 它们的差别只在
+    `wipe()` 打哪个端点，盘面必须一模一样，否则对照组证明不了"差的就是那几样"。
+    """
+    r = s.ROOT
+    for rel in ("reports", "code", "results", "figures", "paper", "demo", "paper_appendix"):
+        (r / rel).mkdir(parents=True, exist_ok=True)
+        (r / rel / "x.txt").write_text("产物 " * 40, encoding="utf-8")
+    (r / "运行说明.md").write_text("说明 " * 40, encoding="utf-8")
+    # 题面与附件（`products` 口径下**必须留下**）
+    (r / "request/attachments").mkdir(parents=True, exist_ok=True)
+    (r / "request/problem.md").write_text("题面正文", encoding="utf-8")
+    (r / "request/attachments/附件1.xlsx").write_bytes(b"xlsx")
+    (r / "data").mkdir(exist_ok=True)
+    (r / "data/d.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    # 阶段草稿与探针：`_tmp/` 与 `tmp/` 是**两个**目录，各阶段两个都用
+    #   （`skills/_references/stage_discipline.md` 自己提醒过"另有散落的在 tmp/"）；
+    #   `plan.md`/`todo.md` 是每道题的规划件，落在项目根。只有 `everything` 口径会删它们。
+    (r / "_tmp").mkdir(exist_ok=True)
+    (r / "_tmp/草稿.py").write_text("print(1)\n", encoding="utf-8")
+    (r / "tmp/tbltest").mkdir(parents=True, exist_ok=True)
+    (r / "tmp/tbltest/x.png").write_bytes(b"png")
+    (r / "plan.md").write_text("整体流程方案\n", encoding="utf-8")
+    (r / "todo.md").write_text("- [ ] 问题一\n", encoding="utf-8")
+    (r / "runtime").mkdir(exist_ok=True)
+    (r / "runtime/.watch_input.json").write_text("{}", encoding="utf-8")
+    # 两个「最新」指针里放点东西 + cache
+    out = s._delivery_dir()
+    (out / "提交作品/最新作品").mkdir(parents=True, exist_ok=True)
+    (out / "提交作品/最新作品/正文.pdf").write_bytes(b"pdf")
+    (out / "各阶段产物/最新产物/编码计算").mkdir(parents=True, exist_ok=True)
+    # cache 下**按题分目录**：本题一份、往届一份。归档名格式见 `delivery_name()`
+    #   （`<题目标识>_<日期_时间>`），而"本题是谁"由 workspace.json 记着。
+    (out / "cache/2026A_2026.9.25_18.32.16/工作区原件").mkdir(parents=True, exist_ok=True)
+    (out / "cache/2026A_2026.9.25_18.32.16/工作区原件/旧产物.txt").write_text("本题的", encoding="utf-8")
+    (out / "cache/2025B_2025.9.1_10.00.00").mkdir(parents=True, exist_ok=True)
+    (out / "cache/2025B_2025.9.1_10.00.00/唯一的副本.txt").write_text("往届的", encoding="utf-8")
+    # 轮转/「📦 归档本题并换新」留下的**兄弟目录**（与两个「最新」同级）——
+    #   它们不在任何指针里，只有显式遍历父目录才看得见。盘上真实存在
+    #   （`产物/各阶段产物/2026A_2026.10.4_18.24.29/`）。
+    (out / "各阶段产物/2026A_2026.10.4_18.24.29/题目读取").mkdir(parents=True, exist_ok=True)
+    (out / "各阶段产物/2026A_2026.10.4_18.24.29/题目读取/INTAKE.json").write_text("{}", encoding="utf-8")
+    (out / "提交作品/2026A_2026.10.4_18.24.29").mkdir(parents=True, exist_ok=True)
+    (out / "提交作品/2026A_2026.10.4_18.24.29/正文.pdf").write_bytes(b"pdf")
+    q0 = r / "runtime/quality"
+    q0.mkdir(parents=True, exist_ok=True)
+    (q0 / "workspace.json").write_text(
+        json.dumps({"source_digest": "old", "run_id": "r1", "problem_id": "2026A"},
+                   ensure_ascii=False), encoding="utf-8")
+    (out / "其他产物/reports").mkdir(parents=True, exist_ok=True)
+    (out / "其他产物/reports/old.md").write_text("旧", encoding="utf-8")
+    # 状态
+    q = r / "runtime/quality"
+    q.mkdir(parents=True, exist_ok=True)
+    (q / "stages.json").write_text("{}", encoding="utf-8")
+    (q / "feedback/deadbeef").mkdir(parents=True, exist_ok=True)
+    (q / "pending_decision.json").write_text("{}", encoding="utf-8")
+    (r / "runtime/web_run.log").write_text("log", encoding="utf-8")
 
 
 class WipeProblemTests(unittest.TestCase):
@@ -94,43 +173,7 @@ class WipeProblemTests(unittest.TestCase):
         self.s = load_server(self.root)
 
     def _seed(self):
-        """造一份"跑过一轮"的盘面：产物 + 题面附件 + 状态 + 框架文件各就各位。"""
-        r = self.root
-        for rel in ("reports", "code", "results", "figures", "paper", "demo", "paper_appendix"):
-            (r / rel).mkdir(parents=True, exist_ok=True)
-            (r / rel / "x.txt").write_text("产物 " * 40, encoding="utf-8")
-        (r / "运行说明.md").write_text("说明 " * 40, encoding="utf-8")
-        # 题面与附件（**必须留下**）
-        (r / "request/attachments").mkdir(parents=True, exist_ok=True)
-        (r / "request/problem.md").write_text("题面正文", encoding="utf-8")
-        (r / "request/attachments/附件1.xlsx").write_bytes(b"xlsx")
-        (r / "data").mkdir(exist_ok=True)
-        (r / "data/d.csv").write_text("a,b\n1,2\n", encoding="utf-8")
-        # 两个「最新」指针里放点东西 + cache
-        out = self.s._delivery_dir()
-        (out / "提交作品/最新作品").mkdir(parents=True, exist_ok=True)
-        (out / "提交作品/最新作品/正文.pdf").write_bytes(b"pdf")
-        (out / "各阶段产物/最新产物/编码计算").mkdir(parents=True, exist_ok=True)
-        # cache 下**按题分目录**：本题一份、往届一份。归档名格式见 `delivery_name()`
-        #   （`<题目标识>_<日期_时间>`），而"本题是谁"由 workspace.json 记着。
-        (out / "cache/2026A_2026.9.25_18.32.16/工作区原件").mkdir(parents=True, exist_ok=True)
-        (out / "cache/2026A_2026.9.25_18.32.16/工作区原件/旧产物.txt").write_text("本题的", encoding="utf-8")
-        (out / "cache/2025B_2025.9.1_10.00.00").mkdir(parents=True, exist_ok=True)
-        (out / "cache/2025B_2025.9.1_10.00.00/唯一的副本.txt").write_text("往届的", encoding="utf-8")
-        q0 = r / "runtime/quality"
-        q0.mkdir(parents=True, exist_ok=True)
-        (q0 / "workspace.json").write_text(
-            json.dumps({"source_digest": "old", "run_id": "r1", "problem_id": "2026A"},
-                       ensure_ascii=False), encoding="utf-8")
-        (out / "其他产物/reports").mkdir(parents=True, exist_ok=True)
-        (out / "其他产物/reports/old.md").write_text("旧", encoding="utf-8")
-        # 状态
-        q = r / "runtime/quality"
-        q.mkdir(parents=True, exist_ok=True)
-        (q / "stages.json").write_text("{}", encoding="utf-8")
-        (q / "feedback/deadbeef").mkdir(parents=True, exist_ok=True)
-        (q / "pending_decision.json").write_text("{}", encoding="utf-8")
-        (r / "runtime/web_run.log").write_text("log", encoding="utf-8")
+        _seed_a_run_workspace(self.s)
 
     def wipe(self, word="删除本题"):
         return asyncio.run(self.s.wipe_problem(self.s.WipeReq(confirm=word)))
@@ -269,7 +312,12 @@ class WipeProblemTests(unittest.TestCase):
                          "阶段状态应当全部回到 idle（产物都删了，还显示 ✅ 就是撒谎）")
         # 阶段行上那个建议计数也是上一轮的，不清就会挂着一串不存在的建议
         self.assertEqual(self.s.state.get("adv_by_stage"), {})
-        self.assertEqual(self.s.state.get("waived"), set())
+        # `waived` 的类型必须与初始化（`{}`）和写点（`state["waived"][sid] = rec`）一致 ——
+        #   写成 `set()` 时，删完之后第一次「接受并披露」会在**已落盘之后**抛 TypeError，
+        #   盘上多一条 waivers.json、内存与 pending 全没更新。这条断言原先钉的正是 `set()`
+        #   （把错误值钉死了），已于 2026-10-04 改正。
+        self.assertEqual(self.s.state.get("waived"), {})
+        self.assertEqual(self.s.state.get("fix_required"), [])
 
     def test_the_confirm_word_is_required(self):
         """对照组：没打对暗号 ⇒ 400，且**一件都不许动**（不可逆操作不能一键完成）。"""
@@ -289,6 +337,176 @@ class WipeProblemTests(unittest.TestCase):
         finally:
             self.s.state["running"] = False
         self.assertTrue((self.root / "reports/x.txt").exists())
+
+
+class WipeEverythingTests(unittest.TestCase):
+    """「删除全部内容」：连题面与附件一起删，回到**刚 clone 的状态**。
+
+    与 `WipeProblemTests` 的差别就是这一族要钉的东西：那边保留的（题面/附件/数据集/
+    `_tmp/`/「不动它」的原件/往届归档），这边**必须全删**；而两条**都不能碰**框架与脚本
+    （2026-10-04 用户原话：「改动项目的脚本什么的不要删哈，只删题的产物」）。
+    因此夹具与那边**共用同一份** `_seed_a_run_workspace`，最后还有一条把两个口径摆在一起比。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for rel in ("CLAUDE.md", "AGENTS.md"):
+            shutil.copy2(PROJECT / rel, self.root / rel)
+        for rel in ("skills", "docs"):
+            shutil.copytree(PROJECT / rel, self.root / rel)
+        # 框架本体里也摆几样"最容易被误伤"的：脚本、本机配置、展示文件夹、`.env`
+        (self.root / "lib/web").mkdir(parents=True, exist_ok=True)
+        (self.root / "lib/web/server.py").write_text("# 框架脚本\n", encoding="utf-8")
+        (self.root / "config").mkdir(exist_ok=True)
+        (self.root / "config/runtime.local.json").write_text('{"python": "", "tool_directories": []}',
+                                                             encoding="utf-8")
+        (self.root / "2026A试跑示例").mkdir(exist_ok=True)
+        (self.root / "2026A试跑示例/q1.py").write_text("print(1)\n", encoding="utf-8")
+        (self.root / ".env").write_text("# 本机配置\n", encoding="utf-8")   # 注释行：不往 os.environ 里放东西
+        self.s = load_server(self.root)
+
+    def wipe(self, word="删除全部"):
+        return asyncio.run(self.s.wipe_everything(self.s.WipeReq(confirm=word)))
+
+    def test_it_takes_the_problem_the_attachments_and_the_drafts_too(self):
+        """主判据：题面/附件/数据集/草稿**一并删掉** —— 这正是与「不归档删除本题」的差别。"""
+        _seed_a_run_workspace(self.s)
+        out = self.wipe()
+        self.assertTrue(out["ok"])
+        r = self.root
+        for rel in ("request", "data", "_tmp", "tmp", "plan.md", "todo.md",
+                    "runtime/.watch_input.json"):
+            self.assertFalse((r / rel).exists(), f"{rel} 应当被删掉（删完要重新上传赛题）")
+        for rel in ("reports", "code", "results", "figures", "paper", "demo",
+                    "paper_appendix", "运行说明.md"):
+            self.assertFalse((r / rel).exists(), f"{rel} 应当被删掉")
+        self.assertFalse((self.s._delivery_dir() / "cache").exists(),
+                         "cache 整棵都要没 —— 这条口径不区分本题与往届（确认框里写明了）")
+        self.assertFalse((self.s._delivery_dir() / "其他产物").exists())
+        # 轮转留下的**兄弟目录**：它们与两个「最新」同级，不在任何指针里 ——
+        #   只清指针的实现会把它们留成"用户认不出来的旧归档"（盘上真出现过）。
+        out = self.s._delivery_dir()
+        self.assertFalse((out / "各阶段产物/2026A_2026.10.4_18.24.29").exists(),
+                         "归档出来的兄弟目录没删 —— 面板空了、产物根里还躺着一摞旧归档")
+        self.assertFalse((out / "提交作品/2026A_2026.10.4_18.24.29").exists())
+        self.assertEqual(sorted(p.name for p in (out / "各阶段产物").iterdir()), ["最新产物"])
+        self.assertEqual(sorted(p.name for p in (out / "提交作品").iterdir()), ["最新作品"])
+        self.assertFalse((r / "runtime/quality/stages.json").exists())
+        self.assertFalse((r / "runtime/quality/pending_decision.json").exists())
+        # `web_run.log` **不断言"不存在"**：删除函数末尾自己还要 log 一行摘要，
+        #   而 log() 就是往这个文件 append —— 删完必然又建回来（内容只剩那行摘要）。
+        #   （这里也断言不了：`load_server` 把模块的 log 换成了 Mock，测不出真写盘行为。）
+
+    def test_the_framework_the_scripts_and_the_local_config_stay(self):
+        """反面：**框架与脚本一个都不许动**（用户 2026-10-04 明确要求）。
+
+        这条与主判据必须同时成立 —— 一份"把项目根整个 rmtree"的实现能满足主判据，
+        却会把 `lib/`、`skills/`、`.env`、展示文件夹一起带走。
+        """
+        _seed_a_run_workspace(self.s)
+        self.wipe()
+        for rel in ("lib/web/server.py", "skills", "docs", "CLAUDE.md", "AGENTS.md",
+                    "config/runtime.local.json", ".env", "2026A试跑示例/q1.py"):
+            self.assertTrue((self.root / rel).exists(), f"{rel} 是项目自己的东西，不该被删")
+
+    def test_the_kept_originals_go_too_here(self):
+        """`intake/kept/` 的"不动它"原件：`products` 口径**留着**，这里**删掉**。
+
+        两个口径在这里刚好相反，所以必须各钉一条 —— 拿掉 `every` 那条分支，这条会红；
+        把 `products` 那条也改成删，`WipeProblemTests` 那条会红。
+        """
+        _seed_a_run_workspace(self.s)
+        kept = self.root / "runtime/quality/intake/kept"
+        (kept / "附件").mkdir(parents=True, exist_ok=True)
+        (kept / "附件/备注.md").write_text("用户选的是「忽略（不动它）」", encoding="utf-8")
+        self.wipe()
+        self.assertFalse((kept / "附件/备注.md").exists(),
+                         "「删除全部内容」要回到刚 clone，留一份用户看不见的原件副本是自相矛盾")
+
+    def test_the_other_words_do_not_unlock_this_one(self):
+        """暗号必须**是这个**：拿「删除本题」来删全部 ⇒ 400，且**一个字节都没动**。
+
+        两道闸里最要紧的一道 —— 用户想删产物、手一滑点成"删除全部"，就靠这个字面拦住。
+        """
+        _seed_a_run_workspace(self.s)
+        with self.assertRaises(self.s.HTTPException) as cm:
+            self.wipe(word="删除本题")
+        self.assertIn("删除全部", str(cm.exception))
+        self.assertTrue((self.root / "request/problem.md").is_file(), "暗号打错却把题面删了")
+        self.assertTrue((self.root / "reports/x.txt").is_file())
+
+    def test_it_refuses_while_a_chain_is_running(self):
+        """运行中 409，且什么都不删（与另一条口径同一把闸）。"""
+        _seed_a_run_workspace(self.s)
+        self.s.state["running"] = True
+        with self.assertRaises(self.s.HTTPException) as cm:
+            self.wipe()
+        self.assertIn("正在跑", str(cm.exception))
+        self.assertTrue((self.root / "request/problem.md").is_file())
+        self.assertTrue((self.root / "reports/x.txt").is_file())
+
+    def test_the_two_pointers_come_back_as_empty_skeletons(self):
+        """两个「最新」的内容要没，但**骨架建回来** —— 交付与面板的路径假设靠它。"""
+        _seed_a_run_workspace(self.s)
+        self.wipe()
+        out = self.s._delivery_dir()
+        for ptr in (out / "提交作品/最新作品", out / "各阶段产物/最新产物"):
+            self.assertTrue(ptr.is_dir(), f"{ptr.name} 的空骨架应当建回来")
+            self.assertEqual(list(ptr.iterdir()), [], f"{ptr.name} 里不该还剩东西")
+
+    def test_the_workspace_record_is_rewritten_to_the_current_digest(self):
+        """`workspace.json` 记**现在**的 digest，否则下一次 ▶ 被当成换题白转一轮。"""
+        _seed_a_run_workspace(self.s)
+        self.wipe()
+        path = self.root / "runtime/quality/workspace.json"
+        self.assertTrue(path.is_file(), "workspace.json 应当被重建")
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["source_digest"],
+                         self.s._source_digest(), "记的不是当前 digest ⇒ 下次 ▶ 会被当成换题")
+
+    def test_the_memory_state_types_match_their_writers(self):
+        """删完之后的内存态必须能被**后续动作**直接用，而不只是"看着像清了"。
+
+        2026-10-04 对抗性核查抓出来的真缺陷：`waived` 初始化是 `{}`、唯一写点是
+        `state["waived"][sid] = rec`（披露那条路），而删除函数当时写的是 `set()` ——
+        删完之后第一次「接受并披露」会在**已经 `_save_waivers` 落盘之后**抛
+        `TypeError: 'set' object does not support item assignment`：盘上多一条
+        waivers.json，内存、pending、续跑全没更新。同处的 `fix_required`（初始化 `[]`）
+        也一样写成了 `set()`。
+        **证伪**：把两处改回 `set()` / `set()`，这条立刻红。
+        """
+        _seed_a_run_workspace(self.s)
+        self.wipe()
+        st = self.s.state
+        st["waived"]["review"] = {"why": "披露时就是这么写的"}     # 写点：`state["waived"][sid] = rec`
+        st["fix_required"].append("RV7-1")                          # 写点：一律赋列表
+        self.assertEqual(st["waived"]["review"]["why"], "披露时就是这么写的")
+        self.assertEqual(st["fix_required"], ["RV7-1"])
+
+    def test_a_second_wipe_is_harmless(self):
+        """幂等：连点两次不该炸（第二次没什么可删，但要照样回 ok）。"""
+        _seed_a_run_workspace(self.s)
+        self.wipe()
+        out = self.wipe()
+        self.assertTrue(out["ok"])
+
+    def test_the_same_disk_under_the_other_scope_keeps_the_problem(self):
+        """**对照组**：同一份盘面走「不归档删除本题」⇒ 题面、草稿、往届归档都还在。
+
+        没有它，上面那几条删干净的断言可能只是"夹具本来就没有这些文件"。
+        """
+        _seed_a_run_workspace(self.s)
+        asyncio.run(self.s.wipe_problem(self.s.WipeReq(confirm="删除本题")))
+        self.assertTrue((self.root / "request/problem.md").is_file(), "那条口径不该动题面")
+        self.assertTrue((self.root / "_tmp/草稿.py").is_file(), "那条口径不该动阶段草稿")
+        self.assertTrue((self.root / "plan.md").is_file(), "那条口径不该动规划件")
+        self.assertTrue((self.s._delivery_dir() / "cache/2025B_2025.9.1_10.00.00").is_dir(),
+                        "那条口径只删本题那一份归档")
+        self.assertTrue((self.s._delivery_dir() / "各阶段产物/2026A_2026.10.4_18.24.29").is_dir(),
+                        "那条口径不碰兄弟归档 —— 那是用户**特意**归档留下来的（要连它也删，"
+                        "就与「不归档删除本题」这个名字和确认框里的承诺都不符）")
+        self.assertFalse((self.root / "reports/x.txt").exists(), "产物那边照删")
 
 
 class BrowseTruncationTests(unittest.TestCase):
@@ -538,6 +756,131 @@ class ModelConfigWriteTests(unittest.TestCase):
         self.assertEqual(os.environ.get("ANTHROPIC_BASE_URL"), "https://new")
 
 
+class ModelConfigReachesClaudeTests(unittest.TestCase):
+    """模型三键必须**随命令行**递进去 —— 只放子进程 env 是无效的。
+
+    2026-10-04 实测：把 `ANTHROPIC_BASE_URL` 指到一个本地监听再 spawn `claude -p`，
+    它**一个请求都不发**、照样把话答完 —— 用的是 `~/.claude/settings.json` 的 `env` 那套。
+    后果：开屏页填的钥匙/.env 里那把钥匙从头到尾没被用过，而「测试连接」照样「连通正常」、
+    链也照样出结果（走的是别的凭据）。命令行 `--settings` 是压得过它的那条通道：
+    同一把令牌从那里递，请求头上才真是它。
+
+    每条正题都配一条对照组 —— 少了它们，一个无条件塞 `--settings` 的实现也能全绿，
+    而那种实现会把"订阅/登录态用户"的凭据顶掉。
+    """
+
+    MODEL_KEYS = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL")
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for rel in ("CLAUDE.md", "AGENTS.md"):
+            shutil.copy2(PROJECT / rel, self.root / rel)
+        for rel in ("skills", "docs"):
+            shutil.copytree(PROJECT / rel, self.root / rel)
+        self.s = load_server(self.root)
+        self.captured = {}
+
+        captured = self.captured
+
+        class FakePopen:
+            def __init__(self, cmd, **kw):
+                captured["cmd"] = list(cmd)
+                self.pid, self.returncode = 424242, 0
+                self.stdout = io.BytesIO(b"")
+
+            def wait(self):
+                return self.returncode
+
+        real = self.s.subprocess.Popen
+        self.s.subprocess.Popen = FakePopen
+        self.addCleanup(setattr, self.s.subprocess, "Popen", real)
+
+    def _set_env(self, values):
+        """把三个键设成 `values`（没列的一律清掉），跑完还原。"""
+        for k in self.MODEL_KEYS:
+            old = os.environ.get(k)
+            self.addCleanup(lambda k=k, old=old: os.environ.__setitem__(k, old)
+                            if old is not None else os.environ.pop(k, None))
+            os.environ.pop(k, None)
+        os.environ.update(values)
+
+    def _spawn(self):
+        sh = {"pid": None, "lines": [], "sid": "review", "last_out": 0.0, "tail": ""}
+        self.s._claude_worker(["claude", "-p", "x"], sh)
+        return self.captured["cmd"]
+
+    def _settings_env(self, cmd):
+        self.assertIn("--settings", cmd,
+                      "没把模型配置递给 claude —— 它会用用户级 settings 里那套，"
+                      "`.env`/开屏页填的钥匙等于没填")
+        return json.loads(cmd[cmd.index("--settings") + 1])["env"]
+
+    def test_the_three_keys_ride_along_in_settings(self):
+        cfg = {"ANTHROPIC_BASE_URL": "https://api.probe.test/anthropic",
+               "ANTHROPIC_AUTH_TOKEN": "sk-probe-not-a-real-key",
+               "ANTHROPIC_MODEL": "probe-model[1M]"}
+        self._set_env(cfg)
+        self.assertEqual(self._settings_env(self._spawn()), cfg)
+
+    def test_only_the_configured_keys_are_passed(self):
+        """有令牌时只带配过的键 —— 不许编出一个空端点/空模型名塞给人家。"""
+        self._set_env({"ANTHROPIC_AUTH_TOKEN": "sk-probe-not-a-real-key",
+                       "ANTHROPIC_MODEL": "probe-model[1M]"})
+        self.assertEqual(self._settings_env(self._spawn()),
+                         {"ANTHROPIC_AUTH_TOKEN": "sk-probe-not-a-real-key",
+                          "ANTHROPIC_MODEL": "probe-model[1M]"})
+
+    def test_a_logged_in_user_keeps_their_own_credentials(self):
+        """对照组①：一个键都没配 ⇒ **不许**塞 `--settings`。
+
+        订阅/登录态用户靠 claude 自己的凭据跑；塞一份空 env 进去等于把人家的登录顶掉
+        —— 那是"修好了 A 弄坏了 B"。
+        """
+        self._set_env({})
+        self.assertNotIn("--settings", self._spawn())
+
+    def test_no_token_means_no_interference(self):
+        """对照组②：只填了端点和模型名、**没有令牌** ⇒ 同样不插手。
+
+        从仓库克隆下来还没配 `.env` 的人正落在这一档（仓库里那份 `.env` 的令牌就是空的）：
+        强指端点而不给令牌只会把本来能跑的他顶成 401。判定"配没配"的那把尺子是**令牌**。
+        """
+        self._set_env({"ANTHROPIC_BASE_URL": "https://api.probe.test/anthropic",
+                       "ANTHROPIC_MODEL": "probe-model[1M]"})
+        self.assertNotIn("--settings", self._spawn())
+
+    def test_the_test_button_also_passes_them(self):
+        """「测试连接」走的是**另一个 spawn 口**（`subprocess.run`），必须同样带上。
+
+        那个按钮测的就是"我刚填的这组能不能用"；不带 `--settings` 的话，它测的其实是
+        claude 自己 settings 里那套 —— 于是**填什么都会「连通正常」**，
+        正是用户看到的那一幕。
+        """
+        ran = {}
+
+        class Done:
+            returncode, stdout, stderr = 0, "可以", ""
+
+        def fake_run(cmd, **kw):
+            ran["cmd"] = list(cmd)
+            return Done()
+
+        real = self.s.subprocess.run
+        self.s.subprocess.run = fake_run
+        self.addCleanup(setattr, self.s.subprocess, "run", real)
+
+        out = asyncio.run(self.s.test_model_config(self.s.ModelConfigReq(
+            base_url="https://api.probe.test/anthropic",
+            auth_token="sk-probe-not-a-real-key", model="probe-model[1M]")))
+        self.assertTrue(out.get("ok"), out)
+        self.assertEqual(self._settings_env(ran["cmd"]),
+                         {"ANTHROPIC_BASE_URL": "https://api.probe.test/anthropic",
+                          "ANTHROPIC_AUTH_TOKEN": "sk-probe-not-a-real-key",
+                          "ANTHROPIC_MODEL": "probe-model[1M]"})
+
+
 class OriginGuardTests(unittest.TestCase):
     """跨站写请求必须被 403 挡掉（安全控制，坏了不会有人立刻发现）。"""
 
@@ -609,10 +952,18 @@ class OriginGuardTests(unittest.TestCase):
         self.assertIn(r.status_code, (200, 404), f"仓内相对路径被误拒：{r.status_code}")
 
     def test_unc_paths_are_refused_by_the_delivery_setter_too(self):
-        """UNC 也不该能当产物目录存下来（存了的话归档/清理每一步都会去碰网络路径）。"""
+        """UNC **不许**当产物目录存下来。
+
+        原先这条写的是 `assertTrue(r.status_code in (200, 400, 422))` —— 允许 200，
+        于是它自称守的那条不变量（"不该存下来"）根本没被守住；实测当时确实**存下来了**
+        （`config/delivery.local.json` 里躺着一个 `\\\\evil-host\\share\\`）。
+        存下去的后果不只是"归档会碰网络路径"：`POST /api/wipe-all` 的 `rmtree` 会直接
+        打到远端共享上。现在改成硬断言 400。
+        """
         c = self._client()
         r = c.post("/api/delivery", json={"output_dir": chr(92) * 2 + "evil-host" + chr(92) + "share"})
-        self.assertTrue(r.status_code in (200, 400, 422), r.status_code)
+        self.assertEqual(r.status_code, 400, r.text)
+        self.assertFalse(self.s.DELIVERY_CFG.exists(), "被拒了却还是把配置写下去了")
 
 
 class SetupPanelFrontendTests(unittest.TestCase):
@@ -704,6 +1055,22 @@ class SetupPanelFrontendTests(unittest.TestCase):
         seg = seg[:seg.index("\n};")]
         self.assertIn("confirm(", seg, "删除没有确认弹窗")
         self.assertIn("prompt(", seg, "删除没有要求手输暗号")
+
+    def test_the_wipe_all_button_needs_both_a_confirm_and_its_own_word(self):
+        """「删除全部内容」连题面一起删 ⇒ 同样两道闸，且**暗号不是另一个按钮那个**。
+
+        暗号共用一个词的话，"想删产物、手一滑点成删除全部"就没人拦 —— 代价从
+        "重跑一遍"变成"题面没了"。所以这里连 `NotIn` 一起钉。
+        """
+        h = _html()
+        self.assertIn('id="dv_wipe_all"', h)
+        seg = h[h.index("$('dv_wipe_all').onclick"):]
+        seg = seg[:seg.index("\n};")]
+        self.assertIn("confirm(", seg, "删除全部没有确认弹窗")
+        self.assertIn("prompt(", seg, "删除全部没有要求手输暗号")
+        self.assertIn("/api/wipe-all", seg, "面板没打 /api/wipe-all")
+        self.assertIn("删除全部", seg, "暗号文案不是「删除全部」")
+        self.assertNotIn("删除本题", seg, "两个按钮共用了同一个暗号 —— 手滑点错就拦不住了")
 
     def test_the_back_exit_starts_the_main_ui(self):
         """「← 回主界面」必须**先把主界面起起来**再隐层。

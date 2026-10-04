@@ -594,6 +594,40 @@ class IntakeTests(unittest.TestCase):
         self.s._backfill_before(1)
         self.assertEqual(self.s.state["stages"]["intake"], "idle", "还有未确认原件也画绿了")
 
+    def test_a_confirmed_intake_survives_the_rotation_of_its_own_run(self):
+        """确认完从 ① 起跑的那一轮**同时触发了换题轮转**时，⓪ 仍须是绿的。
+
+        上一条只调 `_backfill_before` 本身，所以它测不到顺序：`run_all` 里
+        `_backfill_before(index)` 排在 `_prepare_workspace()` **之前**，而后者在
+        「首次建立版本记录 / 输入已变更」那条路上会 `_invalidate_from(0)`
+        —— 刚回填上去的 `done(skip)` 被连同别的阶段一起刷回 idle。
+        确认这一步（`_materialize_inbox` 把原件搬出 inbox）**必然**改动输入 ⇒ 下一轮
+        digest 对不上 ⇒ 每一道新题第一次「从 ① 起跑」都走这条路，⓪ 于是永远是灰的。
+        （`_restore_intake_artifacts` 早就为同一类原因挪到了轮转之后，回填没跟着挪。）
+
+        对照组：先把 workspace.json 记成当前输入（不轮转），同样的跑法 ⓪ 是绿的
+        —— 没有它，这条用例分不清"轮转刷掉了"和"回填本来就没成"。
+        """
+        self.inbox("题目.pdf")
+        out = self.confirm(self.rows_for("题目.pdf"))
+        self.assertEqual(out["resume_index"], self.s.STAGE_IDX["literature"])
+
+        wsf = self.root / "runtime" / "quality" / "workspace.json"
+        # 对照组：版本记录就是当前输入 ⇒ `_prepare_workspace` 不轮转
+        wsf.write_text(json.dumps({"source_digest": self.s._source_digest(),
+                                   "run_id": "t", "problem_id": "T"}), encoding="utf-8")
+        self.s._set_start_index(out["resume_index"])
+        asyncio.run(self.s.run_all())
+        self.assertEqual(self.s.state["stages"]["intake"], "done(skip)",
+                         "没轮转时 ⓪ 也该是绿的 —— 对照组先红说明判据本身不对")
+
+        # 正题：版本记录对不上 ⇒ 这一轮会轮转
+        wsf.unlink()
+        self.s._set_start_index(out["resume_index"])
+        asyncio.run(self.s.run_all())
+        self.assertEqual(self.s.state["stages"]["intake"], "done(skip)",
+                         "同一轮里轮转过工作区之后，确认过的 ⓪ 被刷成灰的了")
+
     # ---- 6. 顺序与编号 ----
 
     def test_adding_intake_renumbered_nothing(self):
