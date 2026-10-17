@@ -1,6 +1,5 @@
 """Export vector PDF/SVG and PNG preview at the intended physical size."""
 import warnings
-from pathlib import Path
 
 from matplotlib.text import Text
 

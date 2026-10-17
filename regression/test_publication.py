@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lib.publication.checks import bind_map, classify, inspect, sha
+from lib.publication.checks import bind_map, classify, effective_policy, inspect, sha
 from lib.visualization.evidence import write_json
 
 POLICY = {"schema_version": 1, "max_counted_pages": 30, "target_counted_pages": 28,
@@ -25,6 +25,50 @@ POLICY_MARKS = dict(POLICY,
                     kind_start_markers={"abstract": ["ABSTRACT"], "body": ["1. BODY"],
                                         "ai_statement": ["8. AI"], "appendix": ["APPENDIX"]},
                     boundary_top_tol=6)
+
+
+class EffectivePolicyTests(unittest.TestCase):
+    """P1：structure.json 的 page_kinds / page_markers 覆盖 publication 默认值。"""
+
+    def _root(self, structure=None):
+        root = Path(tempfile.mkdtemp())
+        if structure is not None:
+            (root / "paper").mkdir(parents=True)
+            (root / "paper/structure.json").write_text(
+                json.dumps(structure, ensure_ascii=False), encoding="utf-8")
+        return root
+
+    def test_missing_structure_keeps_legacy_policy(self):
+        policy = copy.deepcopy(POLICY_MARKS)
+        self.assertEqual(effective_policy(self._root(), policy), policy)
+
+    def test_structure_markers_and_kinds_override(self):
+        root = self._root({
+            "page_kinds": {"abstract": ["title", "abstract"], "body": ["restatement"]},
+            "page_markers": {"abstract": ["ABSTRACT"], "body": ["2. BODY"]},
+        })
+        policy = dict(copy.deepcopy(POLICY_MARKS),
+                      max_group_pages=[{"kinds": ["ai_statement", "references"], "limit": 1}],
+                      require_appendix=True)
+        out = effective_policy(root, policy)
+        self.assertEqual(out["kind_start_markers"],
+                         {"abstract": ["ABSTRACT"], "body": ["2. BODY"]})
+        self.assertFalse(out["require_appendix"])
+        self.assertEqual(out["max_group_pages"], [])
+
+    def test_references_only_group_survives_when_ai_disabled(self):
+        root = self._root({
+            "page_kinds": {"abstract": ["title", "abstract"], "body": ["restatement"],
+                           "references": ["references"]},
+            "page_markers": {"abstract": ["ABSTRACT"], "body": ["1. BODY"],
+                             "references": ["8. REFERENCES"]},
+        })
+        policy = dict(copy.deepcopy(POLICY_MARKS),
+                      max_group_pages=[{"kinds": ["ai_statement", "references"], "limit": 1}])
+        out = effective_policy(root, policy)
+        self.assertEqual(out["max_group_pages"],
+                         [{"kinds": ["references"], "limit": 1}])
+        self.assertEqual(out["kind_start_markers"]["references"], ["8. REFERENCES"])
 
 
 class PageCountTests(unittest.TestCase):
@@ -186,7 +230,7 @@ class AbstractFillTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         self.assertTrue(any("版心" in i for i in result["issues"]), result["issues"])
         self.assertEqual(result["prose_issues"], result["issues"],
-                         "摘要欠写是**文字**缺陷 ⇒ 必须打 prose 标记，否则会被判给 ⑩ 打转")
+                         "摘要欠写是**文字**缺陷 ⇒ 必须打 prose 标记，否则会被判给 ⑭ 打转")
 
     def test_a_full_abstract_page_is_clean(self):
         result = self.inspect_with(abstract_lines=33)
@@ -227,7 +271,7 @@ class AbstractFillTests(unittest.TestCase):
     def test_a_stale_formula_review_is_also_marked_as_prose(self):
         """公式复核记录过期 ⇒ 同样打 prose 标记。
 
-        它也是"读公式"的活（只有 ⑨ 能重签这份记录）⇒ 判给 ⑩排版必然下一轮再报同一条。
+        它也是"读公式"的活（只有 ⑨ 能重签这份记录）⇒ 判给 ⑭排版必然下一轮再报同一条。
         """
         (self.root / "paper/sections").mkdir(parents=True)
         (self.root / "paper/sections/x.tex").write_text(
@@ -255,9 +299,9 @@ class AbstractFillTests(unittest.TestCase):
 
 
 class PublicationRollbackTargetTests(unittest.TestCase):
-    """`_mechanical_floor` 的回退目标按「谁有权改」分：沾文字 ⇒ ⑨论文撰写，纯版式 ⇒ ⑩排版。
+    """`_mechanical_floor` 的回退目标按「谁有权改」分：沾文字 ⇒ ⑨论文撰写，纯版式 ⇒ ⑭排版。
 
-    判错目标的代价不是多跑一轮，而是**转不出去**：⑩ 无权改摘要文字 ⇒ 下一轮同样的 FAIL。
+    判错目标的代价不是多跑一轮，而是**转不出去**：⑭ 无权改摘要文字 ⇒ 下一轮同样的 FAIL。
     """
 
     def setUp(self):
@@ -291,14 +335,24 @@ class PublicationRollbackTargetTests(unittest.TestCase):
         self.assertEqual(decision["reason"], "publication_check_failed")
         self.assertEqual(decision["target"], "write", "摘要欠写只有 ⑨ 能改")
 
+    def test_the_fix_text_reads_the_target_from_config(self):
+        """返修文案里的阈值必须**现读 config**（写死 ≥90% 会被这条抓红）。
+
+        2026-10-17 审计：旧断言只测 reason/target，文案改回硬编码 90% 也全绿。
+        """
+        decision = self.floor(1, tweak=lambda p: p["min_kind_fill"]["abstract"].update(target=0.95))
+        fix = decision["issues"][0]["fix"]
+        self.assertIn("95%", fix)
+        self.assertNotIn("90%", fix, "阈值写死了 —— 应读 config/publication.json")
+
     def test_a_pure_layout_defect_still_goes_to_the_format_stage(self):
         decision = self.floor(33, tweak=lambda p: p.update(max_pdf_bytes=10))
         self.assertEqual(decision["reason"], "publication_check_failed")
         self.assertEqual(decision["target"], "format")
 
     def test_a_mixed_bag_follows_the_prose_side(self):
-        """文字 + 版式混在一起 ⇒ 判给 ⑨：⑨ 在 ⑩ 上游，回退它会连 ⑩ 一起重跑；
-        反过来判给 ⑩，文字那条谁也改不了 ⇒ 死循环。"""
+        """文字 + 版式混在一起 ⇒ 判给 ⑨：⑨ 在 ⑭ 上游，回退它会连 ⑭ 一起重跑；
+        反过来判给 ⑭，文字那条谁也改不了 ⇒ 死循环。"""
         decision = self.floor(1, tweak=lambda p: p.update(max_pdf_bytes=10))
         self.assertEqual(decision["target"], "write")
 

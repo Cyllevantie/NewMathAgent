@@ -25,29 +25,43 @@
 | 6 | 6Robustness | 稳健性/敏感性（扰动/boot/留组/口径） | ROBUSTNESS_REPORT.md |
 | 7 | 7Route-diagram | 技术路线图（**必出图 1 分析流程图**）+ 按需示意图 | DRAWIO_REPORT.md |
 | 8 | 8Figure-gate | 绘图门禁（⑦ 之后图就全了 —— 机械地板 `visualization audit` + 查机器看不见的选型/可读性；**只判不改**，FAIL→回 7） | FIGURE_REVIEW_REPORT.md |
-| 9 | 9Paper-writing | 分节撰写论文（模板+图与排版风格参考） | paper/ |
+| 9 | 9Paper-writing | 按角色计划（`roles.json` + `paper/structure.json`）分节撰写论文（模板+图与排版风格参考）+ 收尾交付层（提交清单/末页清单表/运行说明/AI工具使用详情） | paper/（含 paper-structure.tex / structure.json）、SUBMISSION_MANIFEST.json、运行说明.md、AI工具使用详情.pdf |
 | 10 | 10Math-proof-gate | 数学论证门禁（成稿定理/命题/证明字样须带等式级推导+前提声明；禁仿真代证明；REVISE→回 9） | MATH_PROOF_REPORT.md |
 | 11 | 11Cross-question-check | 跨问一致性审查 | CROSS_QUESTION_REVIEW.md |
 | 12 | 12Rubric-final | 评分标终审（四份评委视角评分标逐项打分；先证伪再报；轻微项只给成本估计不返修） | RUBRIC_REVIEW.md |
 | 13 | 13Repair-by-rubric-verdict | 按评分判词论文侧定点返修（措辞/摘要/结论表述；不属实的记 not_reproduced 不改稿） | FIX_REPORT.md |
-| 14 | 14Layout-and-format | 排版与版式验收（独占 `paper/_base/` 导言区；行距/页边距/篇幅/编译/逐页视觉） | paper/ 版式 + FORMAT_REPORT.md |
+| 14 | 14Layout-and-format | 排版与版式验收（独占 `paper/_base/` 导言区；行距/页边距/篇幅/编译/逐页视觉；对账修补 ⑨ 首产的提交清单与末页清单表） | paper/ 版式 + FORMAT_REPORT.md |
 | 15 | 15Verification | 验收（结构/图表/数值/编译/数学论证措辞-内容扫描） | VERIFY_REPORT.md |
 | 16 | 16Web-demo | 交互式 Demo | DEMO_REPORT.md |
 
 ## 改链时要同步的地方（漏一处会被体检或单测抓住）
 
-1. `lib/web/server.py` 的 `STAGES` —— 唯一的权威顺序与门禁声明。
-2. `lib/web/server.py` 的 `ARTIFACTS` 与 `_default_repair_target`（门禁的 `FAIL->x` 必须与它一致）。
-3. `lib/web/server.py` 的 `_target_index` 与 `_resolve_stage_id` —— 两份 aliases，要一起改。
-4. `lib/web/static/index.html` 的 `STAGE_ORDER` / `STAGE_NAME` / `STAGE_GATE` —— 三个常量。
-5. `lib/web/healthcheck.py` 顶部的 `workflow` 表（漏了该 skill 就静默不体检）。
-6. `skills/<新 skill>/SKILL.md`（必须引用 `_references/stage_discipline.md`）。
-7. `regression/test_content_quality.py` 与 `regression/test_defect_fixtures.py` 里各自的 `STAGES` 副本。
-8. 本文件（只是账本，改它不产生任何 stale 标记）。
-9. `lib/web/check_verdict.py` 的 `FALLBACK_ORDER`（驱动没在跑时的阶段顺序兜底；
+1. `lib/web/server.py` 的 `STAGES` —— 唯一的权威顺序与门禁声明（每个条目都要**显式**写 `gate` 键）。
+2. `lib/web/server.py` 的 `ARTIFACTS`（漏了**不会红**：镜像/回退暂存/接管判定都会静默看不见该阶段产物）
+   与 `_default_repair_target`（门禁的 `FAIL->x` 必须与它一致，有单测逐项比对）。
+3. `lib/web/static/index.html` 的 `STAGE_ORDER` / `STAGE_NAME` / `STAGE_GATE` —— 三个常量（healthcheck 对账）。
+4. `lib/web/healthcheck.py` 顶部的 `workflow` 表（漏了直接判红）与 `py_compile` 清单（新增 lib 模块时）。
+5. `skills/<新 skill>/SKILL.md`：frontmatter `name` 必须等于目录名、`allowed-tools` 要有、必须引用
+   `_references/stage_discipline.md`；`skills/skills.sh.json` 的技能索引也加一条。
+6. `regression/test_content_quality.py` 与 `regression/test_defect_fixtures.py` 里各自的 `STAGES` 副本
+   （两份现在都有与驱动对账的用例；加阶段漏改会红，别删那两条守卫）。
+7. `lib/web/check_verdict.py` 的 `FALLBACK_ORDER`（驱动没在跑时的阶段顺序兜底；
    `regression/test_check_verdict.py` 有一条用例逐项比对它与 `STAGES`）。
-10. `regression/test_intake.py::test_adding_intake_renumbered_nothing` 里那份顺序清单
+8. `regression/test_intake.py::test_adding_intake_renumbered_nothing` 里那份顺序清单
    （它钉的就是"⓪ 只许插在链首、其余一字不动"）。
+9. 条件语义表（**按新阶段职责决定加不加**，漏了静默）：`lib/web/content_quality.py` 的 `REQUIRED`、
+   `lib/web/server.py` 的 `_MANUAL_CHECK_FOR`、`_CONTENT_SIDE_STAGES` / `_CONTENT_JUDGE_STAGES` /
+   `_polisher_owners` / `_FIX_HANDOFF_JUDGES`、`lib/delivery/checks.py` 的 `LATE_ITEMS` 与
+   `lib/delivery/core.py` 的 `FIXED_SOURCES`。
+10. 文档账本（人工）：本文件、`CLAUDE.md` / `AGENTS.md`、`README.md`、
+    `skills/0Start-mathmodel/SKILL.md`（顺序表/待办/职责表）、开屏页的「经过 N 个阶段」、
+    `lib/web/server.py` 的 `GUARDRAILS`、`docs/CONTENT_QUALITY.md` 阶段责任表、
+    `docs/PUBLICATION.md:3`、`skills/_references/internal_leak_words.md`。
+
+指纹与别名：`_input_split` 里新阶段自己的 `skills/<skill>` 目录**自动**进 instructions；共享的
+`_references` 与 `lib/*` 依赖要按 `_REFERENCE_USERS` / `_LIB_INSTRUCTION_USERS` **显式**加
+（漏了 = 改那些共享文件不会让它标 stale）。`_target_index` / `_resolve_stage_id` 共用**同一张别名表**（`_stage_aliases`：skill 名从
+`STAGES` 自动派生，少量历史别名在 `_LEGACY_STAGE_ALIASES` 手维护）；加阶段不用改这两个函数。
 
 ## 改目录布局时要同步的地方
 

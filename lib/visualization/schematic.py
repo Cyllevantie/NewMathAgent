@@ -11,9 +11,8 @@
 是"三维图很丑"的主因。投影只表达空间关系，不计算遮挡（见 docs/GEOMETRY.md）。
 """
 import numpy as np
-import matplotlib as mpl
 
-from .charts import numeric, style, canvas
+from .charts import style, canvas
 from .geometry import orthographic
 
 # 深色主对象 + 弱化辅助线：主次分明，避免"整张图一个灰度"

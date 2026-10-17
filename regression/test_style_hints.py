@@ -9,7 +9,7 @@
 
 判据实现在 `lib/publication/checks.py` 的 `style_hints()` / `_is_bare_pointer()`，只出**提示**
 （进 `reports/PUBLICATION_CHECK.json` 的 warnings 与 `style_hints`），**不拦门禁** ——
-理由写在那边：`publication` 类硬拦的回退目标被写死成 ⑩排版，而措辞是 ⑨ 的产出（⑩ 无权改内容）
+理由写在那边：`publication` 类硬拦的回退目标被写死成 ⑭排版，而措辞是 ⑨ 的产出（⑭ 无权改内容）
 ⇒ 判死只会来回打转。修法走 ⑫评分标判词 → ⑬就地改，或 ⑨ 下一轮。
 
 下面钉的是**它认得出什么、也认得住不误伤什么**。前 6 个该判（真稿里都是这样），后 6 个不许判

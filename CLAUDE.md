@@ -33,30 +33,57 @@
 - 串题残留 = 把整段流水线日志按词表粗扫，防上一赛题领域词泄漏进本次（换题回归哨兵）。**换新题后更新** `runtime/periodic_check.py` 顶部 `DEFAULT_LEAK_WORDS`：把刚跑完那题的领域词 append 进去。
 - 定时唤醒（cron/ScheduleWakeup）只在会话空闲触发、会被新消息顶掉；可靠兜底 = 链结束的后台通知，或随时喊一句"看下"手动查。
 
+## 绝不许杀进程（硬红线，与"资源占用"无关）
+
+**默认一个都不杀**：`taskkill` / `Stop-Process` / `kill` / `pkill` / `wmic process delete` 一律不要用，
+包括看起来最无害的那种："清掉残留的 stray python"。**唯一例外**是你自己起的进程跑飞了 ——
+那种情况也有严格三步（按 pid、先跳过驱动、拿不准就别杀），见 `skills/_references/stage_discipline.md` 第七节 7.3。
+
+**为什么**：**驱动本身就是个 `python.exe`**（`lib/web/server.py`），在 `tasklist` 里跟你自己起的
+后台计算进程长得一模一样。2026-10-15 真发生过一次：④编码计算的 agent 想清掉"残留 python"，
+`tasklist | grep python` 数出两个 python.exe，`taskkill /F` 两个一起杀 —— 一个是它的旧后台任务，
+**另一个就是驱动**：控制台窗口当场消失（`launch.py` 直接跑 `python.exe`，进程一死窗口就没了）、
+日志断在半句、这一轮从 ④ 白跑；而 `taskkill /F` 不给对方任何写日志的机会，
+事后只能靠翻阶段 agent 的会话转录才查得出是谁干的。
+
+- **判据是结果，不是命令拼写**：凡是"让驱动结束 / 被重启 / 掉线"的动作一律不许 ——
+  `shutdown` / `Restart-Computer` / `logoff`、**杀你的父进程（驱动就是你的父进程）**、
+  按映像名杀（`taskkill /IM python.exe`、`Stop-Process -Name python`）、WMI 的 `Terminate()`、
+  关掉承载它的控制台窗口 —— 命令里一个禁词都没有，后果一模一样。
+- 驱动的 pid 记在 **`runtime/driver.pid`**（启动时更新，正常退出时撤掉），也**直接写在每个阶段的提示里**。
+  **那个 pid 永远不许碰**；真要杀什么之前先读它、跳过它，**读不到就按最严处理（一个都不杀）**。
+- 要停**自己的**后台任务：用 **`TaskStop`**。注意它**只停任务本身** —— 它拉起的长计算子进程可能
+  还在跑，**那是正常的、不归你管**，不要去扫也不要杀。
+- 自己起的进程**跑飞了**（死循环/停不下来）也不能按名字杀：只按 pid（`taskkill /PID <你记下的>`），
+  **不许 `/IM`、不许 `/T`**；拿不准就别杀，请人在面板上按 ⏹。
+- 看到"像是孤儿"的 python：**不要管** —— 驱动下次启动会自己收容（`_reap_orphan_agents`），那是它的活。
+- 阶段侧的同一条纪律（含"跑飞了怎么办"的完整步骤）：`skills/_references/stage_discipline.md` 第七节
+  —— 唯一权威表述在那边，这里只作入口。
+
 ## 阶段读取表（唯一权威）
 
 **每个阶段只读下表列出的 1–2 份；其余 docs 仅在对应命令报错时按需查。** 各 SKILL 不再重复声明读哪些 docs——需要领域判断时才查 `skills/_references/math_modeling_norms.md` 的对应小节。
 
 | 阶段 | 必读（≤2） | 备注 |
 |---|---|---|
-| 2literature | norms「模型大分类与选型速查」 | |
-| 3analysis | `docs/CONTENT_QUALITY.md`「题意契约」；norms「题型防错速查」 | **必须写 `reports/TASK_CONTRACT.json`** |
-| 4review | `docs/CONTENT_QUALITY.md`「阶段责任 + 问题分类与机器裁决」；norms 评审 Checklist A/B/C | 必查 ID 由驱动注入 |
-| 5coding | `python -m lib.result_contract` / `python -m lib.visualization` 的报错即规范 | 环境用 `config/runtime.local.json` 的 python |
-| 6Robustness | 同上（两个 CLI） | 排在 5Result-credibility-audit 之后：便宜的结果可信度审计先筛一遍，不可信就不白跑昂贵的扰动计算 |
-| 5Result-credibility-audit | `docs/CONTENT_QUALITY.md`；`python -m lib.result_contract audit` | |
-| 7Route-diagram | `docs/VISUALIZATION.md`；`docs/GEOMETRY.md` | |
-| 9Paper-writing | `docs/PUBLICATION.md`；`docs/VISUALIZATION.md` | 篇幅预算见 `config/publication.json`；**只写 `sections/` 与摘要，不碰 `paper/_base/` 导言区** |
-| 14Layout-and-format | 模板层即规范（`paper/_base/*.tex` 的注释）；`docs/PUBLICATION.md`；`docs/VISUALIZATION.md` | **独占排版层**；机器判据 `skills/14Layout-and-format/scripts/measure_layout.py` |
-| 10Math-proof-gate | `docs/CONTENT_QUALITY.md`「最优性与数学论证」；norms「证明-措辞契约」 | |
-| 10cross | `docs/CONTENT_QUALITY.md`；norms 评审 Checklist | |
-| 15Verification | `docs/PUBLICATION.md`（CLI）；`docs/VISUALIZATION.md`（CLI） | 必查 ID 由驱动注入 |
-| 12Rubric-final | `skills/12Rubric-final/references/precedence.md`（先读它）；四份 `rubric_*.md` 按子 agent 分读 | 必查 ID 由驱动注入；判词带 `tier`；每条先证伪再报。**版式/编译/数值一致/文献真实类不重复判**，只读 14Layout-and-format/15Verification 的报告结论 |
-| 13Repair-by-rubric-verdict | `reports/RUBRIC_REVIEW.md` 的判词清单；`skills/_references/stage_discipline.md` 第五节 | **只改论文侧**；动手前逐条复核判词属实；建议加第一人称的一律写「本文」 |
+| ① literature | norms「模型大分类与选型速查」 | |
+| ② analysis | `docs/CONTENT_QUALITY.md`「题意契约」；norms「题型防错速查」 | **必须写 `reports/TASK_CONTRACT.json`** |
+| ③ review | `docs/CONTENT_QUALITY.md`「阶段责任 + 问题分类与机器裁决」；norms 评审 Checklist A/B/C | 必查 ID 由驱动注入 |
+| ④ code | `python -m lib.result_contract` / `python -m lib.visualization` 的报错即规范 | 环境用 `config/runtime.local.json` 的 python |
+| ⑥ robustness | 同上（两个 CLI） | 排在 ⑤ 结果可信度审计之后：便宜的结果可信度审计先筛一遍，不可信就不白跑昂贵的扰动计算 |
+| ⑤ audit | `docs/CONTENT_QUALITY.md`；`python -m lib.result_contract audit` | |
+| ⑦ drawio | `docs/VISUALIZATION.md`；`docs/GEOMETRY.md` | |
+| ⑨ write（9Paper-writing） | `docs/PUBLICATION.md`；`docs/VISUALIZATION.md`；`docs/PAPER_ROLES.md` | 篇幅预算见 `config/publication.json`；**写 `sections/`、`blocks/` 与结构生成物 `paper-structure.tex`，不碰 `paper/_base/` 与 `main.tex` 稳定外壳**；步骤 2.5 先跑 `lib.paper_structure assemble`；收尾产出提交清单 `reports/SUBMISSION_MANIFEST.json` 与正文末页清单表、运行说明.md、AI工具使用详情.pdf |
+| ⑭ format（14Layout-and-format） | 模板层即规范（`paper/_base/*.tex` 的注释）；`docs/PUBLICATION.md`；`docs/VISUALIZATION.md` | **独占排版层（`paper/_base/` 与 `main.tex` 稳定外壳）**；`paper/paper-structure.tex` 归 ⑨，只读；对账并修补 ⑨ 首产的提交清单与末页清单表（塞不下/叠印归它）；机器判据 `skills/14Layout-and-format/scripts/measure_layout.py` |
+| ⑩ mathproof（10Math-proof-gate） | `docs/CONTENT_QUALITY.md`「最优性与数学论证」；norms「证明-措辞契约」 | |
+| ⑪ cross（10cross） | `docs/CONTENT_QUALITY.md`；norms 评审 Checklist | |
+| ⑮ verify（15Verification） | `docs/PUBLICATION.md`（CLI）；`docs/VISUALIZATION.md`（CLI） | 必查 ID 由驱动注入 |
+| ⑫ rubric（12Rubric-final） | `skills/12Rubric-final/references/precedence.md`（先读它）；四份 `rubric_*.md` 按子 agent 分读 | 必查 ID 由驱动注入；判词带 `tier`；每条先证伪再报。**版式/编译/数值一致/文献真实类不重复判**，只读 ⑭/⑮ 的报告结论 |
+| ⑬ fix（13Repair-by-rubric-verdict） | `reports/RUBRIC_REVIEW.md` 的判词清单；`skills/_references/stage_discipline.md` 第五节 | **只改论文侧**；动手前逐条复核判词属实；建议加第一人称的一律写「本文」 |
 
 ## 阶段链
 
-编号 ↔ skill ↔ 产出 的账本在 `docs/STAGE_CHAIN.md`（那里还列着"改链时要同步的 8 处"）。
+编号 ↔ skill ↔ 产出 的账本在 `docs/STAGE_CHAIN.md`（那里还列着「改链时要同步的各个面」）。
 编排的权威顺序是 `lib/web/server.py` 的 `STAGES`。
 
 > 这张表刻意不放在本文件里：本文件的全文哈希是各阶段「做法要求」指纹的一部分
@@ -72,11 +99,11 @@ Web 驱动门禁：建模失败→analysis，结果审计失败→code，数学�
 并转黄灯 —— 出口留着，面板上接着选再试/回退/披露/认证；停止是硬停，不给决策面板
 （黄灯若亮着一并收起）。区别只在收尾时建不建黄灯，中断信号是同一个。
 
-产物：整链收口时驱动把工作区打包成提交形状的提交件，落 `<产物根>/提交作品/最新作品/`
+产物：整链收口时驱动把工作区打包成提交形状的提交件（⑨ 起每阶段收尾先同步一批，链尾收口做严格对账），落 `<产物根>/提交作品/最新作品/`
 （产物根默认 `<项目根>/产物/`，前端工具栏「📁 产物」可改路径与题目标识）。那一层下只放要
 提交的东西 + `其余文件/`；白名单与提交清单逐项对账由 `lib/delivery/` 负责（`python -m lib.delivery
-check`，对象是提交件根不是产物根）。提交清单 `reports/SUBMISSION_MANIFEST.json` 由 14Layout-and-format
-写，同时是论文末页清单表的来源。各阶段产物镜像在 `<产物根>/各阶段产物/最新产物/<阶段名>/`。
+check`，对象是提交件根不是产物根）。提交清单 `reports/SUBMISSION_MANIFEST.json` 由 9Paper-writing
+收尾写（14Layout-and-format 保有对账与修补权），同时是论文末页清单表的来源。各阶段产物镜像在 `<产物根>/各阶段产物/最新产物/<阶段名>/`。
 换题时（输入源变更）驱动把这两个「最新」整目录改名成 `<题目标识_日期_时间>/`（题目标识
 留空只用日期）再建两个空的 —— 同一题反复重跑不需要任何清理。回退快照另落
 `cache/<题目标识_日期_时间>/<阶段名>/`。`current output/` 是旧位置，不再使用。

@@ -73,7 +73,7 @@ workflow:
 16. 交互式 Demo（可跳过） - `16Web-demo`
 ```
 
-> 本工作流在"分析→代码→绘图→写作→验收"主链上加了专门化门禁——文献定向（建模前）、建模评审（进代码前）、可信度审计（出结果后）、数学论证（成稿后）、跨问一致性、终验、评分标终审，共 6 道门禁。
+> 本工作流在"分析→代码→绘图→写作→验收"主链上加了专门化门禁——文献定向（建模前）、建模评审（进代码前）、可信度审计（出结果后）、数学论证（成稿后）、跨问一致性、终验、评分标终审，共 7 道门禁。
 >
 > 其中 `12Rubric-final` 是唯一有正向出路的门禁：它的判词分三层（严重/中等/轻微），
 > 措辞类交给紧随其后的 `13Repair-by-rubric-verdict` 就地改写，不回退 `9Paper-writing`（那是小时级）；
@@ -98,13 +98,14 @@ workflow:
 │   ├── RESULT_AUDIT_REPORT.md        # 5: 数据与结果可信度审计（5Result-credibility-audit）
 │   ├── ROBUSTNESS_REPORT.md          # 6: 稳健性与敏感性（6Robustness）
 │   ├── DRAWIO_REPORT.md              # 7: 非数据图说明（7Route-diagram）
-│   ├── FORMAT_REPORT.md              # 9: 排版与版式验收（14Layout-and-format）
+│   ├── FIGURE_REVIEW_REPORT.md       # 8: 绘图门禁（8Figure-gate）
+│   ├── FORMAT_REPORT.md              # 14: 排版与版式验收（14Layout-and-format）
 │   ├── MATH_PROOF_REPORT.md          # 10: 数学论证门禁（10Math-proof-gate）
 │   ├── CROSS_QUESTION_REVIEW.md      # 11: 跨问一致性审查（11Cross-question-check）
-│   ├── VERIFY_REPORT.md              # 12: 验收报告（15Verification）
-│   ├── RUBRIC_REVIEW.md              # 13: 评分标终审报告（12Rubric-final）
-│   ├── FIX_REPORT.md                 # 14: 按评分判词返修报告（13Repair-by-rubric-verdict）
-│   ├── DEMO_REPORT.md                # 15: 交互式 Demo 说明（16Web-demo）
+│   ├── VERIFY_REPORT.md              # 15: 验收报告（15Verification）
+│   ├── RUBRIC_REVIEW.md              # 12: 评分标终审报告（12Rubric-final）
+│   ├── FIX_REPORT.md                 # 13: 按评分判词返修报告（13Repair-by-rubric-verdict）
+│   ├── DEMO_REPORT.md                # 16: 交互式 Demo 说明（16Web-demo）
 │   ├── HANDBACK_REQUEST.md           # 任一阶段发现上游有错时写它交回（见各 SKILL）
 ├── code/                        # 4: 代码（4Coding-and-computation）
 │   ├── problem1.py
@@ -132,6 +133,7 @@ workflow:
 ```markdown
 # 待办事项
 
+- [ ] ⓪ 题目读取 - `0Intake-readproblem`（上传文件夹读题，跑完停下等人确认）
 - [ ] 0. 总控初始化 - `0Start-mathmodel`
 - [ ] 1. 文献定向与机理锚定 - `1Literature-orientation`
 - [ ] 2. 赛题分析与建模设计 - `2Modeling-design`
@@ -141,7 +143,7 @@ workflow:
 - [ ] 6. 稳健性与敏感性分析 - `6Robustness`
 - [ ] 7. 流程与架构图绘制 - `7Route-diagram`（产出技术路线图等非数据图；matplotlib 兜底）
 - [ ] 8. 绘图门禁 - `8Figure-gate`（图全在盘上后统一复核：登记/过期资产/位图质量）
-- [ ] 9. 竞赛论文撰写 - `9Paper-writing`
+- [ ] 9. 竞赛论文撰写 - `9Paper-writing`（收尾产出提交清单/正文末页清单表/运行说明）
 - [ ] 10. 数学论证门禁 - `10Math-proof-gate`
 - [ ] 11. 跨子问题一致性审查 - `11Cross-question-check`
 - [ ] 12. 评分标终审 - `12Rubric-final`（四份评委视角评分标打分；出严重/中等/轻微三级判词）
@@ -159,6 +161,7 @@ workflow:
 
 | 阶段 | Skill | 作用 | 主要产物 |
 | --- | --- | --- | --- |
+| 题目读取 | `0Intake-readproblem` | 上传的整个文件夹读一遍（题面+附件+数据），产出"我读到了什么"；**跑完停下等人确认**（确认页可改+更正说明）。 | `INTAKE_REPORT.md` |
 | 文献定向与机理锚定 | `1Literature-orientation` | WebSearch 近 3-5 年文献，给每问"主流建模方向 + 领域机理基线"，供建模与评审作外部参照。 | `LITERATURE_DIRECTION.md` |
 | 赛题分析与建模设计 | `2Modeling-design` | 解析题意、识别变量/约束/数据/评价指标，建立数学模型（决策变量/目标函数/约束/求解算法）与代码契约。 | `ANALYSIS_MODELING_REPORT.md` |
 | 建模评审门禁 | `3Modeling-review-gate` | 独立评审数学正确性/题意权衡（防退化解）/领域机理/数据设计预检；FAIL 附修改清单退回建模手。 | `MODELING_REVIEW_REPORT.md` |
@@ -167,12 +170,12 @@ workflow:
 | 稳健性与敏感性分析 | `6Robustness` | 对关键结论做参数扰动/bootstrap/留组/口径对照，标出稳健与敏感项。 | `ROBUSTNESS_REPORT.md` |
 | 流程与架构图绘制 | `7Route-diagram` | 绘制技术路线图、各问求解流程图、数据处理流程图等非数据图。 | `figures/*.pdf`、`figures/*.drawio`、`DRAWIO_REPORT.md` |
 | 绘图门禁 | `8Figure-gate` | 图全在盘上之后统一复核：登记与过期资产、位图质量（图例压数据/分辨率）、文字压框。只回 7Route-diagram（数据图的问题由它写 HANDBACK_REQUEST 交回 4Coding-and-computation）。 | `FIGURE_REVIEW_REPORT.md` |
-| 竞赛论文撰写 | `9Paper-writing` | 基于各报告与图表撰写论文各节并插入图表。只写 `sections/` 与摘要，不碰 `paper/_base/` 导言区。 | `paper/sections/` |
+| 竞赛论文撰写 | `9Paper-writing` | 基于各报告与图表撰写论文各节并插入图表。只写 `sections/` 与摘要，不碰 `paper/_base/` 导言区；收尾产出提交清单、正文末页清单表、运行说明.md、AI工具使用详情.pdf。 | `paper/sections/`、`SUBMISSION_MANIFEST.json` |
 | 数学论证门禁 | `10Math-proof-gate` | 成稿里以定理/命题/证明命名或做强解析声称的对象，须带可逐行复核的等式级推导 + 前提声明；数值/图表不得充当证明。 | `MATH_PROOF_REPORT.md` |
 | 跨子问题一致性审查 | `11Cross-question-check` | 核对符号/数据口径/结论自洽/数值协调。 | `CROSS_QUESTION_REVIEW.md` |
 | 评分标终审 | `12Rubric-final` | 用四份评委视角评分标（适配性15维/AI痕迹10维/合规红线26条/官方四大项16维）对成稿逐项打分，出「严重/中等/轻微」三级判词与获奖预测。每条判词先证伪再报；轻微项只给成本估计、不返修。只审不改。 | `RUBRIC_REVIEW.md` |
 | 按评分判词定点返修 | `13Repair-by-rubric-verdict` | 按判词做论文侧修改（措辞/结构/摘要/结论表述）。动手前逐条复核判词属实，不属实的记 `not_reproduced` 不动稿。模型/数值类判词不在这里改。 | `FIX_REPORT.md` |
-| 排版与版式验收 | `14Layout-and-format` | 独占排版层：字号字体行距标题图题表题统一、浮体位置与溢出重叠、篇幅预算、正文/附录编号接续、编译与逐页视觉验收。只做定点版式手术。 | `paper/` 版式、`FORMAT_REPORT.md` |
+| 排版与版式验收 | `14Layout-and-format` | 独占排版层：字号字体行距标题图题表题统一、浮体位置与溢出重叠、篇幅预算、正文/附录编号接续、编译与逐页视觉验收；对账并修补 ⑨ 首产的提交清单与末页清单表。只做定点版式手术。 | `paper/` 版式、`FORMAT_REPORT.md` |
 | 验证和验收 | `15Verification` | 结构/图表/数值/编译/数学论证措辞-内容扫描；只审不改。 | `VERIFY_REPORT.md` |
 | 交互式 Demo | `16Web-demo` | 把"条件/参数→结果"式结论做成可交互网页（真实数据、实时重算）。排在最后，不影响论文。 | `demo/`、`DEMO_REPORT.md` |
 

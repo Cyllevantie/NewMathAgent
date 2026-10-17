@@ -8,7 +8,9 @@ const fs = require('fs');
 const path = require('path');
 
 const HTML = fs.readFileSync(path.join(__dirname, '..', 'lib', 'web', 'static', 'index.html'), 'utf8');
-const SCRIPT = HTML.match(/<script>([\s\S]*?)<\/script>/)[1];
+// ★ 取**最后一段** <script>：2026-10-16 起 `<head>` 里还有一行主题预绘脚本，
+//   主脚本永远是最后一段（同 frontend_id_order_check.js 的处置）。
+const SCRIPT = [...HTML.matchAll(/<script>([\s\S]*?)<\/script>/g)].pop()[1];
 const tick = () => new Promise((r) => setImmediate(r));
 
 function makeEnv() {

@@ -118,12 +118,20 @@ def _as_probes(item):
 
 
 def _receipts(root):
-    """`runtime/quality/feedback/**` 下带 issues 的回执，按 mtime 升序。"""
+    """`runtime/quality/feedback/**` 下带 issues 的回执，按 mtime 升序。
+
+    **只认 `gate_decision.json`**（回执的唯一写者见 `server._save_feedback`）。
+    原先是 `*/*/*.json` 无差别收 —— 与 docstring 说的"带 issues 的回执"不符，
+    而且只要那个目录里多出任何一个 `.json`（例如 2026-10-15 加的路由档），
+    下面 `receipts[-1]` 就会把它当成"最近一次回执"，台账声明的 receipt 恒判"指错了"、
+    ②建模设计收尾当场硬挂。多写一个文件不该能废掉整条链，所以这里收紧到按名字认。
+    (那条路由档后来也挪出了 `feedback/` —— 两处都改，是因为这一条是**别人的**坑。)
+    """
     base = root / "runtime/quality/feedback"
     if not base.is_dir():
         return []
     found = []
-    for p in sorted(base.glob("*/*/*.json")):
+    for p in sorted(base.glob("*/*/gate_decision.json")):
         try:
             obj = json.loads(p.read_text(encoding="utf-8-sig"))
             found.append((p.stat().st_mtime, p))

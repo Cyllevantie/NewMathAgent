@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "profile": "template_default_cumcm",
+  "template": "zh/cumcm-latex",
+  "structure": {
+    "order": [
+      "title",
+      "abstract",
+      "restatement",
+      "analysis",
+      "assumptions",
+      "symbols",
+      "model",
+      "check",
+      "evaluation",
+      "ai_statement",
+      "references",
+      "materials_list"
+    ],
+    "disabled": [],
+    "supplement": ["appendix_pdf"],
+    "problem_count_source": "auto"
+  }
+}

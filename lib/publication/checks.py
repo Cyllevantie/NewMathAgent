@@ -161,8 +161,6 @@ def formula_hints(root):
                 checks.append("同一行存在多组对齐关系；独立约束各占一行，保留原索引和不等号")
             if text.count(r"\qquad") >= 2 and re.search(r"(?:=|\\le|\\ge)", text):
                 checks.append("多条关系横向拼接；检查是否应拆为约束组")
-            if "本文研究的问题涉及多维度数据分析与优化决策" in text:
-                checks.append("问题重述仍有通用模板例文；按实际题面的任务与输出重写")
             if len(text) > 180 and ("=" in text or "\\frac" in text):
                 checks.append("检查长公式是否混合定义、推导和数值代入；必要时分组")
             for message in checks:
@@ -288,15 +286,17 @@ def style_hints(root):
             hints.append({"file": str(p.relative_to(Path(root))).replace("\\", "/"), "line": 0,
                           "message": "本小问**一处结果数字都没加粗** ⇒ 结论数字（带单位/百分号的那个值）"
                                      "要 `\\textbf{}` 让评委一眼看到（用户 2026-09-27 口径）"})
-    main_tex = Path(root) / "paper" / "main.tex"
-    if problem_files and main_tex.is_file():
-        text = main_tex.read_text(encoding="utf-8-sig")
+    abstract_tex = Path(root) / "paper" / "blocks" / "abstract.tex"
+    if not abstract_tex.is_file():
+        abstract_tex = Path(root) / "paper" / "main.tex"
+    if problem_files and abstract_tex.is_file():
+        text = abstract_tex.read_text(encoding="utf-8-sig")
         m = re.search(r"\\abstractcn\{(.{100,})", text, re.S)
         if m:
             abs_bold = [x.group(1) for x in BOLD_RE.finditer(m.group(1))]
             n_num = sum(1 for b in abs_bold if re.search(r"\d", b))
             if n_num < len(problem_files):
-                hints.append({"file": "paper/main.tex", "line": 0,
+                hints.append({"file": abstract_tex.relative_to(Path(root)).as_posix(), "line": 0,
                               "message": f"摘要里含数字的加粗只有 {n_num} 处，少于小问数 "
                                          f"{len(problem_files)} ⇒ 每个小问的结论数字在摘要里各要加粗一次"
                                          f"（用户 2026-09-27 口径）"})
@@ -465,6 +465,48 @@ def kind_fills(pdf, mapping, policy):
     return out
 
 
+def _load_structure(root):
+    """Load paper/structure.json if present; malformed files are ignored here.
+
+    Structure validity is reported by `lib.paper_structure.check`; publication only
+    needs the fields for page markers / abstract location. Legacy workspaces have
+    no structure.json and keep the old policy.
+    """
+    p = Path(root) / "paper/structure.json"
+    if not p.is_file():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def effective_policy(root, policy):
+    """Apply role-plan overrides to the publication policy (P1: markers/kinds)."""
+    structure = _load_structure(root)
+    if not structure:
+        return policy
+    out = dict(policy)
+    kinds = structure.get("page_kinds")
+    if isinstance(kinds, dict):
+        out["require_appendix"] = "appendix" in kinds
+        groups = []
+        for group in policy.get("max_group_pages") or []:
+            kept = [k for k in group.get("kinds", []) if k in kinds]
+            if kept:
+                groups.append({**group, "kinds": kept})
+        out["max_group_pages"] = groups
+        for key in ("max_kind_pages", "min_kind_fill", "min_kind_chars"):
+            value = policy.get(key)
+            if isinstance(value, dict):
+                out[key] = {k: v for k, v in value.items() if k in kinds}
+    markers = structure.get("page_markers")
+    if isinstance(markers, dict):
+        out["kind_start_markers"] = {k: list(v) for k, v in markers.items()}
+    return out
+
+
 def inspect(root):
     root = Path(root).resolve()
     result = {"schema_version": 1, "status": "UNVERIFIED", "issues": [], "warnings": [],
@@ -475,10 +517,15 @@ def inspect(root):
         mapping_path = path_in(root, "paper/page-map.json")
         pdf_path = path_in(root, "paper/main.pdf")
         policy = json.loads(policy_path.read_text(encoding="utf-8-sig"))
+        policy = effective_policy(root, policy)
         mapping = json.loads(mapping_path.read_text(encoding="utf-8-sig"))
         pdf_hash = sha(pdf_path)
         if mapping.get("pdf_sha256") != pdf_hash:
             raise ValueError("页面映射未绑定当前PDF；编译后需重新核对物理页范围")
+        structure = _load_structure(root)
+        if structure and structure.get("structure_sha256") and mapping.get("structure_sha256") \
+                and mapping["structure_sha256"] != structure["structure_sha256"]:
+            raise ValueError("页面映射未绑定当前结构；改结构/顺序后需重新 map")
         with fitz.open(pdf_path) as pdf:
             count = classify(len(pdf), mapping, policy)
             result.update(count)
@@ -493,7 +540,7 @@ def inspect(root):
             # （另一半原因在 ⑨ 的 SKILL/norms：那句「850–950 字内安全」读起来是个**上限**）。
             # 现在直接量**版心填充率**（即"尽量写满那一页"），分两档：
             #   < hard     ⇒ 进 `issues`，`lib/web/server.py::_mechanical_floor` 会判死；它据
-            #                `prose_issues` 把回退目标由 ⑩排版改指 ⑨论文撰写（摘要文字只有 ⑨ 能改）
+            #                `prose_issues` 把回退目标由 ⑭排版改指 ⑨论文撰写（摘要文字只有 ⑨ 能改）
             #   [hard, target) ⇒ 只出 warning（差一点就别把小时级的链拖回去）
             _fills = kind_fills(pdf, mapping, policy)
             result["kind_fills"] = _fills          # 量出来的数就摆在这儿，省得人再去数
@@ -565,14 +612,14 @@ def inspect(root):
         result["formula_hints"] = formula_hints(root)
         result["style_hints"] = style_hints(root)
         if result["style_hints"]:
-            # 只提示、不进 issues：指引句与加粗都是**论文措辞**层面的活，回退目标写死成 ⑩ 会打转
+            # 只提示、不进 issues：指引句与加粗都是**论文措辞**层面的活，回退目标写死成 ⑭ 会打转
             # （与上面 `min_kind_chars` 同一条理由）。修法：⑫评分标判词 → ⑬就地改，或 ⑨ 下一轮。
             result["warnings"].append(
                 f"文字层提示 {len(result['style_hints'])} 条（纯指引句 / 结果型加粗）；"
                 "见 style_hints，逐条按 docs/WRITING_QUALITY.md 处理")
         # 公式复核也是**文字/阅读**层面的活：逐条读公式、翻到物理页核对、再签这份记录。
-        # 只有 ⑨ 做得了（⑩ 既不能读公式语义、也无权重签），故一并打 `prose_issues` 标记 ——
-        # 否则它被判给 ⑩排版 ⇒ ⑩ 下一轮照样报同一条 ⇒ `_mechanical_floor` 死循环。
+        # 只有 ⑨ 做得了（⑭ 既不能读公式语义、也无权重签），故一并打 `prose_issues` 标记 ——
+        # 否则它被判给 ⑭排版 ⇒ ⑭ 下一轮照样报同一条 ⇒ `_mechanical_floor` 死循环。
         _formula = formula_review_issues(root, result["formula_hints"], pdf_hash)
         result["issues"].extend(_formula)
         result["prose_issues"].extend(_formula)
@@ -589,7 +636,7 @@ def audit(root, detail=False):
     """默认返回**问题清单**（谁拦门禁就看它）；`detail=True` 返回完整报告。
 
     需要 detail 的是 `lib/web/server.py::_mechanical_floor` —— 它得看 `prose_issues` 才知道这批问题
-    该判给 ⑨（能改文字）还是 ⑩（只能改版式）。其余调用点（人工认证的 `_manual_checks`、
+    该判给 ⑨（能改文字）还是 ⑭（只能改版式）。其余调用点（人工认证的 `_manual_checks`、
     各阶段自查）继续拿字符串清单，行为不变。
     """
     result = inspect(root)
@@ -611,4 +658,7 @@ def bind_map(root, spec):
         if boundary:
             raise ValueError("；".join(boundary))
     data["pdf_sha256"] = sha(pdf)
+    structure = _load_structure(root)
+    if structure and structure.get("structure_sha256"):
+        data["structure_sha256"] = structure["structure_sha256"]
     write_json(root / "paper/page-map.json", data)

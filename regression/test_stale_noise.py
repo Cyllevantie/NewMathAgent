@@ -607,6 +607,26 @@ class ContentLayoutDecouplingTests(unittest.TestCase):
         (self.root / "paper/_base/preamble.tex").write_text("改了版式 2", encoding="utf-8")
         self.assertNotEqual(self._art("verify"), before, "验收必须看到版式变了")
 
+    def test_main_tex_is_layout_owned(self):
+        """P1：main.tex 是 ⑭ 的稳定外壳，内容判官不该因它改版式而重判。"""
+        for n, sid in enumerate(("mathproof", "cross", "rubric", "fix")):
+            before = self._art(sid)
+            (self.root / "paper/main.tex").write_text(f"shell {n}", encoding="utf-8")
+            self.assertEqual(self._art(sid), before,
+                             f"{sid} 不该因为 ⑭ 改 main.tex 外壳/导言区而失效")
+
+    def test_blocks_and_structure_are_content_side(self):
+        """P1：blocks / paper-structure.tex / structure.json 都是内容侧，改了必须失效。"""
+        for n, rel in enumerate(("paper/blocks/abstract.tex",
+                                 "paper/paper-structure.tex",
+                                 "paper/structure.json")):
+            p = self.root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            before = self._art("rubric")
+            p.write_text(f"content {n}", encoding="utf-8")
+            self.assertNotEqual(self._art("rubric"), before,
+                                f"rubric 必须看到 {rel} 被改")
+
     def test_verification_ignores_the_registration_sidecars(self):
         """登记件不许进指纹：`paper/page-map.json` / `formula-review.json` 是
         **构建派生的登记件**（⑭/⑮ 重编译后按物理页**重绑**映射、**重测**公式页）。

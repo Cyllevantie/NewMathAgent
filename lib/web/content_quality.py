@@ -24,7 +24,7 @@ TARGETS = {
     # report_wording 是给 `advisories` 用的**报告层措辞**通道：登记/自述/引用/命名/计数这类
     # 「只需改报告里的几句话」的建议，归**写那份报告的阶段**（analysis）。
     # 为什么单开一个：`claim`→write、`presentation`→format、`diagram`→drawio，
-    # 三条都**回不到 analysis**，于是"建模报告某句措辞不成立"这类建议只能去 ⑧ 论文撰写绕一圈
+    # 三条都**回不到 analysis**，于是"建模报告某句措辞不成立"这类建议只能去 ⑨ 论文撰写绕一圈
     # —— 而 write 不改编报告，那句错话就一直在报告里，下一轮门禁重新记一遍（一轮建议里
     # 常有几条自述是在追前几轮的建议）。
     # 它**只对 advisories 有意义**：作为 `issues` 的 category 时，`_effective_category` 照样按
@@ -183,7 +183,7 @@ def task_contract_issues(root):
         spec = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, ValueError) as exc:
         return [f"题意契约缺失或不可读: reports/TASK_CONTRACT.json（{exc}）。"
-                "content-quality 已启用，3analysis 必须先写该契约并随建模报告更新。"]
+                "content-quality 已启用，analysis（② 建模设计）必须先写该契约并随建模报告更新。"]
     if not isinstance(spec, dict) or spec.get("schema_version") != 1:
         return ["题意契约结构错误: schema_version 必须为 1"]
     if not isinstance(spec.get("requirements"), list) or not spec["requirements"]:

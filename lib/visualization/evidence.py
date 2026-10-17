@@ -52,7 +52,7 @@ def _mutate(root, change):
 
     与 `workflow_quality.StageReceipts._mutate` 同构。不这样做就会丢更新：若各自
     「进来读一份快照 → 改 → 整份写回」，平时写者只有一个（画图脚本逐张 register），
-    但**重画那一轮恰恰不是** —— `make_figures.run()` 会连着 register 8 张，而 ⑨ 排版
+    但**重画那一轮恰恰不是** —— `make_figures.run()` 会连着 register 8 张，而 ⑭ 排版
     阶段的「重画图的口子」也可能在同一工作区里跑；两个快照交叠时，后写的那个会把它读快照
     之后才 register 的那几条**整段抹掉**。症状是 `audit` 报「未登记图表」（文件在盘上、
     registry 里没有），看起来像**图丢了**，其实是**登记**丢了 —— 与"回退清空 figures/"

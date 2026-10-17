@@ -207,7 +207,7 @@ class SkeletonTests(unittest.TestCase):
                                      "\\subsubsection{结果分析}\n")
         self.assertEqual(self.check(), [])
 
-    # ---- 模型假设：条数 3–6、每条不长 ----
+    # ---- 模型假设：条数 3–5（最多 5 条）、每条不长 ----
 
     def test_an_overlong_assumption_is_reported(self):
         """一条 322 字的假设必须报出来。参考件 `框架模板.pdf` 是 40–70 字。"""
@@ -641,10 +641,10 @@ class SkeletonTests(unittest.TestCase):
                                      "\\subsection{本文主要创新点}\n")
         self.assertEqual(self.check(), [])
 
-    # ---- 问题分析：**全节 ≤ 一页**、**每个问题的分析 ≤ 3 行** ----
+    # ---- 问题分析：**全节 ≤ 一页半**、**每个问题的分析 ≤ 3 行** ----
     #
     # 三个上限都按参考件 `基于变物性耦合传热传质与动域模型的.pdf` 量出来：它的 2.1~2.4
-    # 各占 3 行、创新点每条 3 行、全节 1.23 页。本模板排版下 1 行 ≈ 33 字、1 页 ≈ 989 字。
+    # 各占 3 行、创新点每条 3 行、全节 1.23 页。本模板排版下 1 行 ≈ 38 字、1 页 ≈ 989 字。
     # 这条约束若只写在模板注释与 SKILL.md 里、没有任何抓手，交付稿就可以把四问分析
     # 各写成 400+ 字、全节 2205 字 = 2.23 页，而所有机械检查都是绿的。
 
@@ -670,7 +670,7 @@ class SkeletonTests(unittest.TestCase):
         self.assertEqual([p for p in self.check() if "2_analysis.tex" in p], [])
 
     def test_an_overlong_per_question_analysis_is_reported(self):
-        """每一问的分析最多 3 行（≈99 字）—— 写到 150 字就该报，并点名是哪一问。"""
+        """每一问的分析最多 3 行（≈114 字）—— 写到 150 字就该报，并点名是哪一问。"""
         self._analysis_filled(per_q=150, head=60, innovation=90)
         probs = [p for p in self.check() if "2_analysis.tex" in p]
         self.assertTrue(any(f"超 {cs.ANALYSIS_MAX_LINES} 行上限" in p for p in probs), probs)

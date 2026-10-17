@@ -1,6 +1,6 @@
 # 正文篇幅与公式排版协议
 
-适用阶段：3analysis 初步组织论证；7Route-diagram 选择解释性几何图；9Paper-writing 分配篇幅；**14Layout-and-format 独占排版/版式/篇幅预算/编译**；15Verification 只读验收。此协议改善表达，不改变模型、数据或数学结论。
+适用阶段：analysis（② 建模设计）初步组织论证；drawio（⑦）选择解释性几何图；write（⑨ 论文撰写）分配篇幅；**format（⑭）独占排版/版式/篇幅预算/编译**；verify（⑮）只读验收。此协议改善表达，不改变模型、数据或数学结论。
 
 > 写作与终验时另读 `docs/WRITING_QUALITY.md` 的两节：
 > **「图表引用：不许整句只指路」**（`…路线如图 1 所示。` 这种整句指路必须改写）
@@ -15,16 +15,16 @@
   摘要本身不超过 1 页。⇒ 一份「摘要 1 + 正文 30」的稿子是 31 页、超 1 页 ——
   正文要压到 29 才合规。**别只数「一～七」的页数就以为达标。**
 - **摘要必须写满它那一页**：
-  - **判据 = 版心填充率 ≥ 0.90**，`hard = 0.80`。机读键 `config/publication.json` 的
-    `min_kind_fill.abstract`；量法在 `lib/publication/checks.py::kind_fills` —— 量出本文自己的
+  - **判据 = 版心填充率**；当前 `target 0.90 / hard 0.80`，机读键 `config/publication.json` 的
+    `min_kind_fill.abstract`（**以配置为准，本节数字只是现状**）；量法在 `lib/publication/checks.py::kind_fills` —— 量出本文自己的
     版心（所有页非页脚块的最小 top ~ 最大 bottom），再看摘要页最低那个块到哪儿。
     **不靠字数估算**（同样字数，两行标题就少一行正文）。
     - `config/publication.json` 的 `min_kind_chars.abstract` 降级为兜底，只在量不出填充率时用。
-  - 两档：填充 < 0.80 ⇒ 进 `issues`，`_mechanical_floor` 判死并回退到 ⑨ 论文撰写
-    （据 `prose_issues` 标记改指 —— 摘要是文字，⑩ 无权改）；`[0.80, 0.90)` ⇒ 只出提示。
+  - 两档：填充 < `hard` ⇒ 进 `issues`，`_mechanical_floor` 判死并回退到 ⑨ 论文撰写
+    （据 `prose_issues` 标记改指 —— 摘要是文字，⑭ 无权改）；`[hard, target)` ⇒ 只出提示。
   - 同一条 `prose_issues` 标记还罩着「公式复核记录未绑定当前PDF」：那同样是阅读任务
-    （逐条读公式、翻到物理页核对、再重签记录），只有 ⑨ 做得了；不标的话它会被判给 ⑩排版，
-    而 ⑩ 既不能读公式语义也无权重签 ⇒ 下一轮报同一条 ⇒ 死循环。
+    （逐条读公式、翻到物理页核对、再重签记录），只有 ⑨ 做得了；不标的话它会被判给 ⑭排版，
+    而 ⑭ 既不能读公式语义也无权重签 ⇒ 下一轮报同一条 ⇒ 死循环。
     判据：`lib/publication/checks.py` 里 `formula_review_issues()` 的返回值也并进 `prose_issues`。
   - 对照尺（参考稿 `基于变物性耦合传热传质与动域模型的.pdf`）：
     其一页摘要 **92.7%**（1106 个非空白字符，字数口径约 1034 字）⇒ 差的是内容量，不是排版。
@@ -94,6 +94,8 @@ python -m lib.publication report
 
 map 把分类绑定到当前 paper/main.pdf 的 SHA256，并保存 paper/page-map.json。每次重新编译后核对并重新绑定，旧映射失效。report 写 reports/PUBLICATION_CHECK.json；缺 PDF、缺映射、版本不符、分类遗漏、超页都不能通过。
 
+P1 起 `paper/structure.json` 的 `page_markers` 是页面起始标记的单一来源（`lib.publication.checks.effective_policy` 用它覆盖 `config/publication.json` 的 `kind_start_markers`）；`bind_map` 还会把 `structure_sha256` 写进 page-map，结构与映射不一致时 `check` 报「未绑定当前结构」。摘要正文住在 `paper/blocks/abstract.tex`，不在 `main.tex`。
+
 终验只读运行 `python -m lib.publication check`。该命令独立读取当前 PDF，不信任旧报告中的页数；15Verification 仍须核对每个区段的标题和正文/附录真实边界。映射是写作者声明，哈希只能绑定版本，不能证明分类诚实。公式排版启发式告警是复查线索，不是数学错误裁决。
 
 ## 数学公式的组织
@@ -107,7 +109,7 @@ map 把分类绑定到当前 paper/main.pdf 的 SHA256，并保存 paper/page-ma
 
 ### LaTeX
 
-将 lib/publication/templates/math-style.tex 复制到 paper/math-style.tex，并在导言区 `\input{math-style.tex}`。实际模板已自带此文件时沿用；自定义宏若重名先协调，不重复定义。参考 math-example.tex 的独立资源分配/向量恒等式示例。字体遵守比赛模板，保持公式文字大小，不用 resizebox/scalebox 缩公式。
+公式排版样式由模板的 `skills/9Paper-writing/templates/_base/math-style.tex` 提供（`_base/preamble.tex` 已 `\input` 它）；**不要在 `paper/` 根下再复制一份** —— 那份不会被编译，只会成为残留副本。`lib/publication/templates/math-style.tex` 与 `math-example.tex` 仅作独立示例参考。要自定义数学字体/环境，改模板源 `_base/math-style.tex`，不要手改运行副本。字体遵守比赛模板，保持公式文字大小，不用 resizebox/scalebox 缩公式。
 
 ## 验收责任
 
@@ -117,4 +119,4 @@ map 把分类绑定到当前 paper/main.pdf 的 SHA256，并保存 paper/page-ma
 `\setcounter{equation}{N}`，N = 正文公式总数，编译后量出）。**源码不排进论文** —— 以散装 `.py` 提交，
 在清单表里逐项登记；清单同时是打包依据（`delivery`），两边必须逐项一致。
 
-**14Layout-and-format** 完成编译、页数检查与逐页视觉验收（图表审阅、迁移记录、公式告警处理也归它，因为它独占排版层）。15Verification 只审查，逐页检查长公式、编号碰撞、图注和小字号，结合数学论证门禁检查内容。Web verify 再执行确定性页数检查，超限或无法核实时 返修 format（verify 的默认回退目标是 format）。自动检查不会替代科学判断和最终 PDF 目检。
+**14Layout-and-format** 完成编译、页数检查与逐页视觉验收（图表审阅、迁移记录、公式告警处理也归它，因为它独占排版层）。提交清单与正文末页清单表由 9Paper-writing 收尾产出，本阶段对其对账与版式层修补。15Verification 只审查，逐页检查长公式、编号碰撞、图注和小字号，结合数学论证门禁检查内容。Web verify 再执行确定性页数检查，超限或无法核实时 返修 format（verify 的默认回退目标是 format）。自动检查不会替代科学判断和最终 PDF 目检。

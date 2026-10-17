@@ -42,6 +42,47 @@ def load_server(root):
     return module
 
 
+class DemoOwnershipFingerprintTest(unittest.TestCase):
+    """⑯ 的合法附录改动不许让 ⑨/⑭/⑮ 的回执失配（2026-10-17 审计的高危环）。
+
+    判据 A：改 `paper_appendix` 里 demo 的领地（A_appendix.tex / figures / main.pdf）
+    ⇒ write/format 的 outputs 与 verify 的输入指纹**都不变**；
+    对照组 B：改正文 `paper/sections/*.tex` 或附录 `main.tex` ⇒ 指纹必须变。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for rel in ("paper/main.tex", "paper/main.pdf", "paper/sections/a.tex",
+                    "paper_appendix/main.tex", "paper_appendix/main.pdf",
+                    "paper_appendix/sections/A_appendix.tex",
+                    "paper_appendix/figures/x.pdf"):
+            p = self.root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"x" * 8)
+        self.s = load_server(self.root)
+
+    def _stage(self, sid):
+        return next(st for st in self.s.STAGES if st["id"] == sid)
+
+    def test_demo_only_edits_do_not_invalidate_earlier_receipts(self):
+        w, f, v = self._stage("write"), self._stage("format"), self._stage("verify")
+        before = (self.s._output_digest(w), self.s._output_digest(f), self.s._input_digest(v))
+        for rel, body in (("paper_appendix/sections/A_appendix.tex", b"demo block"),
+                          ("paper_appendix/figures/demo_shot.pdf", b"new"),
+                          ("paper_appendix/main.pdf", b"recompiled")):
+            (self.root / rel).write_bytes(body)
+        after = (self.s._output_digest(w), self.s._output_digest(f), self.s._input_digest(v))
+        self.assertEqual(before, after,
+                         "⑯ 的合法附录改动让 ⑨/⑭/⑮ 失配 ⇒ 每次重启重跑（审计实测的永续环）")
+        # 对照组：正文与附录 `main.tex` 的变化必须照旧被看到
+        (self.root / "paper/sections/a.tex").write_bytes(b"changed")
+        self.assertNotEqual(self.s._input_digest(v), after[2])
+        (self.root / "paper_appendix/main.tex").write_bytes(b"changed")
+        self.assertNotEqual(self.s._output_digest(w), after[0])
+
+
 class WorkflowTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -450,8 +491,8 @@ class WorkflowTests(unittest.TestCase):
 
     def test_the_stage_hook_asks_for_a_partial_package(self):
         """阶段性同步**必须** `final=False`：缺省是严格分支，
-        而 ⑭ 写的清单声明了要等 ⑯ 才产出的 `demo.html` ⇒ `package()` 抛「找不到」
-        ⇒ 从 ⑭ 起**每一次同步都失败**，"每阶段把已做好的移入"等于没生效。
+        而清单（⑨ 收尾首产）声明了要等 ⑯ 才产出的 `demo.html` ⇒ `package()` 抛「找不到」
+        ⇒ 每一次同步都失败，"每阶段把已做好的移入"等于没生效。
         """
         src = (PROJECT / "lib/web/server.py").read_text(encoding="utf-8")
         i = src.index("def _maybe_collect_outputs")
@@ -545,7 +586,7 @@ class WorkflowTests(unittest.TestCase):
         asyncio.run(self.s.run_all())
         self.assertEqual(calls.count("verify"), 1)
         self.assertNotIn("demo", calls)
-        # 同上：中途的阶段性打包是**预期行为**（⑨/⑭ 各一次），这条守的是“链没收口”。
+        # 同上：中途的阶段性打包是**预期行为**（⑨ 起每完成一个阶段同步一次），这条守的是“链没收口”。
         self.assertFalse(self.s.state["run_completed"])
         self.assertTrue(self.s.state["halt_gate"])
         self.assertEqual(self.s.state["stages"]["verify"], "awaiting_user")
@@ -758,7 +799,9 @@ class WorkflowTests(unittest.TestCase):
             if sid == "fix":
                 fixed["done"] = True
                 # 只能改 `.tex`：`paper/` 下的 pdf 属于构建产物，刻意不进指纹。
-                path = self.root / "paper/main.tex"
+                # P1 起 `paper/main.tex` 是 ⑭ 的稳定外壳（版式侧，内容判官不看）；
+                # 用 `paper/blocks/abstract.tex` 模拟 ⑬ 改正文，才会让 ⑫ 的复评对象失效。
+                path = self.root / "paper/blocks/abstract.tex"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 prior = path.read_text(encoding="utf-8") if path.exists() else ""
                 path.write_text(prior + "\n% 13Repair-by-rubric-verdict\n", encoding="utf-8")
@@ -1456,13 +1499,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(archived, {"这一轮的", "上一轮的残留"},
                          "残留该和本轮内容一起进归档")
 
-    def test_switching_problem_uses_the_old_id_and_files_the_originals(self):
+    def test_switching_problem_uses_time_only_and_files_the_originals(self):
         """换题归档的两条口径：
 
-        ① 归档名用**上一轮记下的**题目标识 —— `/api/start` 是**先落盘新 problem_id
-           再起链**的，用当前配置会把旧题的产物装进新题的名字里；
+        ① 自动换题**只按时间**命名（不询问名称，也不带题目标识）；
         ② 工作区原件落进 `cache/<同一个名字>/工作区原件/`，与两个「最新」的归档同名 ——
-           从 cache 里一眼能看出「这份原件属于哪一题的哪一轮」。
+           从 cache 里一眼能看出「这份原件属于哪一轮」。
         """
         (self.root / "request").mkdir(parents=True, exist_ok=True)
         (self.root / "config").mkdir(parents=True, exist_ok=True)
@@ -1483,8 +1525,10 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("最新作品", archived, "指针要建回来")
         stamp = [x for x in archived if x != "最新作品"]
         self.assertEqual(len(stamp), 1, f"该恰好有一份归档，实际 {archived}")
-        self.assertTrue(stamp[0].startswith("2026A_"),
-                        f"归档名用了新题的标识：{stamp[0]}")
+        self.assertRegex(stamp[0], r"^\d{4}\.\d{1,2}\.\d{1,2}_\d{2}\.\d{2}\.\d{2}$",
+                         f"自动换题归档名应只用时间：{stamp[0]}")
+        self.assertFalse(stamp[0].startswith(("2026A_", "2026B_")),
+                         f"自动换题不应带题目标识：{stamp[0]}")
         # 工作区原件落进同名的 cache 子目录
         self.assertTrue(
             (self.root / "产物/cache" / stamp[0] / "工作区原件/reports/RESULTS_REPORT.md").is_file(),
@@ -1751,8 +1795,8 @@ class WorkflowTests(unittest.TestCase):
         """整体替换 + 只收"盘上现在有的" ⇒ 一次回退之后的同步会把**已经交付的**件
         从 `最新作品/` 里删掉。
 
-        路径：包里有完整的 `demo.html` 与运行说明.md → 回退到 ≤⑬ ⇒ `_redo_from`
-        按 `ARTIFACTS[format]`/`[demo]` 把 `demo/`、`运行说明.md` 搬进 cache ⇒ 工作区一时
+        路径：包里有完整的 `demo.html` 与运行说明.md → 回退把 `demo/`（第一声明者 ⑯）与
+        `运行说明.md`（第一声明者 ⑨，2026-10-17 从 ⑭ 前移）搬进 cache ⇒ 工作区一时
         没有它们 ⇒ 若照旧整体替换，交付目录里那两件**直接消失**（链若停在 ⑯ 之前就一直缺着，
         与论文末页的清单表对不上）。
         判据：允许缺项时，被跳过的项要**从旧包搬过来**（保留上一版），而不是被抹掉。
@@ -1782,7 +1826,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_the_carry_also_works_when_the_manifest_itself_was_moved_away(self):
         """回退会把 `reports/SUBMISSION_MANIFEST.json` 与 `运行说明.md` **一起**搬进 cache
-        （`ARTIFACTS["format"]` 的第一声明者就是 format）⇒ 中途收走的是"临时清单 =
+        （`ARTIFACTS["write"]` —— ⑨ 是第一声明者，2026-10-17 从 ⑭ 前移）⇒ 中途收走的是"临时清单 =
         盘上现在有的东西"，而 `demo.html` / 运行说明.md **连名字都没进清单** ⇒
         整体替换直接把它们从 `最新作品/` 抹掉。
         这条与"清单在、只是源缺失"那一条走的是**两扇不同的门**，所以要各钉一条。
@@ -1839,6 +1883,25 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn(b"NEW", (arch / "正文/main.pdf").read_bytes(),
                       "重建过的子树要以这一版为准（合并 ≠ 一律留着旧版）")
 
+    def test_manifest_and_manual_roll_back_with_nine_not_fourteen(self):
+        """2026-10-17 解耦：提交清单与运行说明.md 的**第一声明者是 ⑨**（不是 ⑭）。
+
+        判据（`own_only` = 回退暂存用的过滤器）：⑨ 的暂存清单含它们（回退到 ⑨ 会连它们
+        一起收走、由重跑再生）；⑭ 的暂存清单**不含**（它是「读着清单再修补」的阶段，
+        重跑不该把清单搬走）。⑭ 自己在 `ARTIFACTS` 里仍声明这两条（镜像/对账要看得见）。
+        """
+        from lib.web import server as srv
+
+        w = srv._stage_rels("write", own_only=True)
+        f = srv._stage_rels("format", own_only=True)
+        self.assertIn("reports/SUBMISSION_MANIFEST.json", w)
+        self.assertIn("运行说明.md", w)
+        self.assertNotIn("reports/SUBMISSION_MANIFEST.json", f)
+        self.assertNotIn("运行说明.md", f)
+        self.assertIn("reports/FORMAT_REPORT.md", f, "⑭ 自己的报告仍是它首产")
+        self.assertIn("reports/SUBMISSION_MANIFEST.json", srv.ARTIFACTS["format"],
+                      "⑭ 仍声明这两条（对账/修补）；own_only 才是分界")
+
     def test_a_package_half_swapped_by_a_crash_is_recovered(self):
         """换包是**两次独立 rename**，崩在中间会让 `最新作品`
         整个不见、完好的旧包躺在隐藏的 `.最新作品.old-*` 里 —— 而收编它的代码只在换题时跑，
@@ -1862,9 +1925,10 @@ class WorkflowTests(unittest.TestCase):
     def test_provisional_items_uses_the_same_names_as_the_manifest(self):
         """⑨ 结束时就先把已经做好的移入 `提交作品/最新作品`。
 
-        动机：提交清单由 **⑭** 写，而 ⑭ 排在 ⑨ 之后 ⇒ 链一旦在 ⑨~⑬ 停下（黄灯），
-        那个文件夹会一片空白 —— 尽管正文 PDF / 附录 / `result*.xlsx` 早就做好了。
-        判据：临时清单的**名字**必须与 ⑭ 那份同源（正文用 `body_pdf_name()`、其余用
+        动机：清单缺失时（旧工作区 / ⑨ 尚未收尾 / 刚被回退暂存走）要有不报错的兜底 ——
+        否则链一旦在清单出现之前停下（黄灯），那个文件夹会一片空白 ——
+        尽管正文 PDF / 附录 / `result*.xlsx` 早就做好了。
+        判据：临时清单的**名字**必须与清单那套同源（正文用 `body_pdf_name()`、其余用
         `FIXED_SOURCES` 的键），否则会出现「先叫 result1.xlsx、后改叫 结果1.xlsx」这种漂移。
         """
         from lib.delivery.core import FIXED_SOURCES, body_pdf_name, provisional_items
@@ -1890,11 +1954,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("运行说明.md", got)
 
     def test_collect_outputs_falls_back_to_the_provisional_list(self):
-        """⑭ 还没跑（没有提交清单）时也要能收一批 —— 而不是只报一句"打包失败"什么都不做。"""
+        """盘上没有提交清单时也要能**阶段性**收一批 —— 而不是只报一句"打包失败"什么都不做。"""
         (self.root / "paper").mkdir(parents=True, exist_ok=True)
         (self.root / "paper/main.tex").write_text(r"\papertitle{测试标题}", encoding="utf-8")
         (self.root / "paper/main.pdf").write_bytes(b"%PDF-1.4\n" + b"x" * 50)
-        self.assertTrue(self.s._real_collect_outputs(), "没有清单也该能先收一批")
+        self.assertTrue(self.s._real_collect_outputs(final=False), "没有清单也该能先收一批")
+        # 正式交付（final=True）不能吞 check 的硬问题：临时清单缺核心件 ⇒ 必须失败
+        # （2026-10-17 审计实测：这里曾把缺核心件的包报成「链完成并收集交付物」）。
+        self.assertFalse(self.s._real_collect_outputs(),
+                         "final=True + 无清单 + 缺核心件 ⇒ 不许报成功")
         out = self.s._submission_dir()
         names = sorted(p.name for p in out.iterdir()) if out.is_dir() else []
         self.assertIn("测试标题.pdf", names, f"临时包该有正文 PDF，实际 {names}")
@@ -2070,27 +2138,26 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse((self.root / "runtime/quality/feedback").exists(),
                          "换题后上一题的返修回执还在 ⇒ 新一轮 ② 会挂在「缺返修台账」上")
 
-    # ---- 归档命名口径：用「已经跑完的那道题」的标识 ----
+    # ---- 归档命名口径：自动只按时间；手动才用用户填的名称 ----
 
-    def test_archive_names_with_the_recorded_id_not_the_panel_one(self):
-        """手动归档必须用**记录值**，不是面板当前配置。
-
-        用当前配置就会贴错标签：面板把 2026A 改成 2026B 再点「📦 归档本题并换新」⇒
-        **2026A 的提交件被盖上 2026B 的名字**；反过来，换到 B 题后自动轮转若拿记录值，
-        又会把 **B 题的提交件**归成 2026A。同一件事两个入口两套口径 —— 而「题目标识
-        进归档目录名」正是要的东西。
-        """
+    def test_automatic_archive_uses_time_only_and_manual_name_is_optional(self):
+        """自动换题只按时间；手动归档才用用户填的名称（空则回落到时间）。"""
         (self.root / "config").mkdir(parents=True, exist_ok=True)
         (self.root / "request").mkdir(parents=True, exist_ok=True)
         (self.root / "request/problem.md").write_text("A 题", encoding="utf-8")
         self.s._save_delivery_config("", "2026A")
-        self.s._prepare_workspace()                  # 记下：这道题 = 2026A
-        self._seed_pointers()                        # A 题跑出了提交件
-        self.s._save_delivery_config("", "2026B")    # 面板改成 B 题
+        self.s._prepare_workspace()
+        self._seed_pointers()
 
         resp = asyncio.run(self.s.archive_delivery(self.s.ArchiveReq()))
-        self.assertTrue(resp["name"].startswith("2026A_"),
-                        f"用面板的新标识给旧题的成果命名了：{resp['name']}")
+        self.assertRegex(resp["name"], r"^\d{4}\.\d{1,2}\.\d{1,2}_\d{2}\.\d{2}\.\d{2}$",
+                         f"手动归档留空应只用时间：{resp['name']}")
+        self.assertFalse(resp["name"].startswith("2026A_"))
+
+        self._seed_pointers()
+        resp2 = asyncio.run(self.s.archive_delivery(self.s.ArchiveReq(name="实验一")))
+        self.assertTrue(resp2["name"].startswith("实验一_"),
+                        f"手动填写的名称没有进归档名：{resp2['name']}")
 
     def test_archive_on_empty_pointers_does_not_claim_success(self):
         """两个「最新」都空 ⇒ 只建骨架、**没有**归档目录，不许回一个假的 `archived_to`。
@@ -2152,12 +2219,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertIsNotNone(self.s.state["pending"],
                              "回退失败后决策面板消失了 —— 用户没有重试入口")
 
-    def test_the_first_rotation_after_upgrade_keeps_the_problem_id(self):
-        """旧版写的 `workspace.json` 没有 `problem_id` ⇒ 第一次轮转也不能丢题目标识。
-
-        否则归档目录名退化成只有时间戳，与旁边已有的 `2026A_…` 以及「提交件归档 /
-        阶段产物归档 / 工作区原件 三处同名」那条对账约定都不符。
-        """
+    def test_the_first_rotation_after_upgrade_uses_time_only(self):
+        """旧版 `workspace.json` 没有 `problem_id` 也不影响：自动轮转只按时间。"""
         (self.root / "config").mkdir(parents=True, exist_ok=True)
         (self.root / "request").mkdir(parents=True, exist_ok=True)
         (self.root / "request/problem.md").write_text("题面", encoding="utf-8")
@@ -2171,7 +2234,9 @@ class WorkflowTests(unittest.TestCase):
         stamp = [p.name for p in (self.root / "产物" / "提交作品").iterdir()
                  if p.is_dir() and p.name != "最新作品"]
         self.assertEqual(len(stamp), 1, stamp)
-        self.assertTrue(stamp[0].startswith("2026A_"), f"第一次轮转把题目标识丢了：{stamp[0]}")
+        self.assertRegex(stamp[0], r"^\d{4}\.\d{1,2}\.\d{1,2}_\d{2}\.\d{2}\.\d{2}$")
+        self.assertFalse(stamp[0].startswith("2026A_"),
+                         f"自动轮转不应带题目标识：{stamp[0]}")
 
     def test_cleanup_refuses_before_the_run_completes(self):
         """中途搬走 reports/ code/，回退与重跑就没东西可读了 —— 所以必须拦住。"""
@@ -2486,12 +2551,21 @@ class WorkflowTests(unittest.TestCase):
                         "import 触发了孤儿回收（登记表被消费）—— 调用它的 agent 会把自己杀掉")
 
     def test_stage_pid_registration_is_bounded_and_deduped(self):
-        """登记表只留最近 50 个、且不重复 —— 它不该随运行次数无限增长。"""
+        """登记表只留最近 50 个、且不重复 —— 它不该随运行次数无限增长。
+
+        条目现在是 `{"pid": …, "driver": …}`（2026-10-15 加的：收容前要能看出是**哪个驱动实例**
+        spawn 的，免得第二个实例把第一个正在用的阶段 agent 当孤儿杀掉）。判据本身没变，
+        所以这里用 `_stage_pid_entry` 取出 pid 再比 —— 直接 `set(data)` 会因为 dict 不可哈希而炸。
+        """
         for pid in list(range(60)) + [59]:
             self.s._register_stage_pid(pid)
         data = json.loads((self.root / "runtime/quality/stage_pids.json").read_text(encoding="utf-8"))
         self.assertLessEqual(len(data), 50)
-        self.assertEqual(len(data), len(set(data)), "不该有重复 pid")
+        pids = [(self.s._stage_pid_entry(e) or (None,))[0] for e in data]
+        self.assertEqual(len(pids), len(set(pids)), "不该有重复 pid")
+        # 每条都要记下 spawn 者：缺了它，收容那道"别的实例还在用"的闸就形同虚设
+        self.assertTrue(all((self.s._stage_pid_entry(e) or (None, None))[1] for e in data),
+                        "有条目没记 driver —— 收容时认不出它属于哪个实例")
 
     def test_rollback_hint_is_honest_when_the_gate_never_finished(self):
         """门禁**没跑完**时，回退目标拿到的提示不能说成「它判你不合格」。
@@ -2516,7 +2590,7 @@ class WorkflowTests(unittest.TestCase):
     def test_verify_gate_catches_missing_submission_manifest_early(self):
         """提交清单缺失必须在 verify 就拦下，而不是等到收口打包 —— 中间隔着 demo 与一轮复验。
 
-        包装发生在整链最后，那时才发现"清单没写"，已经白跑好几个小时。
+        严格对账发生在整链最后，那时才发现"清单没写"，已经白跑好几个小时。
         """
         # 反向对照：没有 config/delivery.local.json 时这条审计**不跑**（与其它四个客观审计
         # 同一开关约定）—— 少了这个 gate 会把 22 个不碰交付层的全链用例一次打红。
@@ -2527,7 +2601,7 @@ class WorkflowTests(unittest.TestCase):
         (self.root / "config/delivery.local.json").write_text("{}", encoding="utf-8")
         d = self.s._gate_decision(self.stage("verify"))
         self.assertEqual(d["reason"], "delivery_manifest_incomplete")
-        self.assertEqual(d["target"], "format")            # 清单是 format 的产物
+        self.assertEqual(d["target"], "format")            # 首产归 ⑨，但清单缺失仍回 format（它保有保底重建/修补权）
         self.assertIn("SUBMISSION_MANIFEST", d["issues"][0]["evidence"])
 
     def test_gate_cannot_mutate_reviewed_input(self):
@@ -2667,12 +2741,19 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(self.s.state["halt_gate"])
 
     def _make_submission_workspace(self):
-        """造一份最小可打包的工作区（含 14Layout-and-format 该写的提交清单）。"""
+        """造一份最小可打包的工作区（含 9Paper-writing 收尾该写的提交清单）。"""
         # 构建产物仍叫 main.pdf（打包时才改名成 正文.pdf / 附录A.pdf）—— 见
         # delivery.core.FIXED_SOURCES 的注释。
+        # demo.html 要内联真引擎：收口打包会跑全量 check()，而三维主视图判据
+        # （checks.demo_3d_issues）比对引擎整段原文 —— 不然这份"正常形态"的夹具
+        # 会在演示"打包失败"用例时因为**另一条**判据而失败。
+        demo_html = ("<html><body><script>\n"
+                     + (PROJECT / "skills/16Web-demo/assets/scene3d.js").read_text(encoding="utf-8")
+                     + "\n</script></body></html>")
         for rel, body in [("paper/main.pdf", "pdf"), ("paper/main.tex", "tex"),
                           ("paper_appendix/main.pdf", "pdf"), ("paper_appendix/main.tex", "tex"),
-                          ("demo/demo.html", "<html></html>"), ("results/result1.xlsx", "x"),
+                          ("paper/ai_tools/AI工具使用详情.pdf", "pdf"),
+                          ("demo/demo.html", demo_html), ("results/result1.xlsx", "x"),
                           ("code/run_all.py", "# entry"), ("request/attachments/附件1.xlsx", "a"),
                           ("运行说明.md", "# 运行说明"), ("reports/RESULTS_REPORT.md", "# r")]:
             p = self.root / rel
@@ -2681,8 +2762,8 @@ class WorkflowTests(unittest.TestCase):
         (self.root / "reports/SUBMISSION_MANIFEST.json").write_text(json.dumps({
             "schema_version": 1, "stage": "format",
             "items": [{"path": n, "desc": "d"} for n in
-                      ["正文.pdf", "附录A.pdf", "demo.html", "运行说明.md", "result1.xlsx",
-                       "附件1.xlsx", "run_all.py"]]}, ensure_ascii=False), encoding="utf-8")
+                      ["正文.pdf", "附录A.pdf", "demo.html", "运行说明.md", "AI工具使用详情.pdf",
+                       "result1.xlsx", "附件1.xlsx", "run_all.py"]]}, ensure_ascii=False), encoding="utf-8")
 
     def test_real_packaging_builds_submission_shaped_delivery(self):
         """收口打包出来的是**提交形状**的提交件：那一层只有提交项 + 其余文件/。
@@ -2696,6 +2777,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(out, self.root / "产物" / "提交作品" / "最新作品")
         names = sorted(p.name for p in out.iterdir())
         self.assertEqual(names, sorted(["正文.pdf", "附录A.pdf", "demo.html", "运行说明.md",
+                                        "AI工具使用详情.pdf",
                                         "result1.xlsx", "附件1.xlsx", "run_all.py", "其余文件"]))
         self.assertTrue((out / "其余文件/正文/main.tex").is_file())
         self.assertTrue((out / "其余文件/内部报告/RESULTS_REPORT.md").is_file())
@@ -3118,7 +3200,7 @@ class WorkflowTests(unittest.TestCase):
                 self.s.HANDBACK.write_text("target: imaginary-stage")
         self.install_successful_runner(after=after)
         asyncio.run(self.s.run_all())
-        # 这条不该断言 `_collect_outputs` 一次都没调 —— ⑨/⑭ 跑完会**阶段性**收一批
+        # 这条不该断言 `_collect_outputs` 一次都没调 —— ⑨ 起每阶段跑完会**阶段性**收一批
         #   （"已做好的先移入"），而这条用例里它们都成功跑过。
         #   这条用例要守的是：**没跑完的链不会收口**。
         self.assertFalse(self.s.state["run_completed"])
@@ -3536,9 +3618,9 @@ class WorkflowTests(unittest.TestCase):
     def test_an_instruction_change_does_not_rewrite_the_paper(self):
         """改「做法要求」不许让 ⑨ 整篇重写。
 
-        ⑨ 的产物（`paper/` + `paper_appendix/`）会被**下游合法改写**（⑩ 排版、⑮ 按评分判词返修），
+        ⑨ 的产物（`paper/` + `paper_appendix/`）会被**下游合法改写**（⑭ 排版与版式、⑬ 按评分判词返修），
         所以它的 `outputs` 半份**必然**对自己的回执失配 —— 走不到 `stale` 那条近路。
-        只认 ⑩ `format` 一家接管的话，链在 ⑩ 的收尾复验之前断掉、或 ⑮ 改过 `paper/` 时，
+        只认 ⑭ `format` 一家接管的话，链在 ⑭ 的收尾复验之前断掉、或 ⑬ 改过 `paper/` 时，
         这条失效 ⇒ **⑨ 真的整篇重写**（小时级，而且推翻下游的版式/返修成果）。
         """
         calls = self.install_successful_runner()
@@ -3556,17 +3638,17 @@ class WorkflowTests(unittest.TestCase):
     def test_the_paper_is_not_rewritten_when_the_owner_is_only_instruction_stale(self):
         """改一条**共享的**做法要求之后，⑨ 不许整篇重写。
 
-        接管分支若用**整份** digest 判「拥有者（⑩/⑮）的回执有效」—— `CLAUDE.md`
+        接管分支若用**整份** digest 判「拥有者（⑭/⑬）的回执有效」—— `CLAUDE.md`
         一变，拥有者自己的回执**也失配** ⇒ 接管必然落空 ⇒ ⑨ 整篇重写（小时级，且推翻
         下游的版式/返修成果）。判据改成「它的**产物**还没被动过」（只比事实半份）才堵得住。
 
-        夹具注意：**必须让 ⑩ 真的写 `paper/`**。默认的 mock runner 只给 ⑨ 写 `paper/`，
+        夹具注意：**必须让 ⑭ 真的写 `paper/`**。默认的 mock runner 只给 ⑨ 写 `paper/`，
         于是 ⑨ 的 `outputs` 从不变 ⇒ 走的是 `stale` 近路、**根本到不了接管分支** ⇒
-        这条测试会恒真（两版都绿也说明不了问题）。真实现里 ⑩ 排版精修**就是**会改
+        这条测试会恒真（两版都绿也说明不了问题）。真实现里 ⑭ 排版精修**就是**会改
         `paper/` 的。
         """
         def after(sid):
-            if sid == "format":              # ⑩ 版式精修：真实现会改 paper/ 下的源文件
+            if sid == "format":              # ⑭ 版式精修：真实现会改 paper/ 下的源文件
                 (self.root / "paper/main.tex").write_text("% 版式精修\n", encoding="utf-8")
 
         calls = self.install_successful_runner(after=after)
@@ -3578,7 +3660,7 @@ class WorkflowTests(unittest.TestCase):
         calls.clear()
         asyncio.run(s.run_all())
         self.assertNotIn("write", calls,
-                         "⑩ 只是改了版式、而做法要求变了 ⇒ ⑨ 不该整篇重写把它推翻")
+                         "⑭ 只是改了版式、而做法要求变了 ⇒ ⑨ 不该整篇重写把它推翻")
         self.assertIn("write", s.state["stale_instr"], "该如实标出「按旧要求交付」")
 
     def test_stale_instr_cleared_once_stage_really_reruns(self):
@@ -5060,6 +5142,70 @@ class LocateTargetsTests(unittest.TestCase):
         self._report("内容\n")
         self.assertEqual(self.s._locate_targets("改 reports/NO_SUCH.md 里的「某个句子」"), [])
 
+
+
+class WriteStructureArtifactTests(unittest.TestCase):
+    """P1：角色化模板下，⑨ 的成功判据不再只是 main.pdf >80B。"""
+
+    def test_write_requires_structure_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tpl = root / "skills/9Paper-writing/templates/zh/cumcm-latex"
+            tpl.mkdir(parents=True)
+            (tpl / "roles.json").write_text('{"schema_version": 1}', encoding="utf-8")
+            (root / "paper").mkdir()
+            (root / "paper/main.pdf").write_bytes(b"%PDF-1.4\n" + b"x" * 200)
+            srv = load_server(root)
+            stage = next(s for s in srv.STAGES if s["id"] == "write")
+            self.assertFalse(srv._artifact_ok(stage),
+                             "有 roles.json 但没有 structure.json/paper-structure.tex ⇒ ⑨ 不能算完成")
+            (root / "paper/structure.json").write_text(
+                json.dumps({"schema_version": 1, "problem_count": 3, "enabled": ["title"]}),
+                encoding="utf-8")
+            (root / "paper/paper-structure.tex").write_text("\\input{blocks/title}\n", encoding="utf-8")
+            self.assertTrue(srv._artifact_ok(stage))
+
+
+class TemplateSelectionTests(unittest.TestCase):
+    """前端「选择比赛/输出模板」：列表、保存、effective_profile 生产者。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        tpl = self.root / "skills/9Paper-writing/templates/zh/cumcm-latex"
+        tpl.mkdir(parents=True)
+        (tpl / "roles.json").write_text(json.dumps({
+            "schema_version": 1, "template": "zh/cumcm-latex",
+            "label": "国赛模板", "roles": {"title": {"placement": "block", "block": "blocks/title.tex"}},
+        }, ensure_ascii=False), encoding="utf-8")
+        (tpl / "structure.default.json").write_text(json.dumps({
+            "schema_version": 1, "profile": "template_default_cumcm",
+            "template": "zh/cumcm-latex",
+            "structure": {"order": ["title"], "disabled": [], "supplement": []},
+        }), encoding="utf-8")
+        self.s = load_server(self.root)
+
+    def test_delivery_lists_templates_and_saves_selection(self):
+        d = asyncio.run(self.s.get_delivery())
+        self.assertIn("zh/cumcm-latex", [t["id"] for t in d["templates"]])
+        asyncio.run(self.s.set_delivery(self.s.DeliveryReq(template="zh/cumcm-latex")))
+        cfg = json.loads((self.root / "config/delivery.local.json").read_text(encoding="utf-8"))
+        self.assertEqual(cfg["template"], "zh/cumcm-latex")
+        profile = json.loads((self.root / "runtime/effective_profile.json").read_text(encoding="utf-8"))
+        self.assertEqual(profile["template"], "zh/cumcm-latex")
+        self.assertEqual(self.s._paper_template_id(), "zh/cumcm-latex")
+
+    def test_selection_writes_the_effective_profile(self):
+        self.s._write_effective_profile("zh/cumcm-latex")
+        profile = json.loads((self.root / "runtime/effective_profile.json").read_text(encoding="utf-8"))
+        self.assertEqual(profile["template"], "zh/cumcm-latex")
+        self.assertEqual(profile["profile"], "frontend_selection")
+        self.assertEqual(profile["structure"]["order"], ["title"])
+
+    def test_unknown_template_is_rejected(self):
+        with self.assertRaises(Exception):
+            asyncio.run(self.s.set_delivery(self.s.DeliveryReq(template="no/such")))
 
 
 if __name__ == "__main__":

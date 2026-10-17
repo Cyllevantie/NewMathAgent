@@ -21,7 +21,11 @@ const HTML = fs.readFileSync(
 // 先把 HTML 注释整段挖掉（换成等长空白，保住下标）再定位脚本标签：
 //   注释里出现该标签的字面量会把起点定到注释里，那样定位到的不是真正的脚本标签。
 const bare = HTML.replace(/<!--[\s\S]*?-->/g, m => ' '.repeat(m.length));
-const scriptAt = bare.indexOf('<script');
+// ★ 用**最后一个**脚本标签定位（2026-10-16 起页面有两段脚本：`<head>` 里一行
+//   主题预绘 + 末尾的主脚本；主脚本永远是最后一段）。原先写 indexOf（第一个）
+//   是当天之前只有一个脚本时的写法 —— 加了预绘脚本后它会把锚点定到 head 里，
+//   于是所有标记都被判成"在脚本之后"（这条哨兵自己先红，正是它的职责）。
+const scriptAt = bare.lastIndexOf('<script');
 if (scriptAt < 0) { console.log('✗ 找不到脚本标签'); process.exit(1); }
 const markup = bare.slice(0, scriptAt);
 const script = bare.slice(scriptAt);

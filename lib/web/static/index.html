@@ -3,6 +3,18 @@
 <head>
 <meta charset="utf-8"/>
 <title>NewMathAgent</title>
+<script>
+/* 主题**预绘**：必须比样式与正文先跑，否则刷新时会先闪一下默认皮肤再跳成用户选的。
+   默认「手绘」（用户 2026-10-16 指定）；localStorage 记不住时同样落回手绘。
+   不带 data-theme 属性时页面就是原来那套深色皮 —— 它原样保留，是第五个画风。
+   ★ 防御式写法：前端夹具会把脚本片段放进**桩 DOM** 里跑（有的桩没有
+     documentElement/dataset/localStorage）—— 这里一个都不许抛，否则整段挂掉。 */
+try {
+  if (document.documentElement && document.documentElement.dataset) {
+    document.documentElement.dataset.theme = localStorage.getItem('nma_theme_default') || 'sketch';
+  }
+} catch (e) { /* 桩环境/隐私模式：保持默认，交给主脚本里的 setTheme 兜底 */ }
+</script>
 <style>
   :root{--bg:#0f1419;--panel:#1a2027;--line:#2a323b;--fg:#d7e0e8;--dim:#8a96a3;--acc:#4da3ff;--ok:#2ecc71;--fail:#e74c3c;--run:#f1c40f;--wait:#ff9f1a;--manual:#b07cff;}
   /* 黄灯不能只靠颜色区分（--run 也是黄）—— 用脉冲光晕做第二通道，色盲/灰度下也能分。 */
@@ -28,11 +40,26 @@
      这里要的是确定性。
      ★ 2026-09-30 由 `space-between` 改成**三栏 grid**（用户要求 GitHub 标识在「第二行的正中间」）：
        `space-between` 只在左右两件**一样宽**时中间那件才真居中，而产物 chip 是变宽的
-       （`📁 产物 ·未生成 (归档 2026A_2026.9.30_14.15.24)` 能有 30+ 字符），一长就把标识推偏。
+       （`🏁 全国大学生数学建模竞赛（电子版）` 这类模板名能有 20+ 字符），一长就把标识推偏。
        `1fr auto 1fr` 让两侧等分、中间那栏恒在正中，与两侧内容多宽无关。 */
   .auxrow{flex-basis:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
           gap:14px;min-width:0}
   .auxrow > #delivchip{justify-self:start}
+  #delivchip{display:inline-flex;align-items:center;gap:4px;max-width:none!important;overflow:visible!important}
+  #template_btn{height:100%!important;box-sizing:border-box!important;white-space:nowrap;
+    cursor:pointer;display:inline-flex;align-items:center;gap:4px;top:0!important}
+  .tpl-caret{font-size:10px;opacity:.75}
+  #template_pop{position:absolute;top:calc(100% + 6px);left:0;z-index:140;min-width:280px;
+    max-width:min(520px,84vw);background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,.28);padding:6px;display:none}
+  .tpl-row{padding:7px 9px;border-radius:6px;cursor:pointer;font-size:12px;line-height:1.35;color:var(--fg)}
+  .tpl-row:hover{background:rgba(77,163,255,.14)}
+  .tpl-row.on{color:var(--acc);font-weight:700}
+  .tpl-row .tpl-desc{display:block;color:var(--dim);font-weight:400;font-size:11px;margin-top:2px}
+  html[data-theme="sketch"] #template_pop{border-color:var(--ink);border-radius:3px;background:var(--paper2)}
+  html[data-theme="pixel"] #template_pop{border:2px solid var(--line);border-radius:0}
+  html[data-theme="editorial"] #template_pop{border-radius:2px;background:var(--card)}
+  #dv_template_desc{line-height:1.35}
   .auxrow > #ghbadge{justify-self:center}
   .auxrow > #autopilot{justify-self:end}
   /* 第二排那两个（产物 chip / 🤖托管）**量高钉成同一个值**（用户 2026-09-29：「托管中那个按钮
@@ -98,6 +125,11 @@
   /* 📝 徽章：改成**可点**的开关（点一下展开建议、再点收起），不再依赖悬停 */
   .advtag{cursor:pointer;border-bottom:1px dotted var(--dim);margin-right:2px}
   .advtag:hover{color:var(--fg)}
+  /* 只有"判词留档"、没有待办时的**安静档**（2026-10-16）：它回答的是「这一关最终判了什么」，
+     不是「还没修」—— 所以不带数字、也不走告警色（同 2026-09-29「别让人以为这里贴的是判据」的教训）。 */
+  .advtag.advvd{color:#4da3ff;border-bottom-style:solid}
+  /* 📝 浮层最上面那段：这一关的最终判词（过没过都留）。 */
+  #advpop .advhead.vdhead{margin-bottom:4px}
   /* 建议浮层：**黑框白字**（用户 2026-09-28 指定）。单条一行，id 用暖黄标出来。
      ★ 必须是 `position:fixed` 挂在 body 上、**不能**塞进阶段行里：
        塞进行里会**把下面的行顶下去**（用户：「像之前一样展开一个框，而不是向下展开」），
@@ -419,12 +451,1388 @@
   #dirpop .dp-row:hover{background:#0d1117;color:var(--acc)}
   #dirpop .dp-empty{padding:8px 9px;color:var(--dim);font-size:12px}
 </style>
+<style id="theme-skins">
+  /* ============================================================
+     主题皮肤层（2026-10-16）。两套皮肤：
+       · 默认 `data-theme="sketch"` —— 《16 手绘草图》：笔记本纸 + 手写字体
+         + 钢笔蓝/荧光黄 + 抖动圆角与横格纸。**逐组件映射**到真面板的每个面。
+       · 不带属性（或 "dark"）—— 原深色皮，本文件上方那段样式**一字未动**，
+         它就是保留下来的第五个画风。
+     本块的两条硬纪律：
+       · **不改任何布局**：槽位、宽高、padding、格子一个不动；只动颜色/字体/
+         边框/圆角/阴影/背景纹理与少数卡片上的微旋转（签名笔迹感）。
+       · 面板里大量**行内 style 硬编码了深色**（含脚本拼的 HTML），
+         逐个用 id 或 [style*="…"] 定向 `!important` 收拾，见各段落注释。
+     ============================================================ */
+
+  /* ---- 🎨 主题按钮的落位（与皮肤无关，两套都要）：🎨 与 🤖托管 同槽居右；🎚 默认主题在产物 chip 右边 ---- */
+  #auxbtns{justify-self:end;display:inline-flex;align-items:center;gap:8px}
+  #auxleft{justify-self:start;display:inline-flex;align-items:center;gap:8px;min-width:0}
+  #theme_btn,#dtheme_btn,#template_btn{padding:0 10px;font-size:11.5px;line-height:1;position:relative;top:-3px;
+    cursor:pointer;white-space:nowrap}
+  /* 🎚 默认主题的小浮层：**只用变量着色** —— 深色/手绘两套皮肤下都成立，不单独再配皮。 */
+  #dtheme_pop{position:fixed;z-index:120;display:none;min-width:214px;
+    background:var(--panel);color:var(--fg);border:1px solid var(--acc);border-radius:8px;
+    padding:8px 10px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-size:12.5px;line-height:1.5}
+  #dtheme_pop .dt-head{color:var(--dim);font-size:11.5px;margin-bottom:6px}
+  #dtheme_pop .dt-row{padding:5px 8px;border-radius:6px;cursor:pointer;white-space:nowrap}
+  #dtheme_pop .dt-row:hover{background:rgba(77,163,255,.14)}
+  #dtheme_pop .dt-row.on{color:var(--acc);font-weight:700}
+
+  /* ======================= 手绘 · 基础 ======================= */
+  html[data-theme="sketch"]{
+    --paper:#f9f5e7; --paper2:#fffdf4; --paper3:#f1ead6;
+    --ink:#33302a; --ink2:#5f594a; --pencil:#9b9481; --pencil2:#c2baa4;
+    --pen:#3d5cc9; --pen-dk:#2c47a8;
+    --marker:#ffe259; --marker-b:#cfe0ff; --tape:#ffeeb0;
+    --hand:"Segoe Print","Ink Free","KaiTi","楷体","DFKai-SB",cursive;
+    --mono:"Cascadia Mono",Consolas,"Courier New",monospace;
+    /* 原深色变量 → 纸面版：全站大量组件直接吃这些变量，换完就是大半个皮 */
+    --bg:var(--paper); --panel:var(--paper2); --line:#b9ae92; --fg:var(--ink); --dim:#8a8069;
+    --acc:var(--pen); --ok:#2f9e63; --fail:#d8534a; --run:#dd8a2b; --wait:#dd8a2b; --manual:#7d5fb2;
+  }
+  html[data-theme="sketch"] ::selection{background:rgba(255,226,89,.75)}
+  /* 图标语言：emoji 染成**铅笔暖调**（手绘稿里没有图库，这层染色就是它的"手绘化"） */
+  html[data-theme="sketch"] .em{filter:sepia(.55) saturate(1.15) brightness(1.03)}
+  html[data-theme="sketch"] body{
+    font-family:var(--hand); color:var(--ink);
+    background-color:#f3ecd9;
+    background-image:repeating-linear-gradient(45deg,rgba(150,128,80,.045) 0 2px,transparent 2px 7px);
+  }
+  html[data-theme="sketch"] header{border-bottom-color:var(--ink)}
+  /* 全站按钮：纸面 + 墨边 + 抖动圆角 + 错位实影（边框仍 1px，几何零位移） */
+  html[data-theme="sketch"] button{
+    background:var(--paper2); color:var(--ink); border-color:var(--ink);
+    border-radius:11px 4px 10px 5px/5px 10px 4px 11px;
+    box-shadow:2px 2.5px 0 rgba(51,48,42,.15); font-family:var(--hand);
+  }
+  html[data-theme="sketch"] button:hover{background:#fff6cf}
+  html[data-theme="sketch"] button.primary{
+    background:var(--marker); color:var(--ink); font-weight:700;
+    box-shadow:3px 3px 0 rgba(51,48,42,.24);
+  }
+  html[data-theme="sketch"] button.primary:hover{background:#ffeb8a}
+  html[data-theme="sketch"] select{background:var(--paper2)!important;color:var(--ink)!important;
+    border:1px dashed var(--pencil)!important;border-radius:10px 5px 11px 4px/4px 11px 5px 10px!important;
+    font-family:var(--hand)!important}
+  html[data-theme="sketch"] input[type=text],html[data-theme="sketch"] input[type=password],
+  html[data-theme="sketch"] input[type=number]{font-family:var(--mono)}
+
+  /* 标题（字标）：手写体 + 荧光笔划线 */
+  html[data-theme="sketch"] header h1{font-family:var(--hand);font-weight:700;letter-spacing:.3px;
+    transform:rotate(-.6deg);
+    background:linear-gradient(180deg,transparent 58%,rgba(255,226,89,.8) 58% 95%,transparent 95%)}
+  html[data-theme="sketch"] header h1:hover{color:var(--pen-dk)}
+  /* 进度条：纸槽 + 蓝色荧光笔斜纹；计时器从荧光绿改成钢笔蓝 */
+  html[data-theme="sketch"] #pwrap{background:var(--paper2);border:1px solid var(--ink);height:6px}
+  html[data-theme="sketch"] #pbar{background:repeating-linear-gradient(105deg,var(--marker-b) 0 8px,#e2ecff 8px 13px)}
+  html[data-theme="sketch"] #ptext{color:var(--pencil);font-family:var(--mono)}
+  html[data-theme="sketch"] #timer{color:var(--pen)!important;text-shadow:none!important;font-family:var(--mono)}
+  html[data-theme="sketch"] #status{color:var(--ink2)}
+
+  /* ---- C 行三个元素：产物 chip / GitHub / 托管+主题 ---- */
+  html[data-theme="sketch"] #delivchip{color:var(--ink2)!important;background:var(--paper2);
+    border:1px solid var(--ink)!important;border-radius:10px 4px 11px 5px/5px 11px 4px 10px;
+    box-shadow:2px 2px 0 rgba(51,48,42,.12);transform:rotate(-.3deg)}
+  /* GitHub 标识：流光荧光 → 钢笔蓝手写 + 蓝色荧光笔垫底（svg 也跟着换成墨蓝） */
+  html[data-theme="sketch"] #ghbadge{
+    border:0;filter:none;animation:none;color:var(--pen);-webkit-text-fill-color:var(--pen);
+    background:linear-gradient(180deg,transparent 62%,rgba(207,224,255,.95) 62% 96%,transparent 96%)}
+  html[data-theme="sketch"] #ghbadge svg{fill:var(--pen);filter:none;transform:rotate(-6deg)}
+  html[data-theme="sketch"] #ghbadge:hover{color:var(--pen-dk)!important;filter:none}
+  html[data-theme="sketch"] #ghbadge .gh-name{font-weight:700}
+  html[data-theme="sketch"] #theme_btn,
+  html[data-theme="sketch"] #template_btn{color:var(--pen);border-color:var(--ink);background:var(--paper2)}
+  /* 第二排**放宽行高**（用户 2026-10-16：「图标被你压扁了」）——24px 定高在纸面上显得挤，
+     手绘皮里放到 30px；深色皮仍按它原来的 24px（两套各自成立，互不影响）。 */
+  html[data-theme="sketch"] .auxrow > *{height:30px}
+  html[data-theme="sketch"] #autopilot,
+  html[data-theme="sketch"] #theme_btn,
+  html[data-theme="sketch"] #dtheme_btn,
+  html[data-theme="sketch"] #template_btn{padding:0 12px;font-size:12px;top:0;height:26px}
+  /* ★ 四个盒子**同高**（用户 2026-10-16：「这几个按钮太小了，调为和产物 chip 一样大」）——
+     上一版的坑：30px 只加在包装层（.auxrow > *），按钮自己是自然高（~16px），
+     比 chip 矮一截。这里把四个实际盒子统一成 26px 显式高度。 */
+  html[data-theme="sketch"] #delivchip{padding:0 12px!important;font-size:12px!important;
+    height:26px;display:inline-flex;align-items:center;box-sizing:border-box}
+
+  /* ---- 可折叠面板区（上传 / 产物设置 / 决策 / 手工修复 / 残留条）---- */
+  html[data-theme="sketch"] #uppanel,
+  html[data-theme="sketch"] #delivpanel{border-bottom-color:var(--ink)}
+  html[data-theme="sketch"] #updrop{border-color:var(--pen)!important;
+    background:rgba(255,226,89,.16)!important;border-radius:13px 6px 15px 8px/8px 15px 6px 13px}
+  html[data-theme="sketch"] #updrop:hover{background:rgba(255,226,89,.30)!important}
+  html[data-theme="sketch"] #updrop.hot{background:rgba(255,226,89,.45)!important;border-color:var(--pen-dk)!important}
+  html[data-theme="sketch"] #up_result{background:var(--paper3)!important;border:1.5px dashed var(--pencil)!important;
+    border-radius:10px 4px 11px 5px/5px 11px 4px 10px}
+  html[data-theme="sketch"] #delivpanel input{background:var(--paper2)!important;border:1px solid var(--ink)!important;
+    border-radius:8px 3px 9px 4px/4px 9px 3px 8px!important}
+  html[data-theme="sketch"] #dv_wipe,html[data-theme="sketch"] #dv_wipe_all{border-color:#c98b84!important}
+  /* 决策区（黄灯）：深棕底 → 贴纸条 */
+  html[data-theme="sketch"] #decide{background:#fdf6dd!important}
+  html[data-theme="sketch"] #decide input,html[data-theme="sketch"] #decide select{
+    background:var(--paper2)!important;color:var(--ink)!important;
+    border:1px dashed var(--pencil)!important;font-family:var(--hand)!important}
+  html[data-theme="sketch"] #dc_advhead,html[data-theme="sketch"] #dc_adv{color:#9a6a11!important}
+  html[data-theme="sketch"] #dc_adv{border-left-color:var(--marker)!important}
+  html[data-theme="sketch"] #dc_tail{border-left-color:var(--pencil)!important;color:var(--ink2)!important}
+  html[data-theme="sketch"] #dc_tailwrap,html[data-theme="sketch"] #dc_tailhead{font-family:var(--hand)}
+  /* 手工修复面板：同款贴纸条 */
+  html[data-theme="sketch"] #hilpanel{background:#fdf6dd!important}
+  html[data-theme="sketch"] #hil_body{font-family:var(--hand)}
+  html[data-theme="sketch"] #hil_body div[style*="#5a4520"]{border-left-color:var(--marker-o)!important;color:var(--ink2)!important}
+  html[data-theme="sketch"] #hil_body div[style*="#3a2f10"]{background:rgba(255,226,89,.5)!important}
+  html[data-theme="sketch"] #hil_body div[style*="#e67e22"]{color:#a3611a!important}
+  /* 残留提示带：深蓝底 → 贴纸条（格纹背景也换纸） */
+  /* 残留提示带：做成模板里的**贴纸条** —— 四周墨框 + 抖动圆角 + 错位实影 + 两片胶带（伪元素）。
+     原来只有一条底边线，看着像横幅不像纸条。 */
+  /* ★ `!important` 必须有：这个 div 的行内样式写了 `border-bottom:1px solid var(--line)`，
+     而行内 > 样式表 —— 不带 !important 时上/左/右是墨线、**底下剩一条 1px 浅铅笔线**
+     （用户 2026-10-16：「只有上面左边和右边」，字面意义上的三边框）。 */
+  html[data-theme="sketch"] #stalebar{position:relative;background:#fdf6dd!important;
+    border:2.4px solid var(--ink)!important;border-radius:12px 5px 14px 7px/7px 14px 5px 12px;
+    box-shadow:3px 4px 0 rgba(51,48,42,.10);color:var(--ink2);font-size:13px!important;
+    margin:8px 14px 2px}
+  html[data-theme="sketch"] #stalebar::before,html[data-theme="sketch"] #stalebar::after{
+    content:"";position:absolute;top:-9px;width:92px;height:18px;background:var(--tape);
+    opacity:.9;border-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.07);pointer-events:none}
+  html[data-theme="sketch"] #stalebar::before{left:54px;transform:rotate(-2.4deg)}
+  html[data-theme="sketch"] #stalebar::after{right:64px;transform:rotate(2deg)}
+  html[data-theme="sketch"] #stalebar b{color:var(--ink)}
+  html[data-theme="sketch"] #stalebar .fine,html[data-theme="sketch"] #stalebar > div{line-height:1.85}
+  /* 小字正文：先试过楷体打头，用户仍嫌"看不太清"（2026-10-16）——
+     改成**微软雅黑**：小字号下笔画最清晰；这是"读得清"优先于"像手写"的一处让步。 */
+  html[data-theme="sketch"] #stalebar .fine{font-family:"Microsoft YaHei","微软雅黑",system-ui,sans-serif;
+    font-size:12px;line-height:1.8}
+  html[data-theme="sketch"] #stalebar code{font-family:var(--mono);background:rgba(207,224,255,.55);
+    padding:0 4px;border-radius:4px}
+  html[data-theme="sketch"] #stale_chips button{transform:rotate(-.3deg);
+    border:2px solid var(--ink);border-radius:10px 4px 11px 5px/5px 11px 4px 10px;
+    background:var(--paper2);box-shadow:2px 2px 0 rgba(51,48,42,.14)}
+  html[data-theme="sketch"] #stale_chips button:nth-child(2){transform:rotate(.4deg)}
+  html[data-theme="sketch"] #stale_chips button:nth-child(3){transform:rotate(-.15deg)}
+  html[data-theme="sketch"] #ws{color:var(--pencil)}
+
+  /* ---- E 左栏：横格纸 + 手写阶段表 ---- */
+  /* 左栏与阅读区补成模板那样的**墨框卡片**（用户 2026-10-16：「阶段进度那里和报告的哪些框没圈起来」）：
+     左栏原先是"一条右边线"的通栏，阅读区原先无框。边框是内缩绘制，轨道宽度不变 ⇒ 右区不挪位。 */
+  html[data-theme="sketch"] aside{background-color:var(--paper2);
+    background-image:repeating-linear-gradient(180deg,transparent 0 26px,rgba(178,205,232,.3) 26px 27px);
+    border:2.4px solid var(--ink);
+    border-radius:14px 7px 16px 9px/9px 16px 7px 14px;
+    box-shadow:3px 4px 0 rgba(51,48,42,.10);
+    margin:8px 6px 8px 8px}
+  html[data-theme="sketch"] .sec{font-family:var(--hand);color:var(--pencil);
+    letter-spacing:.08em;text-transform:none}
+  html[data-theme="sketch"] .stage{padding:6px 8px;border-radius:8px}
+  html[data-theme="sketch"] .stage:hover{background:rgba(255,226,89,.16)}
+  html[data-theme="sketch"] .stage.run{background:linear-gradient(180deg,transparent 40%,rgba(255,226,89,.72) 40% 96%,transparent 96%)}
+  /* 阶段表贴近手绘稿：**名字用墨色**（原来的浅绿/浅灰读起来像"禁用"），状态色只留在
+     圆点上；圆点从实心改成**手绘描边小圈**（形状语言对齐模板里的编号圈）。 */
+  html[data-theme="sketch"] .stage.done{color:var(--ink)}
+  html[data-theme="sketch"] .stage.stale{color:var(--ink2)}
+  html[data-theme="sketch"] .stage.disclosed{color:#a3611a}
+  html[data-theme="sketch"] .stage.manual{color:#6b4fa0}
+  /* 圆点改成**把序号圈在里面**的手绘圈（用户 2026-10-16：「圈是圈在序号上面的」）——
+     行结构是 [圆点][带圈数字+名字]，不让动 DOM ⇒ 用「去掉间距 + 负外边距把名字左拉」，
+     让名字开头的编号字符落在圈里：DOM 里文字在圆点之后，天然画在圈上层。
+     dotline 的 gap 归零、圆点透明底，编号就"穿"进圈里了。 */
+  html[data-theme="sketch"] .stage .dotline{gap:0}
+  /* 圈再放大（用户 2026-10-16：「圈变大一些太小了」）：21px、编号在圈里居中。
+     文字起点 = 圈宽 + 负外边距 = 21-17 = 4px，编号字宽 ~13px ⇒ 圈内四周留白 4px。 */
+  html[data-theme="sketch"] .stage .dot{background:transparent!important;border:2.4px solid #333;
+    width:21px;height:21px;margin-right:-17px;
+    border-radius:50% 46% 54% 44%/46% 54% 44% 52%;box-shadow:none}
+  html[data-theme="sketch"] .stage.done .dot{border-color:var(--ok)}
+  html[data-theme="sketch"] .stage.run .dot{border-color:var(--run)}
+  html[data-theme="sketch"] .stage.fail .dot{border-color:var(--fail)}
+  html[data-theme="sketch"] .stage.wait .dot{border-color:var(--wait)}
+  html[data-theme="sketch"] .stage.disclosed .dot{border-color:#e67e22}
+  html[data-theme="sketch"] .stage.stale .dot{border-color:#95a5a6}
+  html[data-theme="sketch"] .stage.manual .dot{border-color:var(--manual)}
+  /* 📝 徽章：虚线手绘小签（hard=荧光黄底红角标、留档=蓝虚线） */
+  html[data-theme="sketch"] .advtag{border-bottom:0;padding:0 4px;font-size:11px;
+    border:1.3px dashed var(--pencil);border-radius:6px 3px 7px 3px/3px 7px 3px 6px;background:var(--paper2)}
+  html[data-theme="sketch"] .advtag.advhard{color:#9a6a11;background:rgba(255,226,89,.55);border-color:var(--wait)}
+  html[data-theme="sketch"] .advtag.advvd{color:#1f7e90;background:rgba(54,163,184,.14);border:1.3px dashed var(--info,#36a3b8);border-color:#36a3b8}
+  /* 阶段行的时间：等宽铅笔字（手绘稿的 .dur 同款；运行行不设章——手绘稿里它是裸字） */
+  html[data-theme="sketch"] .tsk{font-family:var(--mono);color:var(--pencil)}
+  html[data-theme="sketch"] .file{font-family:var(--mono);color:var(--ink2);
+    border-radius:6px 3px 7px 3px/3px 7px 3px 6px}
+  html[data-theme="sketch"] .file:hover{background:var(--marker-b);color:var(--ink)}
+  html[data-theme="sketch"] .grp{border-top-color:var(--pencil2);font-family:var(--hand)}
+
+  /* ---- F 页签条 + G 阅读区：页签做成手绘卡片，活动页签垫荧光笔 ---- */
+  html[data-theme="sketch"] .tabs{background:var(--paper3);border-bottom:2px solid var(--ink)}
+  /* ★ 页签**四边全画、只掐底边**（用户 2026-10-16：「这四个地方上面的圈好像没有」）——
+     上一版只画了左右两条，顶上是开口的；模板 `.tab` 是 `border:2px` + `border-bottom:none`，
+     顶沿有墨线才像贴在那的本子标签。 */
+  html[data-theme="sketch"] .tabs button{color:var(--ink2);background:var(--paper3);font-family:var(--hand);
+    border:2px solid var(--ink);border-bottom:0;
+    border-radius:13px 13px 0 0/17px 17px 0 0;transform:rotate(-.4deg)}
+  html[data-theme="sketch"] .tabs button:nth-child(2){transform:rotate(.4deg)}
+  html[data-theme="sketch"] .tabs button.on{color:var(--ink);font-weight:700;box-shadow:none;
+    background:linear-gradient(180deg,transparent 45%,rgba(255,226,89,.8) 45% 92%,transparent 92%),var(--paper2)}
+  html[data-theme="sketch"] #view{background:var(--paper2);color:var(--ink);
+    border:2.4px solid var(--ink);border-top:0;
+    border-radius:0 0 14px 8px/0 0 12px 6px}
+  html[data-theme="sketch"] .markdown{font-family:var(--hand)}
+  html[data-theme="sketch"] .markdown h1{font-size:20px;display:inline-block;padding:0 3px;
+    background:linear-gradient(180deg,transparent 60%,rgba(207,224,255,.9) 60% 95%,transparent 95%)}
+  html[data-theme="sketch"] .markdown h2{font-size:16px;display:inline-block;padding:0 3px;
+    background:linear-gradient(180deg,transparent 62%,rgba(255,226,89,.7) 62% 95%,transparent 95%)}
+  /* 报告正文对齐手绘稿的 .md 版式：小标题垫荧光笔、正文淡墨、行内码黄签、代码块虚线框 */
+  html[data-theme="sketch"] .markdown h3,html[data-theme="sketch"] .markdown h4,
+  html[data-theme="sketch"] .markdown h5,html[data-theme="sketch"] .markdown h6{font-size:15px;
+    display:inline-block;padding:0 3px;
+    background:linear-gradient(180deg,transparent 62%,rgba(207,224,255,.9) 62% 95%,transparent 95%)}
+  html[data-theme="sketch"] .markdown p{color:var(--ink2);font-size:13.5px;line-height:1.8}
+  html[data-theme="sketch"] .markdown p b,html[data-theme="sketch"] .markdown li b,
+  html[data-theme="sketch"] .markdown td b{color:var(--ink)}
+  html[data-theme="sketch"] .markdown ul,html[data-theme="sketch"] .markdown ol{padding-left:22px;
+    color:var(--ink2)}
+  html[data-theme="sketch"] .markdown pre{background:var(--paper3);border:1.5px dashed var(--pencil);
+    border-radius:8px 3px 9px 4px/4px 9px 3px 8px;padding:8px 10px;overflow:auto;
+    font-family:var(--mono);font-size:12px;line-height:1.6}
+  html[data-theme="sketch"] .markdown pre code{background:none;padding:0}
+  html[data-theme="sketch"] .markdown td,html[data-theme="sketch"] .markdown th{border:1px solid var(--ink2)}
+  html[data-theme="sketch"] .markdown th{background:var(--paper3)}
+  html[data-theme="sketch"] .markdown code{font-family:var(--mono);background:rgba(255,226,89,.55);
+    padding:0 4px;border-radius:4px}
+  html[data-theme="sketch"] a{color:var(--pen)}
+
+  /* ---- 运行日志（节点类名由脚本加上：.logpane / .logjump）---- */
+  html[data-theme="sketch"] .logpane{color:var(--ink)!important;font-family:var(--mono)!important;
+    /* 字号/行高对齐手绘稿的日志（原来行内 cssText 是 13px/1.6，纸上读着太挤） */
+    font-size:11.5px!important;line-height:20.5px!important;
+    background-color:var(--paper2)!important;
+    background-image:linear-gradient(rgba(197,214,236,.38) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(197,214,236,.38) 1px,transparent 1px)!important;
+    background-size:26px 26px!important}
+  html[data-theme="sketch"] .logjump{background:var(--marker)!important;color:var(--ink)!important;
+    border:1px solid var(--ink)!important;border-radius:9px 4px 10px 5px/5px 10px 4px 9px!important;
+    text-shadow:none!important;box-shadow:2px 2px 0 rgba(51,48,42,.2)!important;font-family:var(--hand)!important}
+  /* 日志逐行 DOM：行首时间戳上钢笔蓝 + 荧光笔底（行在 .ln 里，正文走 .lx） */
+  html[data-theme="sketch"] .logpane .ln{white-space:pre-wrap;word-break:break-word}
+  html[data-theme="sketch"] .logpane .lt{color:var(--pen);
+    background:linear-gradient(180deg,transparent 55%,rgba(255,226,89,.62) 55% 96%,transparent 96%)}
+
+  /* ---- 浮层：📝 判词 / 目录选择 / 赠言（黑框 → 贴纸条）---- */
+  html[data-theme="sketch"] #advpop{background:var(--paper2);border:1px solid var(--ink);color:var(--ink);
+    border-radius:14px 6px 16px 8px/8px 16px 6px 14px;
+    box-shadow:4px 5px 0 rgba(51,48,42,.14),0 16px 34px rgba(86,68,26,.18);font-family:var(--hand)}
+  html[data-theme="sketch"] #advpop .advhead{color:var(--ink);border-bottom:1.6px dashed var(--pencil2)}
+  /* 浮层内容由脚本拼装，表头里两处颜色是**为黑底写的**（白字 / 橙字）—— 落在纸上会隐身，
+     这里按 [style*=] 定向压掉（p 的口径与 #dc_adv 那两处一致）。 */
+  html[data-theme="sketch"] #advpop .advhead b{color:var(--ink)!important}
+  html[data-theme="sketch"] #advpop [style*="#ff9f1a"]{color:#a3611a!important}
+  html[data-theme="sketch"] #advpop .advlegend{color:var(--pencil)}
+  html[data-theme="sketch"] .advitem b{color:var(--pen-dk)}
+  html[data-theme="sketch"] .advsev{border-radius:6px 3px 7px 3px/3px 7px 3px 6px;transform:rotate(-1.2deg)}
+  html[data-theme="sketch"] .advsev.hard{background:rgba(216,83,74,.16);color:#a83b33;border:1px solid var(--fail)}
+  html[data-theme="sketch"] .advsev.soft{background:rgba(221,138,43,.16);color:#9a6a11;border:1px solid var(--wait)}
+  html[data-theme="sketch"] .advsev.info{background:rgba(54,163,184,.16);color:#1f7e90;border:1px solid #36a3b8}
+  html[data-theme="sketch"] #dirpop{background:var(--paper2);border:2px solid var(--ink);
+    border-radius:14px 7px 16px 9px/9px 16px 7px 14px;
+    box-shadow:6px 8px 0 rgba(51,48,42,.14),0 16px 34px rgba(86,68,26,.18)}
+  html[data-theme="sketch"] #dirpop .dp-path{background:var(--paper3);border:1.5px dashed var(--pencil);
+    color:var(--ink);font-family:var(--mono)}
+  html[data-theme="sketch"] #dirpop .dp-list{border-color:var(--ink)}
+  html[data-theme="sketch"] #dirpop .dp-row{font-family:var(--mono);color:var(--ink2);border-bottom-color:var(--pencil2)}
+  html[data-theme="sketch"] #dirpop .dp-row:hover{background:var(--marker-b);color:var(--ink)}
+  html[data-theme="sketch"] #dirpop .dp-empty{color:var(--pencil)}
+  html[data-theme="sketch"] #ghmodal{background:rgba(51,48,42,.45)}
+  html[data-theme="sketch"] #ghcard{background:var(--paper2);border:2.2px solid var(--ink);
+    border-radius:16px 8px 18px 10px/10px 18px 8px 16px;
+    box-shadow:6px 8px 0 rgba(51,48,42,.16),0 20px 44px rgba(86,68,26,.25)}
+  html[data-theme="sketch"] #ghcard .gh-neon{font-family:var(--hand);font-weight:700;font-size:19px;
+    background:linear-gradient(180deg,transparent 58%,rgba(255,226,89,.85) 58% 95%,transparent 95%);
+    -webkit-text-fill-color:var(--ink);color:var(--ink);animation:none;filter:none}
+  html[data-theme="sketch"] #ghcard .gh-sub{color:var(--ink2)}
+  html[data-theme="sketch"] #ghcard a.gh-link{color:var(--pen);border-bottom:1.5px dashed var(--pen)}
+  html[data-theme="sketch"] #ghcard a.gh-link:hover{color:var(--pen-dk);border-bottom-color:var(--pen-dk)}
+  html[data-theme="sketch"] #gh_close{color:var(--pencil)}
+  html[data-theme="sketch"] #gh_close:hover{color:var(--ink)}
+
+  /* ---- ⓪ 读题确认面板（脚本拼的 HTML：暗色行内样式靠 [style*=] 定向收拾）---- */
+  html[data-theme="sketch"] #dc_intake{font-family:var(--hand)}
+  html[data-theme="sketch"] #dc_intake div[style*="#0d1117"]{background:var(--paper3)!important;
+    border-color:var(--pencil)!important}
+  html[data-theme="sketch"] #dc_intake input[style*="#0d1117"]{background:var(--paper2)!important;
+    color:var(--ink)!important;border-color:var(--pencil)!important}
+  html[data-theme="sketch"] #dc_intake textarea{background:var(--paper2)!important;color:var(--ink)!important;
+    border:1.5px dashed var(--pencil)!important;font-family:var(--mono)!important}
+  html[data-theme="sketch"] #dc_intake table{border:1px solid var(--ink2)}
+  html[data-theme="sketch"] #dc_intake td{border-top-color:var(--pencil2)!important}
+
+  /* ======================= 手绘 · 开屏页 ======================= */
+  html[data-theme="sketch"] #splash{--mono:"Cascadia Mono",Consolas,"Courier New",monospace;
+    --font:var(--hand);
+    /* 背景对齐手绘稿：米黄笔记本纸 + 横格线（原来只是纯色，和模板差在这一层） */
+    background-color:var(--paper);
+    background-image:repeating-linear-gradient(180deg,transparent 0 27px,rgba(178,205,232,.44) 27px 28px)}
+  /* 背景三层：色斑换成荧光笔晕、网格换铅笔格、暗角换成纸光；都是装饰，不算动布局 */
+  html[data-theme="sketch"] #splash .orb{filter:blur(96px)}
+  html[data-theme="sketch"] #splash .orb-a{background:radial-gradient(circle at 50% 50%,rgba(255,226,89,.66),transparent 68%)}
+  html[data-theme="sketch"] #splash .orb-b{background:radial-gradient(circle at 50% 50%,rgba(207,224,255,.85),transparent 68%)}
+  html[data-theme="sketch"] #splash .orb-c{background:radial-gradient(circle at 50% 50%,rgba(61,92,201,.20),transparent 70%)}
+  html[data-theme="sketch"] #splash .grid-lines{
+    background-image:linear-gradient(to right,rgba(155,148,129,.20) 1px,transparent 1px),
+                     linear-gradient(to bottom,rgba(155,148,129,.20) 1px,transparent 1px);
+    background-size:28px 28px}
+  html[data-theme="sketch"] #splash .vignette{
+    background:radial-gradient(130% 80% at 50% -10%,rgba(255,226,89,.12),transparent 60%),
+               linear-gradient(180deg,rgba(249,245,231,.42),rgba(243,236,217,.8))}
+  /* 窗口：纸卡 + 墨框 + 抖动圆角 + 错位实影（玻璃与霓虹下线） */
+  html[data-theme="sketch"] #splash #splash_inner{background:var(--paper2);
+    border:1px solid var(--ink);border-radius:20px 10px 24px 12px/12px 24px 10px 20px;
+    box-shadow:10px 12px 0 rgba(51,48,42,.10),0 26px 60px rgba(86,68,26,.28);
+    -webkit-backdrop-filter:none;backdrop-filter:none}
+  html[data-theme="sketch"] #splash #splash_inner::before{background:none;animation:none}
+  html[data-theme="sketch"] #splash .term-bar{background:var(--paper3);border-bottom-color:var(--ink)}
+  html[data-theme="sketch"] #splash .dots i{border:1.6px solid rgba(0,0,0,.28);
+    border-radius:50% 46% 52% 44%/48% 52% 44% 50%}
+  html[data-theme="sketch"] #splash .term-path{color:var(--ink2)}
+  html[data-theme="sketch"] #splash .hero-title{font-family:var(--hand);
+    filter:none;letter-spacing:2px}
+  html[data-theme="sketch"] #splash .hero-title:hover{filter:none;color:inherit}
+  html[data-theme="sketch"] #splash .ht-line{background:none;color:var(--ink);
+    -webkit-text-fill-color:var(--ink);-webkit-background-clip:border-box;background-clip:border-box;
+    -webkit-mask-image:none;mask-image:none;animation:none}
+  html[data-theme="sketch"] #splash .ht-indent{color:var(--pen);-webkit-text-fill-color:var(--pen);
+    /* ★ width:fit-content 必须写：.ht-line 是 display:block，块级盒子会被拉满行宽 ——
+       荧光笔条就成了通栏大黄条（模板里正是靠 fit-content 把条收在字下面）。 */
+    width:fit-content;
+    background:linear-gradient(180deg,transparent 62%,rgba(255,226,89,.85) 62% 95%,transparent 95%);
+    -webkit-background-clip:border-box;background-clip:border-box;animation:none}
+  html[data-theme="sketch"] #splash .hero-kicker{color:var(--pen);text-shadow:none}
+  html[data-theme="sketch"] #splash .hero-kicker::after{background:var(--pen);box-shadow:none}
+  html[data-theme="sketch"] #splash .hero-sub{color:var(--ink2)}
+  html[data-theme="sketch"] #splash .hero-boot{color:var(--pen)}
+  /* 配置卡：纸 + 墨框 + 胶带（伪元素，不加节点） */
+  html[data-theme="sketch"] #splash .cfg{background:var(--paper);border:1px solid var(--ink);
+    border-radius:14px 7px 16px 9px/9px 16px 7px 14px;
+    box-shadow:3px 4px 0 rgba(51,48,42,.1);-webkit-backdrop-filter:none;backdrop-filter:none}
+  html[data-theme="sketch"] #splash .cfg::before{content:"";position:absolute;top:-11px;left:26px;
+    width:88px;height:20px;background:var(--tape);opacity:.9;transform:rotate(-2.4deg);
+    border-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.07)}
+  html[data-theme="sketch"] #splash .cfg h2{color:var(--ink);border-left:0;padding:0 3px 1px;
+    /* 同 .ht-indent：inline-block 才能让荧光笔条贴着字走（否则通栏） */
+    display:inline-block;
+    text-shadow:none;font-family:var(--hand);letter-spacing:.5px;
+    background:linear-gradient(180deg,transparent 58%,rgba(255,226,89,.85) 58% 95%,transparent 95%)}
+  html[data-theme="sketch"] #splash .cfg .field .k code{color:var(--ink);font-family:var(--mono)}
+  html[data-theme="sketch"] #splash .cfg .field .eq{color:var(--pencil)}
+  html[data-theme="sketch"] #splash .cfg .field em{color:var(--pencil)}
+  html[data-theme="sketch"] #splash .cfg .field:focus-within .k code{color:var(--pen-dk);text-shadow:none}
+  html[data-theme="sketch"] #splash .cfg .field:focus-within .eq{color:var(--pen)}
+  /* 输入框：平时只留虚线底线，**聚焦时**才划一道荧光笔（模板同款；常驻底纹会变成通栏黄条） */
+  html[data-theme="sketch"] #splash .input{color:var(--ink);caret-color:var(--pen);
+    border-bottom:1.5px dashed var(--pencil);background-image:none;background:transparent}
+  html[data-theme="sketch"] #splash .input:hover{border-bottom-color:var(--pencil2)}
+  html[data-theme="sketch"] #splash .input:focus{border-bottom-color:transparent;box-shadow:none;
+    background:linear-gradient(180deg,transparent 58%,rgba(255,226,89,.5) 58% 96%,transparent 96%)}
+  html[data-theme="sketch"] #splash .input::placeholder{color:var(--pencil2);font-family:var(--hand)}
+  /* 勾选框：[ ] → 手绘方框 */
+  html[data-theme="sketch"] #splash .check .box{display:inline-grid;place-items:center;
+    width:16px;height:16px;border:1.5px solid var(--ink);background:var(--paper2);
+    color:var(--pen);font-size:11px;line-height:1;
+    border-radius:4px 2px 5px 2px/2px 5px 2px 4px;transform:rotate(-3deg)}
+  html[data-theme="sketch"] #splash .check .box::before{content:""}
+  html[data-theme="sketch"] #splash .check input:checked ~ .box::before{content:"✓"}
+  html[data-theme="sketch"] #splash .check input:checked ~ .box{color:var(--pen-dk);text-shadow:none}
+  html[data-theme="sketch"] #splash .check .box::after{display:none}
+  html[data-theme="sketch"] #splash .check .lbl{color:var(--ink2)}
+  /* 按钮行：[ ] 方括号 → 手绘小按钮 */
+  html[data-theme="sketch"] #splash .cfg-row{border-top:1.5px dashed var(--pencil2)}
+  html[data-theme="sketch"] #splash .cfg-row button{color:var(--ink);background:var(--paper2);
+    border:1px solid var(--ink);border-radius:11px 4px 10px 5px/5px 10px 4px 11px;
+    box-shadow:2px 2.5px 0 rgba(51,48,42,.15);font-family:var(--hand)}
+  html[data-theme="sketch"] #splash .cfg-row button::before,
+  html[data-theme="sketch"] #splash .cfg-row button::after{content:none}
+  html[data-theme="sketch"] #splash .cfg-row button:hover{background:#fff6cf;transform:rotate(-.4deg)}
+  html[data-theme="sketch"] #splash #cf_save{color:var(--ink);background:var(--marker);
+    font-weight:700;text-shadow:none;box-shadow:3px 3px 0 rgba(51,48,42,.24)}
+  html[data-theme="sketch"] #splash #cf_save:hover{background:#ffeb8a}
+  html[data-theme="sketch"] #splash #cf_back{color:var(--ink2)}
+  html[data-theme="sketch"] #splash #cf_back:hover{color:var(--ink);background:#fff6cf}
+  html[data-theme="sketch"] #splash #cf_msg:not(:empty){background:var(--paper3);
+    border:1px dashed var(--pencil);border-left:2px solid var(--pen);color:var(--ink)}
+  html[data-theme="sketch"] #splash #cf_msg:not(:empty)::before{content:"▸ ";color:var(--pen)}
+
+  /* ============================================================
+     主题「蓝图工程」（来源：设计稿 13-blueprint.html，逐区翻译到真选择器）。
+     图纸语言：深蓝底 + 24/120px 双层网格、四角制图标记、等宽字做标签、
+     发光状态点、标尺进度条、无边框页签 + 发光下划线、📝 浮层带引线标注。
+     纪律同手绘版：不动布局、行内样式带 !important、装饰走伪元素。
+     ============================================================ */
+  html[data-theme="blueprint"]{
+    --paper:#0a1c34; --paper2:#0d2340; --deep:#071629;
+    --ink:#e8f2ff; --ink2:#c6d8ee; --dim2:#93b2d4; --faint:#5d7da3;
+    --line2:rgba(150,192,240,.17); --line3:rgba(150,192,240,.085);
+    --cyan:#6fd3ff; --cyan2:#3ea8e8; --mint:#6ee7a8; --amber:#ffc85e;
+    --orange:#ffab5e; --red:#ff8f8f; --hard:#ffb454; --soft:#5fd8b4; --infotag:#6fb6ff;
+    --mono:ui-monospace,"Cascadia Mono","Cascadia Code",Consolas,Menlo,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    /* 全局变量复写（大半个皮） */
+    --bg:var(--paper); --panel:var(--paper2); --line:rgba(150,192,240,.34);
+    --fg:var(--ink); --dim:var(--dim2);
+    --acc:var(--cyan); --ok:var(--mint); --fail:var(--red);
+    --run:var(--amber); --wait:var(--amber); --manual:var(--infotag);
+  }
+  html[data-theme="blueprint"] ::selection{background:rgba(111,211,255,.30)}
+  /* 图标语言：emoji 去彩 → **青色单色化**（对齐蓝图的线稿气质） */
+  html[data-theme="blueprint"] .em{filter:sepia(1) hue-rotate(158deg) saturate(2.4) brightness(1.04)}
+  html[data-theme="blueprint"] body{
+    font-family:var(--sans); color:var(--ink);
+    background-color:var(--paper);
+    background-image:
+      repeating-linear-gradient(0deg, rgba(150,192,240,.05) 0 1px, transparent 1px 24px),
+      repeating-linear-gradient(90deg, rgba(150,192,240,.05) 0 1px, transparent 1px 24px),
+      repeating-linear-gradient(0deg, rgba(150,192,240,.10) 0 1px, transparent 1px 120px),
+      repeating-linear-gradient(90deg, rgba(150,192,240,.10) 0 1px, transparent 1px 120px),
+      radial-gradient(1400px 520px at 50% -160px, rgba(111,211,255,.09), transparent 70%),
+      radial-gradient(1000px 460px at 4% 112%, rgba(70,140,225,.10), transparent 70%),
+      radial-gradient(1000px 460px at 96% 112%, rgba(70,140,225,.08), transparent 70%);
+    background-attachment:fixed;
+  }
+  html[data-theme="blueprint"] header{border-bottom-color:var(--line2);
+    background:linear-gradient(180deg, rgba(13,36,64,.92), rgba(10,27,49,.86))}
+  /* 按钮：蓝调渐变 + 细线框；主按钮 = 亮青渐变 + 辉光 */
+  html[data-theme="blueprint"] button{
+    color:var(--ink);border:1px solid var(--line);border-radius:3px;
+    background:linear-gradient(180deg, rgba(111,211,255,.07), rgba(111,211,255,.015));
+    font-family:var(--sans);
+  }
+  html[data-theme="blueprint"] button:hover{border-color:rgba(216,233,255,.62);color:#fff;background:rgba(111,211,255,.10)}
+  html[data-theme="blueprint"] button.primary{color:#04263f;font-weight:700;border-color:#8fd6ff;
+    background:linear-gradient(180deg,#a5e4ff,#58c0ef);
+    box-shadow:0 0 16px rgba(111,211,255,.35), inset 0 1px 0 rgba(255,255,255,.55)}
+  html[data-theme="blueprint"] button.primary:hover{color:#021c2e;background:linear-gradient(180deg,#bdeaff,#6fcbf5)}
+  html[data-theme="blueprint"] select{background:linear-gradient(180deg, rgba(8,24,44,.9), rgba(10,28,50,.9))!important;
+    color:var(--ink)!important;border:1px solid var(--line)!important;border-radius:3px!important;
+    font-family:var(--mono)!important}
+  html[data-theme="blueprint"] input[type=text],html[data-theme="blueprint"] input[type=password],
+  html[data-theme="blueprint"] input[type=number]{font-family:var(--mono)}
+  /* 品牌：等宽粗体 + 青色渐隐底线 */
+  html[data-theme="blueprint"] header h1{font:700 17px/1.4 var(--mono);letter-spacing:.6px;
+    background-image:linear-gradient(90deg,var(--cyan),transparent 85%);
+    background-repeat:no-repeat;background-position:0 100%;background-size:100% 2px}
+  html[data-theme="blueprint"] header h1:hover{color:#fff;text-shadow:0 0 14px rgba(111,211,255,.55)}
+  /* 进度条 = 制图刻度尺 */
+  html[data-theme="blueprint"] #pwrap{background-color:rgba(6,18,34,.6);
+    background-image:repeating-linear-gradient(90deg, var(--line3) 0 1px, transparent 1px 24px);
+    border:1px solid var(--line2);border-radius:2px;height:8px}
+  html[data-theme="blueprint"] #pbar{background:repeating-linear-gradient(45deg, rgba(111,211,255,.75) 0 3px, rgba(111,211,255,.35) 3px 6px);
+    box-shadow:0 0 10px rgba(111,211,255,.45), inset 0 0 0 1px rgba(191,232,255,.4)}
+  html[data-theme="blueprint"] #ptext{color:var(--faint);font-family:var(--mono)}
+  html[data-theme="blueprint"] #timer{color:var(--mint)!important;text-shadow:none!important;font-family:var(--mono)}
+  html[data-theme="blueprint"] #status{color:var(--dim2)}
+  /* C 行：chip 等宽小胶囊 / GitHub 青色胶囊 / 按钮与 chip 同高（沿用用户定过的 26px 口径） */
+  html[data-theme="blueprint"] #delivchip{color:var(--dim2)!important;
+    border:1px solid var(--line2)!important;border-radius:11px;background:rgba(8,24,44,.5)!important;
+    font-family:var(--mono)!important}
+  html[data-theme="blueprint"] #ghbadge{color:#a9e6ff!important;-webkit-text-fill-color:#a9e6ff;
+    border:1px solid rgba(111,211,255,.35);border-radius:11px;background:rgba(111,211,255,.06);
+    box-shadow:0 0 14px rgba(111,211,255,.12) inset;animation:none;filter:none;font-family:var(--mono)}
+  html[data-theme="blueprint"] #ghbadge svg{fill:#a9e6ff;filter:none}
+  html[data-theme="blueprint"] #ghbadge:hover{border-color:rgba(160,226,255,.75);box-shadow:0 0 16px rgba(111,211,255,.3);color:#fff!important}
+  html[data-theme="blueprint"] #autopilot,
+  html[data-theme="blueprint"] #theme_btn,
+  html[data-theme="blueprint"] #dtheme_btn,
+  html[data-theme="blueprint"] #template_btn{height:26px;padding:0 12px;font-size:12px;top:0 !important;
+    background:rgba(8,24,44,.5);border:1px solid var(--line2);border-radius:3px}
+  html[data-theme="blueprint"] #delivchip{height:26px;padding:0 12px!important;font-size:12px!important;
+    display:inline-flex;align-items:center;box-sizing:border-box}
+  /* D 提示带：石板蓝 + 左侧琥珀条（inset 影子） */
+  html[data-theme="blueprint"] #stalebar{background:linear-gradient(180deg, rgba(26,54,92,.85), rgba(17,40,72,.85))!important;
+    border:0!important;border-bottom:1px solid var(--line2)!important;border-radius:0;
+    box-shadow:inset 3px 0 0 rgba(255,200,94,.35);margin:0;color:#d7e6f8;font-size:12.5px!important}
+  html[data-theme="blueprint"] #stalebar::before,html[data-theme="blueprint"] #stalebar::after{content:none}
+  html[data-theme="blueprint"] #stalebar b{color:#d7e6f8}
+  html[data-theme="blueprint"] #stalebar code{font-family:var(--mono);font-size:11px;color:#bfe6ff;
+    background:rgba(111,211,255,.09);border:1px solid var(--line3);border-radius:3px;padding:0 5px}
+  html[data-theme="blueprint"] #stalebar .fine{font-family:var(--sans);font-size:11.5px;color:#a7c0dc;line-height:1.75}
+  html[data-theme="blueprint"] #stale_chips button{font-size:12px;border:1px solid var(--line2);border-radius:3px;
+    background:rgba(9,26,48,.55);box-shadow:none;transform:none;padding:2px 9px;height:auto}
+  html[data-theme="blueprint"] #stale_chips button:hover{background:rgba(111,211,255,.10);border-color:rgba(216,233,255,.5)}
+  html[data-theme="blueprint"] #ws{color:var(--faint)}
+  /* 阶段行的时间：平时 = 等宽淡字；**运行中那一行** = 琥珀计时章（设计稿 .tmo 同款） */
+  html[data-theme="blueprint"] .tsk{font-family:var(--mono);color:var(--faint)}
+  html[data-theme="blueprint"] .stage.run .tsk,
+  html[data-theme="blueprint"] .stage.wait .tsk{color:var(--amber);
+    border:1px solid rgba(255,200,94,.4);border-radius:3px;padding:0 5px;
+    background:rgba(255,200,94,.07);font-family:var(--mono)}
+  /* 可折叠面板区 */
+  html[data-theme="blueprint"] #updrop{border-color:var(--cyan)!important;border-radius:4px;
+    background:rgba(111,211,255,.06)!important}
+  html[data-theme="blueprint"] #updrop:hover{background:rgba(111,211,255,.12)!important}
+  html[data-theme="blueprint"] #updrop.hot{background:rgba(111,211,255,.2)!important;border-color:#8fd6ff!important}
+  html[data-theme="blueprint"] #up_result{background:rgba(4,15,30,.75)!important;border:1px solid var(--line2)!important;border-radius:4px}
+  html[data-theme="blueprint"] #delivpanel input{background:rgba(4,15,30,.75)!important;
+    border:1px solid var(--line2)!important;border-radius:3px!important;color:var(--ink)!important}
+  html[data-theme="blueprint"] #dv_wipe,html[data-theme="blueprint"] #dv_wipe_all{border-color:rgba(255,143,143,.5)!important;color:var(--red)!important}
+  html[data-theme="blueprint"] #decide{background:linear-gradient(180deg, rgba(26,54,92,.85), rgba(17,40,72,.85))!important;
+    border-bottom:2px solid var(--amber)!important}
+  html[data-theme="blueprint"] #decide input,html[data-theme="blueprint"] #decide select{
+    background:rgba(4,15,30,.75)!important;color:var(--ink)!important;border:1px solid var(--line2)!important;border-radius:3px!important}
+  html[data-theme="blueprint"] #dc_advhead,html[data-theme="blueprint"] #dc_adv{color:var(--amber)!important}
+  html[data-theme="blueprint"] #dc_adv{border-left-color:rgba(255,200,94,.5)!important}
+  html[data-theme="blueprint"] #dc_tail{border-left-color:var(--line2)!important;color:var(--dim2)!important}
+  html[data-theme="blueprint"] #hilpanel{background:linear-gradient(180deg, rgba(26,54,92,.85), rgba(17,40,72,.85))!important}
+  html[data-theme="blueprint"] #hil_body div[style*="#5a4520"]{border-left-color:rgba(255,200,94,.5)!important}
+  html[data-theme="blueprint"] #hil_body div[style*="#3a2f10"]{background:rgba(255,200,94,.14)!important}
+  html[data-theme="blueprint"] #hil_body div[style*="#e67e22"]{color:var(--orange)!important}
+  /* E 左栏：暗渐变 + 细右线（设计稿无边卡）+ 细滚动条 */
+  html[data-theme="blueprint"] aside{background:linear-gradient(90deg, rgba(9,25,46,.62), rgba(9,25,46,.28));
+    border:0;border-right:1px solid var(--line2);border-radius:0;box-shadow:none;margin:0}
+  html[data-theme="blueprint"] aside::-webkit-scrollbar{width:9px}
+  html[data-theme="blueprint"] aside::-webkit-scrollbar-thumb{background:rgba(150,192,240,.28);border-radius:2px;border:2px solid rgba(9,25,46,.6)}
+  html[data-theme="blueprint"] .sec{font:12px var(--mono);color:var(--dim2);letter-spacing:1.2px;
+    display:flex;align-items:center;gap:8px}
+  html[data-theme="blueprint"] .sec::before{content:"";width:5px;height:5px;background:var(--cyan);opacity:.75;
+    box-shadow:0 0 7px rgba(111,211,255,.7);flex:0 0 auto}
+  html[data-theme="blueprint"] .sec::after{content:"";flex:1;height:1px;background:var(--line3)}
+  /* 阶段表：发光状态点 + 等宽序号 + 运行行扫描线（结构照真 DOM：点、序号、名、右栏） */
+  html[data-theme="blueprint"] .stage{padding:6px 8px;border-radius:0;border-left:2px solid transparent}
+  html[data-theme="blueprint"] .stage:hover{background:rgba(111,211,255,.05)}
+  html[data-theme="blueprint"] .stage.done{color:var(--ink2)}
+  html[data-theme="blueprint"] .stage.stale{color:var(--dim2)}
+  html[data-theme="blueprint"] .stage .dot{border-radius:50%;border:0;background:var(--mint)!important;
+    box-shadow:0 0 7px rgba(110,231,168,.55)}
+  html[data-theme="blueprint"] .stage.done .dot{background:var(--mint)!important}
+  html[data-theme="blueprint"] .stage.stale .dot{background:var(--amber)!important;box-shadow:0 0 7px rgba(255,200,94,.6)}
+  html[data-theme="blueprint"] .stage.disclosed .dot{background:var(--orange)!important;box-shadow:0 0 7px rgba(255,171,94,.6)}
+  html[data-theme="blueprint"] .stage.manual .dot{background:var(--infotag)!important}
+  html[data-theme="blueprint"] .stage.fail .dot{background:var(--red)!important}
+  html[data-theme="blueprint"] .stage.wait .dot{background:var(--amber)!important}
+  html[data-theme="blueprint"] .stage.run{background:linear-gradient(90deg, rgba(255,200,94,.10), rgba(255,200,94,.02) 80%);
+    border-left-color:var(--amber);color:#fff}
+  html[data-theme="blueprint"] .stage.run .dot{background:var(--amber)!important;box-shadow:0 0 9px rgba(255,200,94,.8)}
+  html[data-theme="blueprint"] .stage.run{position:relative}
+  html[data-theme="blueprint"] .stage.run::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;
+    background:linear-gradient(90deg,transparent,var(--amber),transparent);
+    animation:bpl-scan 2.6s linear infinite}
+  @keyframes bpl-scan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+  /* 📝 角标：小胶囊 + 计数气泡感（数字直接在文字里，靠字距与底色出感觉） */
+  html[data-theme="blueprint"] .advtag{border:1px solid rgba(127,200,255,.45);border-radius:3px;
+    background:rgba(127,200,255,.10);color:#7fc8ff;padding:0 4px;font-family:var(--mono);font-size:11px}
+  html[data-theme="blueprint"] .advtag.advhard{border-color:rgba(255,180,84,.55);background:rgba(255,180,84,.10);color:var(--hard)}
+  html[data-theme="blueprint"] .advtag.advvd{border-color:rgba(127,200,255,.5);background:rgba(127,200,255,.12);color:#7fc8ff}
+  html[data-theme="blueprint"] .file{font-family:var(--mono);font-size:11.5px;color:#a9c2de;border-radius:0}
+  html[data-theme="blueprint"] .file:hover{color:#fff;background:rgba(111,211,255,.06)}
+  html[data-theme="blueprint"] .grp{font:11.5px var(--mono);color:var(--faint);border-top-color:var(--line3)}
+  /* F 页签：无边框 + 发光下划线；G 阅读区:深色渐变 */
+  html[data-theme="blueprint"] .tabs{background:none;border-bottom:1px solid var(--line2);padding:0 16px}
+  html[data-theme="blueprint"] .tabs button{border:0;border-radius:0;background:none;color:var(--dim2);
+    font-family:var(--sans);letter-spacing:.4px;transform:none}
+  html[data-theme="blueprint"] .tabs button:hover{color:#d7e6f8}
+  html[data-theme="blueprint"] .tabs button.on{color:var(--cyan);text-shadow:0 0 12px rgba(111,211,255,.55);
+    box-shadow:none;background:none;position:relative}
+  html[data-theme="blueprint"] .tabs button.on::after{content:"";position:absolute;left:9px;right:9px;bottom:-1px;height:2px;
+    background:linear-gradient(90deg,var(--cyan),rgba(111,211,255,.25));box-shadow:0 0 10px rgba(111,211,255,.6)}
+  html[data-theme="blueprint"] #view{background:linear-gradient(180deg, rgba(8,22,42,.42), rgba(6,18,36,.62));
+    border:0;border-radius:0;color:var(--ink)}
+  html[data-theme="blueprint"] .markdown{font-family:var(--sans);font-size:13px}
+  html[data-theme="blueprint"] .markdown h1,html[data-theme="blueprint"] .markdown h2,
+  html[data-theme="blueprint"] .markdown h3{color:var(--ink);background:none;display:block;padding:0;
+    border-bottom:1px solid var(--line3);padding-bottom:6px}
+  html[data-theme="blueprint"] .markdown p{color:#c9dbf0}
+  html[data-theme="blueprint"] .markdown p b,html[data-theme="blueprint"] .markdown td b{color:#fff}
+  html[data-theme="blueprint"] .markdown td,html[data-theme="blueprint"] .markdown th{border:1px solid var(--line2);padding:3px 14px}
+  html[data-theme="blueprint"] .markdown td{font-family:var(--mono);font-size:11.5px;color:#cfe2f8}
+  html[data-theme="blueprint"] .markdown th{font-family:var(--mono);font-size:11.5px;color:var(--dim2);background:rgba(111,211,255,.06)}
+  html[data-theme="blueprint"] .markdown code{font-family:var(--mono);font-size:11.5px;color:#bfe6ff;
+    background:rgba(111,211,255,.10);border:1px solid var(--line3);border-radius:3px;padding:0 4px}
+  html[data-theme="blueprint"] a{color:var(--cyan)}
+  /* 日志：等宽；时间淡蓝、无荧光笔底；跳底按钮 = mini 样式 */
+  html[data-theme="blueprint"] .logpane{color:#cfe2f8!important;font-family:var(--mono)!important;
+    background-color:transparent!important;background-image:none!important}
+  html[data-theme="blueprint"] .logpane .lt{color:#7fa3c9;background:none}
+  html[data-theme="blueprint"] .logjump{background:rgba(8,24,44,.5)!important;color:var(--dim2)!important;
+    border:1px solid var(--line2)!important;border-radius:3px!important;text-shadow:none!important;
+    box-shadow:none!important;font-family:var(--mono)!important}
+  /* 浮层：📝 判词带**引线标注**（设计稿签名）；dirpop/ghcard 同族 */
+  html[data-theme="blueprint"] #advpop{background:rgba(9,27,49,.97);border:1px solid var(--line);border-radius:5px;
+    color:var(--ink2);box-shadow:0 18px 48px rgba(0,0,0,.55), 0 0 0 1px rgba(111,211,255,.05) inset;font-family:var(--sans)}
+  html[data-theme="blueprint"] #advpop::before{content:"";position:absolute;left:-38px;top:24px;width:38px;height:1px;background:var(--line)}
+  html[data-theme="blueprint"] #advpop::after{content:"";position:absolute;left:-43px;top:21px;width:7px;height:7px;border-radius:50%;
+    border:1px solid var(--cyan);background:rgba(111,211,255,.4);box-shadow:0 0 9px rgba(111,211,255,.65)}
+  html[data-theme="blueprint"] #advpop .advhead{color:var(--dim2);border-bottom:1px solid var(--line3)}
+  html[data-theme="blueprint"] #advpop .advhead b{color:#8fd0ff!important}
+  html[data-theme="blueprint"] #advpop [style*="#ff9f1a"]{color:var(--amber)!important}
+  html[data-theme="blueprint"] #advpop .advlegend{color:var(--faint)}
+  html[data-theme="blueprint"] .advitem b{color:#8fd0ff}
+  html[data-theme="blueprint"] .advsev{font-family:var(--mono);border-radius:3px;border:1px solid;font-weight:400;transform:none}
+  html[data-theme="blueprint"] .advsev.hard{color:var(--hard);border-color:rgba(255,180,84,.45);background:rgba(255,180,84,.08)}
+  html[data-theme="blueprint"] .advsev.soft{color:var(--soft);border-color:rgba(95,216,180,.45);background:rgba(95,216,180,.08)}
+  html[data-theme="blueprint"] .advsev.info{color:var(--infotag);border-color:rgba(111,182,255,.45);background:rgba(111,182,255,.08)}
+  html[data-theme="blueprint"] #dirpop{background:rgba(9,27,49,.97);border:1px solid var(--line);border-radius:5px;
+    box-shadow:0 18px 48px rgba(0,0,0,.55)}
+  html[data-theme="blueprint"] #dirpop .dp-path{background:rgba(4,15,30,.75);border:1px solid var(--line2);border-radius:3px;color:var(--ink)}
+  html[data-theme="blueprint"] #dirpop .dp-list{border-color:var(--line2)}
+  html[data-theme="blueprint"] #dirpop .dp-row{border-bottom-color:var(--line3);color:#a9c2de}
+  html[data-theme="blueprint"] #dirpop .dp-row:hover{background:rgba(111,211,255,.08);color:#fff}
+  html[data-theme="blueprint"] #ghmodal{background:rgba(3,9,18,.66)}
+  html[data-theme="blueprint"] #ghcard{background:linear-gradient(180deg, rgba(15,40,70,.97), rgba(10,27,49,.97));
+    border:1px solid var(--line);border-radius:6px;
+    box-shadow:0 34px 90px rgba(0,0,0,.6), 0 0 0 1px rgba(111,211,255,.05) inset}
+  html[data-theme="blueprint"] #ghcard .gh-neon{font-family:var(--mono);font-weight:700;letter-spacing:1px;font-size:17px;
+    color:var(--cyan);-webkit-text-fill-color:var(--cyan);background:none;animation:none;
+    text-shadow:0 0 14px rgba(111,211,255,.55)}
+  html[data-theme="blueprint"] #ghcard .gh-sub{color:var(--ink2)}
+  html[data-theme="blueprint"] #ghcard a.gh-link{color:var(--cyan);border-bottom:1px solid rgba(111,211,255,.45)}
+  html[data-theme="blueprint"] #ghcard a.gh-link:hover{color:#bfeaff;border-bottom-color:rgba(191,234,255,.6)}
+  html[data-theme="blueprint"] #gh_close{color:var(--faint)}
+  /* ⓪ 读题确认面板（脚本拼的行内样式定向收拾） */
+  html[data-theme="blueprint"] #dc_intake div[style*="#0d1117"]{background:rgba(4,15,30,.75)!important;border-color:var(--line2)!important}
+  html[data-theme="blueprint"] #dc_intake textarea{background:rgba(4,15,30,.75)!important;color:var(--ink)!important;
+    border:1px solid var(--line2)!important;font-family:var(--mono)!important}
+  html[data-theme="blueprint"] #dc_intake td{border-top-color:var(--line2)!important}
+  /* 开屏页：深蓝图纸 + 四角制图标记 + 引线级标题 */
+  html[data-theme="blueprint"] #splash{--mono:ui-monospace,"Cascadia Mono","Cascadia Code",Consolas,Menlo,monospace;
+    --font:var(--sans);
+    background-color:var(--paper);
+    background-image:
+      repeating-linear-gradient(0deg, rgba(150,192,240,.05) 0 1px, transparent 1px 24px),
+      repeating-linear-gradient(90deg, rgba(150,192,240,.05) 0 1px, transparent 1px 24px),
+      radial-gradient(900px 420px at 50% 8%, rgba(111,211,255,.10), transparent 70%),
+      radial-gradient(1400px 700px at 50% 130%, rgba(46,110,190,.16), transparent 72%)}
+  html[data-theme="blueprint"] #splash::after{content:"";position:fixed;inset:10px;pointer-events:none;z-index:0;
+    background-image:linear-gradient(var(--line),var(--line)),linear-gradient(var(--line),var(--line)),
+      linear-gradient(var(--line),var(--line)),linear-gradient(var(--line),var(--line)),
+      linear-gradient(var(--line),var(--line)),linear-gradient(var(--line),var(--line)),
+      linear-gradient(var(--line),var(--line)),linear-gradient(var(--line),var(--line));
+    background-size:26px 1px,1px 26px,26px 1px,1px 26px,26px 1px,1px 26px,26px 1px,1px 26px;
+    background-position:left top,left top,right top,right top,left bottom,left bottom,right bottom,right bottom;
+    background-repeat:no-repeat}
+  html[data-theme="blueprint"] #splash .orb{filter:blur(110px)}
+  html[data-theme="blueprint"] #splash .orb-a{background:radial-gradient(circle at 50% 50%,rgba(111,211,255,.5),transparent 68%)}
+  html[data-theme="blueprint"] #splash .orb-b{background:radial-gradient(circle at 50% 50%,rgba(46,110,190,.55),transparent 68%)}
+  html[data-theme="blueprint"] #splash .orb-c{background:radial-gradient(circle at 50% 50%,rgba(111,211,255,.28),transparent 70%)}
+  html[data-theme="blueprint"] #splash .grid-lines{background-image:
+      linear-gradient(to right,rgba(150,192,240,.07) 1px,transparent 1px),
+      linear-gradient(to bottom,rgba(150,192,240,.07) 1px,transparent 1px);
+    background-size:24px 24px;-webkit-mask-image:none;mask-image:none}
+  html[data-theme="blueprint"] #splash .vignette{background:
+    radial-gradient(900px 420px at 50% 8%, rgba(111,211,255,.10), transparent 70%),
+    radial-gradient(1400px 700px at 50% 130%, rgba(46,110,190,.16), transparent 72%),
+    rgba(7,19,36,.55);
+    box-shadow:inset 0 0 240px rgba(2,8,18,.85), inset 0 0 80px rgba(2,8,18,.5)}
+  html[data-theme="blueprint"] #splash #splash_inner{background:linear-gradient(180deg, rgba(15,40,70,.96), rgba(10,27,49,.97));
+    border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 34px 90px rgba(0,0,0,.6), 0 0 0 1px rgba(111,211,255,.05) inset;
+    -webkit-backdrop-filter:none;backdrop-filter:none}
+  html[data-theme="blueprint"] #splash #splash_inner::before{background:linear-gradient(90deg,transparent,rgba(111,211,255,.65),transparent);animation:none}
+  html[data-theme="blueprint"] #splash .term-bar{background:linear-gradient(180deg, rgba(111,211,255,.07), rgba(111,211,255,.02));
+    border-bottom:1px solid var(--line2)}
+  html[data-theme="blueprint"] #splash .term-path{color:var(--dim2);letter-spacing:.4px}
+  html[data-theme="blueprint"] #splash .hero-title{font-family:var(--sans);filter:none}
+  html[data-theme="blueprint"] #splash .hero-title:hover{filter:none}
+  html[data-theme="blueprint"] #splash .ht-line{font-size:62px;font-weight:800;line-height:1.12;letter-spacing:2px;
+    background:none;color:#f4f9ff;-webkit-text-fill-color:#f4f9ff;-webkit-background-clip:border-box;background-clip:border-box;
+    -webkit-mask-image:none;mask-image:none;animation:none}
+  html[data-theme="blueprint"] #splash .ht-indent{padding-left:0!important;margin-left:138px;
+    color:var(--cyan);-webkit-text-fill-color:var(--cyan);background:none;
+    text-shadow:0 0 34px rgba(111,211,255,.45);animation:none}
+  html[data-theme="blueprint"] #splash .hero-kicker{font:700 14px var(--mono);color:var(--cyan);letter-spacing:2.5px;text-shadow:0 0 12px rgba(111,211,255,.5)}
+  html[data-theme="blueprint"] #splash .hero-kicker::after{background:var(--cyan);box-shadow:0 0 10px rgba(111,211,255,.8)}
+  html[data-theme="blueprint"] #splash .hero-sub{color:#a7c0dc;letter-spacing:.4px}
+  html[data-theme="blueprint"] #splash .hero-boot{color:var(--cyan)}
+  html[data-theme="blueprint"] #splash .cfg{background:rgba(7,22,42,.55);border:1px solid var(--line2);border-radius:6px;
+    box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+  html[data-theme="blueprint"] #splash .cfg::before{content:none}
+  html[data-theme="blueprint"] #splash .cfg h2{font:600 12px var(--mono);color:var(--dim2);letter-spacing:2px;
+    border-left:0;padding-left:0;text-shadow:none;background:none;display:flex;align-items:center;gap:10px}
+  html[data-theme="blueprint"] #splash .cfg h2::after{content:"";flex:1;height:1px;background:var(--line3)}
+  html[data-theme="blueprint"] #splash .cfg .field .k code{font:12px var(--mono);color:#8fd0ff}
+  html[data-theme="blueprint"] #splash .cfg .field .eq{color:var(--faint);font-family:var(--mono)}
+  html[data-theme="blueprint"] #splash .cfg .field em{color:var(--faint);font-family:var(--mono)}
+  html[data-theme="blueprint"] #splash .cfg .field:focus-within .k code{color:#bfeaff;text-shadow:0 0 16px rgba(111,211,255,.42)}
+  html[data-theme="blueprint"] #splash .input{color:var(--ink);caret-color:var(--cyan);
+    background:rgba(4,15,30,.75);border:1px solid var(--line2);border-radius:3px;padding:7px 10px;
+    background-image:none}
+  html[data-theme="blueprint"] #splash .input:hover{border-color:rgba(216,233,255,.4)}
+  html[data-theme="blueprint"] #splash .input:focus{border-color:rgba(143,214,255,.7);
+    box-shadow:0 0 0 2px rgba(111,211,255,.12);background-size:auto}
+  html[data-theme="blueprint"] #splash .input::placeholder{color:#4d688a;font-family:var(--mono)}
+  html[data-theme="blueprint"] #splash .check .box{display:inline-grid;place-items:center;width:13px;height:13px;
+    border:1px solid var(--line2);border-radius:2px;background:rgba(4,15,30,.75);color:#04263f;font-size:10px;line-height:1}
+  html[data-theme="blueprint"] #splash .check .box::before{content:""}
+  html[data-theme="blueprint"] #splash .check input:checked ~ .box::before{content:"✓"}
+  html[data-theme="blueprint"] #splash .check input:checked ~ .box{background:var(--cyan);border-color:var(--cyan);color:#04263f;text-shadow:none}
+  html[data-theme="blueprint"] #splash .check .box::after{display:none}
+  html[data-theme="blueprint"] #splash .check .lbl{color:var(--dim2);font-family:var(--mono)}
+  html[data-theme="blueprint"] #splash .cfg-row{border-top:1px solid var(--line3)}
+  html[data-theme="blueprint"] #splash .cfg-row button{color:var(--ink)}
+  html[data-theme="blueprint"] #splash .cfg-row button::before,
+  html[data-theme="blueprint"] #splash .cfg-row button::after{content:""}
+  html[data-theme="blueprint"] #splash #cf_save{color:#04263f;font-weight:700;border-color:#8fd6ff;
+    background:linear-gradient(180deg,#a5e4ff,#58c0ef);text-shadow:none;box-shadow:0 0 16px rgba(111,211,255,.35)}
+  html[data-theme="blueprint"] #splash #cf_save:hover{background:linear-gradient(180deg,#bdeaff,#6fcbf5)}
+  html[data-theme="blueprint"] #splash #cf_msg{font-family:var(--mono);color:var(--cyan);letter-spacing:.4px}
+  html[data-theme="blueprint"] #splash #cf_msg:not(:empty){background:none;border:0;padding:0}
+  html[data-theme="blueprint"] #splash #cf_msg:not(:empty)::before{content:"▸ ";color:var(--cyan)}
+
+  /* ---- 日志的"双身图标"：emoji 一份（.em）+ 像素画一份（.pxa）。
+       默认只显示 emoji；像素主题里换成 box-shadow 拼的像素图——画法照设计稿 15 原样。
+       日志行还被切成 .lt/.tk/.cmd/.lx 四段（renderLog 负责），配色见各主题块。 */
+  .pxa{display:none;position:relative;font-size:2px;width:8em;height:8em;flex:none}
+  .pxa::before{content:'';position:absolute;left:0;top:0;width:1em;height:1em}
+  .logpane .lt{margin-right:6px}
+  .logpane .ic{display:inline-flex;align-items:center;margin-right:6px}
+  .logpane .tk{margin-right:6px}
+  .pxa.px-tterm{width:6em;height:6em}
+  .pxa.px-tterm::before{box-shadow:0 0 currentColor,1em 0em currentColor,2em 0em currentColor,3em 0em currentColor,4em 0em currentColor,5em 0em currentColor,0em 1em currentColor,5em 1em currentColor,0em 2em currentColor,1em 2em currentColor,5em 2em currentColor,0em 3em currentColor,2em 3em currentColor,5em 3em currentColor,0em 4em currentColor,1em 4em currentColor,5em 4em currentColor,0em 5em currentColor,1em 5em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,5em 5em currentColor}
+  .pxa.px-tdoc{width:6em;height:6em}
+  .pxa.px-tdoc::before{box-shadow:0 0 currentColor,1em 0em currentColor,2em 0em currentColor,3em 0em currentColor,0em 1em currentColor,3em 1em currentColor,0em 2em currentColor,3em 2em currentColor,0em 3em currentColor,3em 3em currentColor,0em 4em currentColor,3em 4em currentColor,0em 5em currentColor,1em 5em currentColor,2em 5em currentColor,3em 5em currentColor}
+  .pxa.px-tpen{width:6em;height:6em}
+  .pxa.px-tpen::before{box-shadow:4em 0em currentColor,5em 0em currentColor,3em 1em currentColor,4em 1em currentColor,2em 2em currentColor,3em 2em currentColor,1em 3em currentColor,2em 3em currentColor,0em 4em currentColor,1em 4em currentColor,0em 5em currentColor}
+  .pxa.px-tcam{width:6em;height:6em}
+  .pxa.px-tcam::before{box-shadow:1em 1em currentColor,2em 1em currentColor,3em 1em currentColor,0em 2em currentColor,1em 2em currentColor,2em 2em currentColor,3em 2em currentColor,4em 2em currentColor,5em 2em currentColor,0em 3em currentColor,1em 3em currentColor,4em 3em currentColor,5em 3em currentColor,0em 4em currentColor,1em 4em currentColor,4em 4em currentColor,5em 4em currentColor,0em 5em currentColor,1em 5em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,5em 5em currentColor}
+  .pxa.px-tcheck{width:6em;height:6em}
+  .pxa.px-tcheck::before{box-shadow:5em 0em currentColor,4em 1em currentColor,0em 2em currentColor,4em 2em currentColor,1em 3em currentColor,3em 3em currentColor,2em 4em currentColor,3em 4em currentColor}
+  .pxa.px-tbox{width:6em;height:6em}
+  .pxa.px-tbox::before{box-shadow:1em 1em currentColor,2em 1em currentColor,3em 1em currentColor,4em 1em currentColor,1em 2em currentColor,4em 2em currentColor,1em 3em currentColor,4em 3em currentColor,1em 4em currentColor,2em 4em currentColor,3em 4em currentColor,4em 4em currentColor}
+  .pxa.px-tplay{width:6em;height:6em}
+  .pxa.px-tplay::before{box-shadow:0 0 currentColor,1em 0em currentColor,0em 1em currentColor,1em 1em currentColor,2em 1em currentColor,3em 1em currentColor,0em 2em currentColor,1em 2em currentColor,2em 2em currentColor,3em 2em currentColor,4em 2em currentColor,5em 2em currentColor,0em 3em currentColor,1em 3em currentColor,2em 3em currentColor,3em 3em currentColor,4em 3em currentColor,5em 3em currentColor,0em 4em currentColor,1em 4em currentColor,2em 4em currentColor,3em 4em currentColor,0em 5em currentColor,1em 5em currentColor}
+  .pxa.px-tgem{width:6em;height:5em}
+  .pxa.px-tgem::before{box-shadow:2em 0em currentColor,1em 1em currentColor,2em 1em currentColor,3em 1em currentColor,0em 2em currentColor,1em 2em currentColor,2em 2em currentColor,3em 2em currentColor,4em 2em currentColor,1em 3em currentColor,2em 3em currentColor,3em 3em currentColor,2em 4em currentColor}
+  .pxa.px-warn{width:8em;height:8em}
+  .pxa.px-warn::before{box-shadow:3em 0em currentColor,4em 0em currentColor,2em 1em currentColor,3em 1em currentColor,4em 1em currentColor,5em 1em currentColor,2em 2em currentColor,3em 2em var(--hole,#000),4em 2em var(--hole,#000),5em 2em currentColor,2em 3em currentColor,3em 3em var(--hole,#000),4em 3em var(--hole,#000),5em 3em currentColor,1em 4em currentColor,2em 4em currentColor,3em 4em var(--hole,#000),4em 4em var(--hole,#000),5em 4em currentColor,6em 4em currentColor,1em 5em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,5em 5em currentColor,6em 5em currentColor,0em 6em currentColor,1em 6em currentColor,2em 6em currentColor,3em 6em var(--hole,#000),4em 6em var(--hole,#000),5em 6em currentColor,6em 6em currentColor,7em 6em currentColor,0em 7em currentColor,1em 7em currentColor,2em 7em currentColor,3em 7em currentColor,4em 7em currentColor,5em 7em currentColor,6em 7em currentColor,7em 7em currentColor}
+  .pxa.px-clock{width:8em;height:6em}
+  .pxa.px-clock::before{box-shadow:2em 0em currentColor,3em 0em currentColor,4em 0em currentColor,5em 0em currentColor,1em 1em currentColor,6em 1em currentColor,0em 2em currentColor,3em 2em currentColor,4em 2em currentColor,7em 2em currentColor,0em 3em currentColor,3em 3em currentColor,4em 3em currentColor,7em 3em currentColor,1em 4em currentColor,6em 4em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,5em 5em currentColor}
+  .pxa.px-trash{width:8em;height:8em}
+  .pxa.px-trash::before{box-shadow:2em 0em currentColor,3em 0em currentColor,4em 0em currentColor,5em 0em currentColor,0em 1em currentColor,1em 1em currentColor,2em 1em currentColor,3em 1em currentColor,4em 1em currentColor,5em 1em currentColor,6em 1em currentColor,7em 1em currentColor,1em 2em currentColor,2em 2em currentColor,3em 2em currentColor,4em 2em currentColor,5em 2em currentColor,6em 2em currentColor,1em 3em currentColor,3em 3em currentColor,4em 3em currentColor,6em 3em currentColor,1em 4em currentColor,3em 4em currentColor,4em 4em currentColor,6em 4em currentColor,1em 5em currentColor,3em 5em currentColor,4em 5em currentColor,6em 5em currentColor,1em 6em currentColor,2em 6em currentColor,3em 6em currentColor,4em 6em currentColor,5em 6em currentColor,6em 6em currentColor,2em 7em currentColor,3em 7em currentColor,4em 7em currentColor,5em 7em currentColor}
+  .pxa.px-note{width:8em;height:8em}
+  .pxa.px-note::before{box-shadow:1em 1em currentColor,2em 1em currentColor,3em 1em currentColor,4em 1em currentColor,5em 1em currentColor,1em 2em currentColor,5em 2em currentColor,1em 3em currentColor,3em 3em currentColor,5em 3em currentColor,1em 4em currentColor,5em 4em currentColor,1em 5em currentColor,3em 5em currentColor,5em 5em currentColor,1em 6em currentColor,2em 6em currentColor,3em 6em currentColor,4em 6em currentColor,5em 6em currentColor}
+  .pxa.px-redo{width:8em;height:8em}
+  .pxa.px-redo::before{box-shadow:2em 0em currentColor,3em 0em currentColor,1em 1em currentColor,5em 1em currentColor,6em 1em currentColor,0em 2em currentColor,5em 2em currentColor,6em 2em currentColor,7em 2em currentColor,0em 3em currentColor,5em 3em currentColor,6em 3em currentColor,0em 4em currentColor,7em 4em currentColor,0em 5em currentColor,7em 5em currentColor,1em 6em currentColor,6em 6em currentColor,2em 7em currentColor,3em 7em currentColor,4em 7em currentColor,5em 7em currentColor}
+  .pxa.px-up{width:8em;height:8em}
+  .pxa.px-up::before{box-shadow:3em 0em currentColor,4em 0em currentColor,2em 1em currentColor,3em 1em currentColor,4em 1em currentColor,5em 1em currentColor,1em 2em currentColor,2em 2em currentColor,3em 2em currentColor,4em 2em currentColor,5em 2em currentColor,6em 2em currentColor,0em 3em currentColor,1em 3em currentColor,3em 3em currentColor,4em 3em currentColor,6em 3em currentColor,7em 3em currentColor,3em 4em currentColor,4em 4em currentColor,3em 5em currentColor,4em 5em currentColor,3em 6em currentColor,4em 6em currentColor,3em 7em currentColor,4em 7em currentColor}
+  .pxa.px-pause{width:8em;height:8em}
+  .pxa.px-pause::before{box-shadow:1em 1em currentColor,2em 1em currentColor,5em 1em currentColor,6em 1em currentColor,1em 2em currentColor,2em 2em currentColor,5em 2em currentColor,6em 2em currentColor,1em 3em currentColor,2em 3em currentColor,5em 3em currentColor,6em 3em currentColor,1em 4em currentColor,2em 4em currentColor,5em 4em currentColor,6em 4em currentColor,1em 5em currentColor,2em 5em currentColor,5em 5em currentColor,6em 5em currentColor,1em 6em currentColor,2em 6em currentColor,5em 6em currentColor,6em 6em currentColor}
+  .pxa.px-stop{width:8em;height:8em}
+  .pxa.px-stop::before{box-shadow:1em 1em currentColor,2em 1em currentColor,3em 1em currentColor,4em 1em currentColor,5em 1em currentColor,6em 1em currentColor,1em 2em currentColor,2em 2em currentColor,3em 2em currentColor,4em 2em currentColor,5em 2em currentColor,6em 2em currentColor,1em 3em currentColor,2em 3em currentColor,3em 3em currentColor,4em 3em currentColor,5em 3em currentColor,6em 3em currentColor,1em 4em currentColor,2em 4em currentColor,3em 4em currentColor,4em 4em currentColor,5em 4em currentColor,6em 4em currentColor,1em 5em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,5em 5em currentColor,6em 5em currentColor,1em 6em currentColor,2em 6em currentColor,3em 6em currentColor,4em 6em currentColor,5em 6em currentColor,6em 6em currentColor}
+  .pxa.px-robot{width:8em;height:8em}
+  .pxa.px-robot::before{box-shadow:3em 0em currentColor,4em 0em currentColor,2em 1em currentColor,3em 1em currentColor,4em 1em currentColor,5em 1em currentColor,1em 2em currentColor,2em 2em currentColor,3em 2em currentColor,4em 2em currentColor,5em 2em currentColor,6em 2em currentColor,0em 3em currentColor,1em 3em currentColor,3em 3em currentColor,4em 3em currentColor,6em 3em currentColor,7em 3em currentColor,0em 4em currentColor,1em 4em currentColor,2em 4em currentColor,3em 4em currentColor,4em 4em currentColor,5em 4em currentColor,6em 4em currentColor,7em 4em currentColor,0em 5em currentColor,1em 5em currentColor,2em 5em currentColor,5em 5em currentColor,6em 5em currentColor,7em 5em currentColor,1em 6em currentColor,2em 6em currentColor,3em 6em currentColor,4em 6em currentColor,5em 6em currentColor,6em 6em currentColor,2em 7em currentColor,3em 7em currentColor,4em 7em currentColor,5em 7em currentColor}
+  .pxa.px-diamond{width:7em;height:7em;font-size:2px}
+  .pxa.px-diamond::before{box-shadow:3em 0em currentColor,2em 1em currentColor,3em 1em currentColor,4em 1em currentColor,1em 2em currentColor,2em 2em currentColor,3em 2em currentColor,4em 2em currentColor,5em 2em currentColor,0em 3em currentColor,1em 3em currentColor,2em 3em currentColor,3em 3em currentColor,4em 3em currentColor,5em 3em currentColor,6em 3em currentColor,1em 4em currentColor,2em 4em currentColor,3em 4em currentColor,4em 4em currentColor,5em 4em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,3em 6em currentColor}
+  .pxa.px-plug{width:8em;height:8em}
+  .pxa.px-plug::before{box-shadow:1em 1em currentColor,2em 1em currentColor,5em 1em currentColor,6em 1em currentColor,1em 2em currentColor,2em 2em currentColor,5em 2em currentColor,6em 2em currentColor,1em 3em currentColor,2em 3em currentColor,3em 3em currentColor,4em 3em currentColor,5em 3em currentColor,6em 3em currentColor,1em 4em currentColor,2em 4em currentColor,3em 4em currentColor,4em 4em currentColor,5em 4em currentColor,6em 4em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,5em 5em currentColor,3em 6em currentColor,4em 6em currentColor,3em 7em currentColor,4em 7em currentColor}
+  .pxa.px-book{width:8em;height:8em}
+  .pxa.px-book::before{box-shadow:1em 1em currentColor,2em 1em currentColor,3em 1em currentColor,4em 1em currentColor,5em 1em currentColor,1em 2em currentColor,5em 2em currentColor,1em 3em currentColor,2em 3em currentColor,3em 3em currentColor,4em 3em currentColor,5em 3em currentColor,1em 4em currentColor,5em 4em currentColor,1em 5em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,5em 5em currentColor}
+  .pxa.px-pic{width:6em;height:6em}
+  .pxa.px-pic::before{box-shadow:0 0 currentColor,1em 0em currentColor,2em 0em currentColor,3em 0em currentColor,4em 0em currentColor,5em 0em currentColor,0em 1em currentColor,5em 1em currentColor,0em 2em currentColor,2em 2em currentColor,5em 2em currentColor,0em 3em currentColor,2em 3em currentColor,3em 3em currentColor,4em 3em currentColor,0em 4em currentColor,3em 4em currentColor,0em 5em currentColor,1em 5em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,5em 5em currentColor}
+  .pxa.px-git{width:10em;height:10em}
+  .pxa.px-git::before{box-shadow:2em 0em currentColor,7em 0em currentColor,1em 1em currentColor,2em 1em currentColor,3em 1em currentColor,6em 1em currentColor,7em 1em currentColor,8em 1em currentColor,1em 2em currentColor,2em 2em currentColor,3em 2em currentColor,4em 2em currentColor,5em 2em currentColor,6em 2em currentColor,7em 2em currentColor,8em 2em currentColor,1em 3em currentColor,2em 3em currentColor,4em 3em currentColor,5em 3em currentColor,7em 3em currentColor,8em 3em currentColor,1em 4em currentColor,2em 4em currentColor,3em 4em currentColor,4em 4em currentColor,5em 4em currentColor,6em 4em currentColor,7em 4em currentColor,8em 4em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,5em 5em currentColor,6em 5em currentColor,7em 5em currentColor,2em 6em currentColor,3em 6em currentColor,4em 6em currentColor,5em 6em currentColor,6em 6em currentColor,7em 6em currentColor,1em 7em currentColor,2em 7em currentColor,3em 7em currentColor,4em 7em currentColor,5em 7em currentColor,6em 7em currentColor,7em 7em currentColor,8em 7em currentColor,1em 8em currentColor,2em 8em currentColor,3em 8em currentColor,4em 8em currentColor,5em 8em currentColor,6em 8em currentColor,7em 8em currentColor,8em 8em currentColor,2em 9em currentColor,3em 9em currentColor,6em 9em currentColor,7em 9em currentColor}
+  .pxa.px-star{width:5em;height:5em}
+  .pxa.px-star::before{box-shadow:2em 0em currentColor,2em 1em currentColor,0em 2em currentColor,1em 2em currentColor,2em 2em currentColor,3em 2em currentColor,4em 2em currentColor,2em 3em currentColor,2em 4em currentColor}
+
+  /* ============================================================
+     主题「像素复古 8-bit」（来源：设计稿 15-pixel-8bit.html，逐区翻译）。
+     语言：**零圆角**（一条 `*{border-radius:0!important}` 管全站，连圆点都变方块）、
+     2–3px 硬边 + 3px 硬投影、按钮内嵌亮/暗斜面（按下 translate(2,2) + 斜面反转）、
+     金币黄主色、等宽字贯穿、黄灯卡 = 琥珀**标题条**、开屏页 = 像素星星 + 地面条。
+     ============================================================ */
+  html[data-theme="pixel"]{
+    --bg:#0a0e26; --bg2:#0d1330; --bg3:#080c22;
+    --panel:#121b40; --panel2:#182352;
+    --line:#35498f; --line2:#1f2c5c; --line3:#070a1c;
+    --ink:#e9f0ff; --dim2:#94a7d8; --faint:#5f71a8;
+    --acc:#ffd23f; --acc2:#3fe0ff; --mint:#5be07a; --amber:#ffb02e;
+    --red:#ff5d5d; --quiet:#4fd8e8; --orange:#ff9d3c; --info2:#84b6ff; --magenta:#ff7ad9;
+    --shadow:#05070f;
+    --mono:Consolas,"Cascadia Mono","Courier New","SimSun","Microsoft YaHei",ui-monospace,monospace;
+    /* 全局变量复写（--bg 已在上面的私有变量里定过，同值） */
+    --panel:#121b40; --line:#35498f; --fg:#e9f0ff; --dim:#94a7d8;
+    --acc:#ffd23f; --ok:#5be07a; --fail:#ff5d5d; --run:#ffb02e; --wait:#ffb02e; --manual:#b48cff;
+  }
+  /* ★ 零圆角是全站的签名：一条规则管到底（圆点也会变方块，正是我们要的） */
+  html[data-theme="pixel"] *{border-radius:0!important}
+  html[data-theme="pixel"] ::selection{background:var(--acc);color:#1c1404}
+  html[data-theme="pixel"] body{
+    font-family:var(--mono);letter-spacing:.01em;color:var(--ink);
+    background-color:#0a0e26;
+    background-image:
+      linear-gradient(45deg,rgba(120,160,255,.030) 25%,transparent 25%,transparent 75%,rgba(120,160,255,.030) 75%),
+      linear-gradient(45deg,rgba(120,160,255,.030) 25%,transparent 25%,transparent 75%,rgba(120,160,255,.030) 75%);
+    background-size:4px 4px;background-position:0 0,2px 2px;
+  }
+  html[data-theme="pixel"] header{background:#0d1330;border-bottom:3px solid var(--line3)}
+  /* 按钮：8-bit 斜面（亮上左、暗下右 + 3px 硬影；按下位移 + 斜面反转） */
+  html[data-theme="pixel"] button{
+    font:600 12.5px/1 var(--mono);color:var(--ink);background:#182352;border:2px solid var(--line);
+    box-shadow:inset 2px 2px 0 0 #3d55a3, inset -2px -2px 0 0 #0b1231, 3px 3px 0 0 var(--shadow);
+  }
+  html[data-theme="pixel"] button:hover{background:#243170;color:#fff}
+  html[data-theme="pixel"] button:active{transform:translate(2px,2px);
+    box-shadow:inset 2px 2px 0 0 #0b1231, inset -2px -2px 0 0 #3d55a3, 1px 1px 0 0 var(--shadow)}
+  html[data-theme="pixel"] button.primary{background:var(--acc);color:#241a05;border-color:#a97c14;
+    box-shadow:inset 2px 2px 0 0 #ffeb96, inset -2px -2px 0 0 #b8860b, 3px 3px 0 0 var(--shadow)}
+  html[data-theme="pixel"] button.primary:hover{background:#ffe066;color:#241a05}
+  html[data-theme="pixel"] button.primary:active{box-shadow:inset 2px 2px 0 0 #b8860b, inset -2px -2px 0 0 #ffeb96, 1px 1px 0 0 var(--shadow)}
+  html[data-theme="pixel"] select{background:#182352!important;color:var(--ink)!important;
+    border:2px solid var(--line)!important;font:600 12.5px var(--mono)!important;
+    box-shadow:inset 2px 2px 0 0 #3d55a3, inset -2px -2px 0 0 #0b1231, 3px 3px 0 0 var(--shadow)!important}
+  html[data-theme="pixel"] input[type=text],html[data-theme="pixel"] input[type=password],
+  html[data-theme="pixel"] input[type=number]{font-family:var(--mono)}
+  /* 品牌：白字 + 双层硬影（2px+4px 错位，8-bit 标题签名） */
+  html[data-theme="pixel"] header h1{font-weight:800;letter-spacing:.04em;color:#fff;
+    text-shadow:2px 2px 0 #2b3a7a, 4px 4px 0 var(--shadow);background:none}
+  html[data-theme="pixel"] header h1:hover{color:var(--acc)}
+  /* 进度条：暗槽 + 金币斜纹格 */
+  html[data-theme="pixel"] #pwrap{background-color:#0a0f2c;border:2px solid var(--line2);height:6px;
+    box-shadow:inset 2px 2px 0 0 #05081a}
+  html[data-theme="pixel"] #pbar{background:repeating-linear-gradient(90deg,var(--acc) 0 6px,#0a0e26 6px 8px)}
+  html[data-theme="pixel"] #ptext{color:var(--faint);font-family:var(--mono)}
+  html[data-theme="pixel"] #timer{color:var(--acc)!important;text-shadow:none!important;font-family:var(--mono)}
+  html[data-theme="pixel"] #status{color:var(--dim2)}
+  /* C 行：chip 小方块胶囊 → 硬边小盒；GitHub = 绿终端徽章；按钮沿用 26px 同高口径 */
+  html[data-theme="pixel"] #delivchip{color:var(--dim2)!important;background:#101a3e!important;
+    border:2px solid var(--line2)!important;box-shadow:2px 2px 0 0 var(--shadow);
+    font-family:var(--mono)!important}
+  html[data-theme="pixel"] #ghbadge{color:var(--mint)!important;-webkit-text-fill-color:var(--mint);
+    background:#0f2a1c!important;border:2px solid #2f7a45!important;animation:none;filter:none;
+    font-weight:700;font-family:var(--mono);border-radius:0!important;
+    box-shadow:inset 2px 2px 0 0 #2f7a45, inset -2px -2px 0 0 #081a11, 3px 3px 0 0 var(--shadow)}
+  html[data-theme="pixel"] #ghbadge svg{fill:var(--mint);filter:none}
+  html[data-theme="pixel"] #ghbadge:hover{color:#8effb4!important;border-color:#49b76a!important}
+  html[data-theme="pixel"] #autopilot,
+  html[data-theme="pixel"] #theme_btn,
+  html[data-theme="pixel"] #dtheme_btn,
+  html[data-theme="pixel"] #template_btn{height:26px;padding:0 12px;font-size:11.5px;top:0 !important}
+  html[data-theme="pixel"] #delivchip{height:26px;padding:0 12px!important;font-size:11.5px!important;
+    display:inline-flex;align-items:center;box-sizing:border-box}
+  /* D 提示带：深蓝带 + 3px 底墨线（全幅，不缩进不做卡）；芯片 = 斜面小按钮 */
+  html[data-theme="pixel"] #stalebar{background:#152052!important;border:0!important;
+    border-bottom:3px solid var(--line3)!important;border-radius:0;box-shadow:none;margin:0;
+    color:var(--dim2);font-size:12.5px!important}
+  html[data-theme="pixel"] #stalebar::before,html[data-theme="pixel"] #stalebar::after{content:none}
+  html[data-theme="pixel"] #stalebar b{color:var(--ink)}
+  html[data-theme="pixel"] #stalebar code{font-family:var(--mono);font-size:11px;color:var(--acc);
+    background:#1a2350;border:2px solid var(--line2);padding:0 4px}
+  html[data-theme="pixel"] #stalebar .fine{font-family:var(--mono);font-size:11.5px;color:var(--dim2);line-height:1.8}
+  html[data-theme="pixel"] #stale_chips button{font:600 11.5px var(--mono);padding:4px 9px;height:auto;
+    transform:none;background:#182352;border:2px solid var(--line);
+    box-shadow:inset 2px 2px 0 0 #3d55a3, inset -2px -2px 0 0 #0b1231, 2px 2px 0 0 var(--shadow)}
+  html[data-theme="pixel"] #stale_chips button:hover{background:#243170}
+  html[data-theme="pixel"] #ws{color:var(--faint)}
+  /* 可折叠面板区 */
+  html[data-theme="pixel"] #updrop{border:2px dashed var(--acc2)!important;background:#101a3e!important;border-radius:0!important}
+  html[data-theme="pixel"] #updrop:hover{background:#182352!important}
+  html[data-theme="pixel"] #updrop.hot{background:#1f2c5c!important;border-color:var(--acc)!important}
+  html[data-theme="pixel"] #up_result{background:#0a1030!important;border:2px solid var(--line)!important}
+  html[data-theme="pixel"] #delivpanel input{background:#0a1030!important;border:2px solid var(--line)!important;color:var(--ink)!important}
+  html[data-theme="pixel"] #dv_wipe,html[data-theme="pixel"] #dv_wipe_all{border-color:#7a2a2a!important;color:var(--red)!important}
+  /* 黄灯/手工修复：琥珀**标题条**（设计稿 .yel-h 签名） */
+  html[data-theme="pixel"] #decide{background:#2a1a10!important;border-bottom:3px solid var(--amber)!important}
+  html[data-theme="pixel"] #decide > div:first-child{background:var(--amber);margin:-12px -18px 7px;
+    padding:7px 18px 6px}
+  html[data-theme="pixel"] #dc_title{color:#2a1a05!important}
+  html[data-theme="pixel"] #dc_sub{color:#5a3a10!important}
+  html[data-theme="pixel"] #decide input,html[data-theme="pixel"] #decide select{
+    background:#0a1030!important;color:var(--ink)!important;border:2px solid var(--line)!important}
+  html[data-theme="pixel"] #dc_advhead,html[data-theme="pixel"] #dc_adv{color:var(--amber)!important}
+  html[data-theme="pixel"] #dc_adv{border-left-color:#7a5220!important}
+  html[data-theme="pixel"] #dc_tail{border-left-color:var(--line)!important;color:var(--dim2)!important}
+  html[data-theme="pixel"] #hilpanel{background:#2a1a10!important}
+  html[data-theme="pixel"] #hilpanel b{color:var(--amber)}
+  html[data-theme="pixel"] #hil_body div[style*="#5a4520"]{border-left-color:#7a5220!important}
+  html[data-theme="pixel"] #hil_body div[style*="#3a2f10"]{background:rgba(255,176,46,.16)!important}
+  html[data-theme="pixel"] #hil_body div[style*="#e67e22"]{color:var(--amber)!important}
+  /* E 左栏：深蓝栏 + 3px 右墨线；标题仅字距 */
+  html[data-theme="pixel"] aside{background:#0d1330;border:0;border-right:3px solid var(--line3);
+    border-radius:0;box-shadow:none;margin:0}
+  html[data-theme="pixel"] .sec{color:var(--faint);font-size:12px;letter-spacing:.2em}
+  /* 阶段表：**方块**脉冲点（零圆角自动生效）+ 运行行紫底金边 */
+  html[data-theme="pixel"] .stage{border-radius:0}
+  html[data-theme="pixel"] .stage .dot{width:9px;height:9px;background:var(--faint);
+    box-shadow:2px 2px 0 0 var(--shadow);border:0}
+  html[data-theme="pixel"] .stage.done .dot{background:var(--ok)}
+  html[data-theme="pixel"] .stage.stale .dot{background:var(--amber)}
+  html[data-theme="pixel"] .stage.disclosed .dot{background:var(--orange)}
+  html[data-theme="pixel"] .stage.manual .dot{background:var(--manual)}
+  html[data-theme="pixel"] .stage.fail .dot{background:var(--red)}
+  html[data-theme="pixel"] .stage.wait .dot{background:var(--amber)}
+  html[data-theme="pixel"] .stage.done{color:var(--dim2)}
+  html[data-theme="pixel"] .stage.run{background:#231a4e;border-left:4px solid var(--acc);color:var(--acc);font-weight:700}
+  html[data-theme="pixel"] .stage.run .dot{background:var(--acc);animation:bpl-steps 1.1s steps(2,end) infinite}
+  @keyframes bpl-steps{0%,100%{opacity:1}50%{opacity:.35}}
+  /* 📝 角标：紫框方块徽章（quiet = 青框） */
+  html[data-theme="pixel"] .advtag{font:700 10px/1 var(--mono);padding:3px 4px 2px;border:2px solid var(--manual);
+    color:#ecd6ff;background:#3a1c4d;box-shadow:2px 2px 0 0 var(--shadow)}
+  html[data-theme="pixel"] .advtag.advhard{border-color:var(--warn);color:#ffe0b0;background:#3a2a10}
+  html[data-theme="pixel"] .advtag.advvd{border-color:var(--quiet);color:var(--quiet);background:#0e2f3d}
+  html[data-theme="pixel"] .tsk{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+  html[data-theme="pixel"] .stage.run .tsk,html[data-theme="pixel"] .stage.wait .tsk{color:var(--acc)}
+  html[data-theme="pixel"] .file{font-size:12px;color:#a9bcea;padding:4px 8px;border-left:4px solid transparent}
+  html[data-theme="pixel"] .file:hover{background:#101a3e;color:var(--ink)}
+  html[data-theme="pixel"] .grp{color:var(--dim2);border-top-color:var(--line2)}
+  /* F 页签：方块页签 —— 活动页 = 深底 + 边框 + 4px 青色内嵌底线 */
+  html[data-theme="pixel"] .tabs{background:#0d1330;border-bottom:3px solid var(--line3);padding:0 6px}
+  html[data-theme="pixel"] .tabs button{border:2px solid transparent;border-bottom:none;background:none;
+    color:var(--dim2);font:600 12.5px var(--mono);transform:none;border-radius:0}
+  html[data-theme="pixel"] .tabs button:hover{color:var(--ink)}
+  html[data-theme="pixel"] .tabs button.on{color:var(--acc2);background:#080c22;border-color:var(--line);
+    border-bottom-color:#080c22;box-shadow:inset 0 -4px 0 0 var(--acc2)}
+  html[data-theme="pixel"] #view{background:#080c22;border:0;border-radius:0;color:var(--ink)}
+  html[data-theme="pixel"] .logpane{color:#8fa5d6!important;font-family:var(--mono)!important;
+    background-color:transparent!important;background-image:none!important;font-size:11.5px!important;line-height:1.85!important}
+  html[data-theme="pixel"] .logpane .lt{color:var(--faint);background:none}
+  html[data-theme="pixel"] .logjump{background:#101a3e!important;color:var(--ink)!important;
+    border:2px solid var(--line)!important;text-shadow:none!important;font-family:var(--mono)!important;
+    box-shadow:inset 2px 2px 0 0 #3d55a3, inset -2px -2px 0 0 #0b1231, 2px 2px 0 0 var(--shadow)!important}
+  /* 报告渲染：方块面板 + 金币表头 + 白字硬影标题 */
+  html[data-theme="pixel"] .markdown{font-family:var(--mono);font-size:12.5px}
+  html[data-theme="pixel"] .markdown h1,html[data-theme="pixel"] .markdown h2,
+  html[data-theme="pixel"] .markdown h3{color:#fff;background:none;display:block;padding:0;
+    letter-spacing:.03em;text-shadow:2px 2px 0 #2b3a7a}
+  html[data-theme="pixel"] .markdown p{color:#c6d3f5;line-height:1.8}
+  html[data-theme="pixel"] .markdown td,html[data-theme="pixel"] .markdown th{border:2px solid var(--line2);padding:5px 12px}
+  html[data-theme="pixel"] .markdown th{background:#182352;color:var(--acc);font-weight:700}
+  html[data-theme="pixel"] .markdown code{font-size:11.5px;color:var(--acc);background:#1a2350;
+    border:2px solid var(--line2);padding:0 4px}
+  html[data-theme="pixel"] a{color:var(--acc2)}
+  /* 浮层：方块面板 + 6px 硬影 + 左侧**气泡箭头**（13px 旋转方块，设计稿签名） */
+  html[data-theme="pixel"] #advpop{background:#121b40;border:2px solid var(--line);color:#c6d3f5;
+    box-shadow:6px 6px 0 0 var(--shadow);font-family:var(--mono)}
+  html[data-theme="pixel"] #advpop::before{content:"";position:absolute;left:-9px;top:22px;width:13px;height:13px;
+    background:#121b40;border-left:2px solid var(--line);border-bottom:2px solid var(--line);transform:rotate(45deg)}
+  html[data-theme="pixel"] #advpop .advhead{color:var(--dim2);border-bottom:2px solid var(--line2)}
+  html[data-theme="pixel"] #advpop .advhead b{color:var(--ink)!important}
+  html[data-theme="pixel"] #advpop [style*="#ff9f1a"]{color:var(--amber)!important}
+  html[data-theme="pixel"] #advpop .advlegend{color:var(--faint)}
+  html[data-theme="pixel"] .advitem b{color:var(--acc2)}
+  html[data-theme="pixel"] .advsev{font:700 10px/1 var(--mono);padding:3px 5px 2px;border:2px solid;transform:none}
+  html[data-theme="pixel"] .advsev.hard{color:#ffc0c0;background:#3a1620;border-color:var(--fail)}
+  html[data-theme="pixel"] .advsev.soft{color:#ffe0b0;background:#3a2a10;border-color:var(--warn)}
+  html[data-theme="pixel"] .advsev.info{color:#c6dcff;background:#16233f;border-color:var(--info2)}
+  html[data-theme="pixel"] #dirpop{background:#121b40;border:2px solid var(--line);box-shadow:6px 6px 0 0 var(--shadow)}
+  html[data-theme="pixel"] #dirpop .dp-path{background:#0a1030;border:2px solid var(--line);color:var(--ink)}
+  html[data-theme="pixel"] #dirpop .dp-list{border-color:var(--line)}
+  html[data-theme="pixel"] #dirpop .dp-row{border-bottom-color:var(--line2);color:#a9bcea}
+  html[data-theme="pixel"] #dirpop .dp-row:hover{background:#182352;color:#fff}
+  html[data-theme="pixel"] #ghmodal{background:rgba(5,7,15,.72)}
+  html[data-theme="pixel"] #ghcard{background:#121b40;border:2px solid var(--line);box-shadow:6px 6px 0 0 var(--shadow)}
+  html[data-theme="pixel"] #ghcard .gh-neon{font-weight:800;color:#fff;background:none;animation:none;
+    -webkit-text-fill-color:#fff;text-shadow:2px 2px 0 #2b3a7a, 4px 4px 0 var(--shadow)}
+  html[data-theme="pixel"] #ghcard .gh-sub{color:var(--dim2)}
+  html[data-theme="pixel"] #ghcard a.gh-link{color:var(--acc2);border-bottom:2px solid var(--line)}
+  html[data-theme="pixel"] #ghcard a.gh-link:hover{color:#fff}
+  html[data-theme="pixel"] #gh_close{color:var(--faint)}
+  /* ⓪ 读题确认面板 */
+  html[data-theme="pixel"] #dc_intake div[style*="#0d1117"]{background:#0a1030!important;border-color:var(--line)!important}
+  html[data-theme="pixel"] #dc_intake textarea{background:#0a1030!important;color:var(--ink)!important;
+    border:2px solid var(--line)!important;font-family:var(--mono)!important}
+  html[data-theme="pixel"] #dc_intake td{border-top-color:var(--line2)!important}
+  /* 开屏页：8px 天空网格 + 地面条（repeating-conic 棋盘）+ 像素星星；窗口 3px 边 + 8px 硬影 + 3px 外圈 */
+  html[data-theme="pixel"] #splash{--mono:Consolas,"Cascadia Mono","Courier New","SimSun","Microsoft YaHei",monospace;
+    --font:var(--mono);background-color:#0a0e26;background-image:none}
+  html[data-theme="pixel"] #splash::before{content:"";position:absolute;left:0;right:0;bottom:0;height:26px;z-index:0;
+    background-color:#080c22;border-top:3px solid var(--line2);
+    background-image:repeating-conic-gradient(#141d44 0 25%,#0a0e26 0 50%);background-size:16px 16px}
+  html[data-theme="pixel"] #splash::after{content:"";position:absolute;left:0;top:0;width:6px;height:6px;z-index:0;
+    background:#8fb0ff;
+    box-shadow:220px 120px 0 var(--acc), 1180px 90px 0 var(--magenta), 340px 420px 0 var(--acc2),
+      1100px 520px 0 #8fb0ff, 700px 180px 0 var(--acc2);
+    animation:px-tw 2.4s steps(2,end) infinite}
+  @keyframes px-tw{0%,100%{opacity:1}50%{opacity:.25}}
+  html[data-theme="pixel"] #splash .orb{display:none}
+  html[data-theme="pixel"] #splash .grid-lines{background-image:
+      linear-gradient(rgba(120,160,255,.05) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(120,160,255,.05) 1px,transparent 1px);
+    background-size:8px 8px;-webkit-mask-image:none;mask-image:none}
+  html[data-theme="pixel"] #splash .vignette{background:none;box-shadow:none}
+  html[data-theme="pixel"] #splash #splash_inner{background:linear-gradient(180deg,#131d47,#0f1738);
+    border:3px solid var(--line);box-shadow:8px 8px 0 0 var(--shadow), 0 0 0 3px #05081a;
+    -webkit-backdrop-filter:none;backdrop-filter:none}
+  html[data-theme="pixel"] #splash #splash_inner::before{background:none;animation:none}
+  html[data-theme="pixel"] #splash .term-bar{background:#182452;border-bottom:3px solid var(--line2)}
+  html[data-theme="pixel"] #splash .dots i{box-shadow:2px 2px 0 0 var(--shadow)}
+  html[data-theme="pixel"] #splash .dots .d1{background:#ff5d5d;box-shadow:2px 2px 0 0 var(--shadow)}
+  html[data-theme="pixel"] #splash .dots .d2{background:var(--acc);box-shadow:2px 2px 0 0 var(--shadow)}
+  html[data-theme="pixel"] #splash .dots .d3{background:var(--mint);box-shadow:2px 2px 0 0 var(--shadow)}
+  html[data-theme="pixel"] #splash .term-path{color:var(--dim2)}
+  html[data-theme="pixel"] #splash .hero-title{font-family:var(--mono);filter:none;font-weight:800;letter-spacing:.04em}
+  html[data-theme="pixel"] #splash .hero-title:hover{filter:none}
+  html[data-theme="pixel"] #splash .ht-line{background:none;color:#fff;-webkit-text-fill-color:#fff;
+    -webkit-background-clip:border-box;background-clip:border-box;-webkit-mask-image:none;mask-image:none;animation:none;
+    text-shadow:4px 4px 0 #26336e, 8px 8px 0 var(--shadow)}
+  html[data-theme="pixel"] #splash .ht-indent{padding-left:1.55em!important;color:var(--acc);-webkit-text-fill-color:var(--acc);
+    background:none;animation:none;text-shadow:4px 4px 0 #6b4a06, 8px 8px 0 var(--shadow)}
+  html[data-theme="pixel"] #splash .hero-kicker{color:var(--acc2);font-weight:700;letter-spacing:.34em;text-shadow:none}
+  html[data-theme="pixel"] #splash .hero-kicker::after{background:var(--acc2);box-shadow:2px 2px 0 0 var(--shadow)}
+  html[data-theme="pixel"] #splash .hero-sub{color:var(--dim2)}
+  html[data-theme="pixel"] #splash .hero-boot{color:var(--acc2)}
+  html[data-theme="pixel"] #splash .cfg{background:#0f1838;border:3px solid var(--line2);
+    box-shadow:6px 6px 0 0 var(--shadow);-webkit-backdrop-filter:none;backdrop-filter:none}
+  html[data-theme="pixel"] #splash .cfg h2{color:var(--ink);font-size:13px;letter-spacing:.1em;border-left:0;
+    padding-left:0;text-shadow:none;background:none;display:block}
+  html[data-theme="pixel"] #splash .cfg .field{border-bottom:2px dashed #1a2650}
+  html[data-theme="pixel"] #splash .cfg .field .k code{color:var(--acc2);font:12.5px var(--mono)}
+  html[data-theme="pixel"] #splash .cfg .field .eq{color:var(--faint)}
+  html[data-theme="pixel"] #splash .cfg .field em{color:var(--faint)}
+  html[data-theme="pixel"] #splash .cfg .field:focus-within .k code{color:#fff;text-shadow:none}
+  html[data-theme="pixel"] #splash .input{background:#0a1030;border:2px solid var(--line);color:var(--ink);
+    padding:7px 9px 6px;background-image:none;box-shadow:inset 2px 2px 0 0 #05081a}
+  html[data-theme="pixel"] #splash .input:hover{border-color:#4a63b8;background-size:0}
+  html[data-theme="pixel"] #splash .input:focus{border-color:var(--acc2);
+    box-shadow:inset 2px 2px 0 0 #05081a, 0 0 0 2px #0d2f45;background-size:0}
+  html[data-theme="pixel"] #splash .input::placeholder{color:#4d5f96;font-family:var(--mono)}
+  html[data-theme="pixel"] #splash .check .box{display:inline-grid;place-items:center;width:14px;height:14px;
+    border:2px solid var(--line);background:#0a1030;box-shadow:inset 2px 2px 0 0 #05081a;color:#241a05;font-size:10px;line-height:1}
+  html[data-theme="pixel"] #splash .check .box::before{content:""}
+  html[data-theme="pixel"] #splash .check input:checked ~ .box::before{content:"✓"}
+  html[data-theme="pixel"] #splash .check input:checked ~ .box{background:var(--acc);border-color:#a97c14;color:#241a05;text-shadow:none}
+  html[data-theme="pixel"] #splash .check .box::after{display:none}
+  html[data-theme="pixel"] #splash .check .lbl{color:var(--dim2)}
+  html[data-theme="pixel"] #splash .cfg-row{border-top:2px solid var(--line2)}
+  html[data-theme="pixel"] #splash .cfg-row button::before,
+  html[data-theme="pixel"] #splash .cfg-row button::after{content:""}
+  html[data-theme="pixel"] #splash #cf_save{color:#241a05;background:var(--acc);border-color:#a97c14;text-shadow:none;
+    box-shadow:inset 2px 2px 0 0 #ffeb96, inset -2px -2px 0 0 #b8860b, 3px 3px 0 0 var(--shadow)}
+  html[data-theme="pixel"] #splash #cf_save:hover{background:#ffe066}
+  html[data-theme="pixel"] #splash #cf_msg{color:var(--acc2);font-size:12px}
+  html[data-theme="pixel"] #splash #cf_msg:not(:empty){background:none;border:0;padding:0}
+  html[data-theme="pixel"] #splash #cf_msg:not(:empty)::before{content:"▸ ";color:var(--acc2)}
+  /* 图标语言：**全站**（按钮/阶段行/日志一个规则管）——
+     像素主题 = emoji 退场、像素画上场；按语义给颜色。 */
+  html[data-theme="pixel"] .ic .em{display:none}
+  html[data-theme="pixel"] .ic .pxa{display:inline-block;color:var(--ink)}
+  html[data-theme="pixel"] .ic .pxa.px-tterm{color:#c9a4ff}
+  html[data-theme="pixel"] .ic .pxa.px-tcheck{color:var(--mint)}
+  html[data-theme="pixel"] .ic .pxa.px-warn{color:var(--amber);--hole:#0a0e26}
+  html[data-theme="pixel"] .ic .pxa.px-tcam{color:var(--acc2)}
+  html[data-theme="pixel"] .ic .pxa.px-tgem{color:var(--magenta)}
+  html[data-theme="pixel"] .ic .pxa.px-play,
+  html[data-theme="pixel"] .ic .pxa.px-tplay{color:var(--acc)}
+  html[data-theme="pixel"] .ic .pxa.px-robot{color:var(--acc2)}
+  html[data-theme="pixel"] .ic .pxa.px-diamond{color:var(--orange)}
+  html[data-theme="pixel"] .logpane .pxa.px-warn{--hole:#080c22}
+  /* 日志四段配色（时间淡蓝 / 标签紫 / 动作亮 / 正文灰蓝） */
+  html[data-theme="pixel"] .logpane .tk{color:#c9a4ff}
+  html[data-theme="pixel"] .logpane .cmd{color:var(--ink)}
+  html[data-theme="pixel"] .logpane .lx{color:#8fa5d6}
+  html[data-theme="pixel"] .logpane .lt{color:var(--faint)}
+
+  /* ============================================================
+     主题「杂志编辑版式」（来源：设计稿 18-editorial.html，逐区翻译）。
+     语言：台面纸+版心纸、刊头（红顶线 + 双线底）、衬线大标题 + **杂志红**强调、
+     贴纸角标（微旋转的描边小签）、勘误栏（斜纹底）、**印版**日志块（印刷黑 + 网点）、
+     硬投影卡片、点线分隔的阶段表。
+     ============================================================ */
+  html[data-theme="editorial"]{
+    --paper:#e7dfcc; --sheet:#f8f4e9; --card:#fffdf6;
+    --ink:#1d1813; --ink2:#4a4136; --mut:#7d7261;
+    --rule:#ddd3bc; --rule2:#c3b598;
+    --red:#bf3222; --red2:#8d2217; --gold:#c08a1e; --amber:#a86a12;
+    --green:#2e7d46; --teal:#3e7c8c; --yellow:#d9a521;
+    --plate:#241f19; --platetext:#efe6d2;
+    --serif:Georgia,'Times New Roman','Songti SC','SimSun',serif;
+    --sans2:system-ui,-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    --mono:Consolas,'Courier New',monospace;
+    /* 全局变量复写 */
+    --bg:var(--sheet); --panel:var(--card); --line:var(--rule2); --fg:var(--ink); --dim:var(--mut);
+    --acc:var(--red); --ok:var(--green); --fail:var(--red);
+    --run:var(--yellow); --wait:var(--amber); --manual:var(--teal);
+  }
+  html[data-theme="editorial"] ::selection{background:rgba(191,50,34,.22)}
+  html[data-theme="editorial"] body{font-family:var(--sans2);color:var(--ink);
+    background-color:var(--paper);
+    background-image:radial-gradient(rgba(29,24,19,.055) 1px,transparent 1.3px);
+    background-size:5px 5px}
+  html[data-theme="editorial"] header{border-top:5px solid var(--red);
+    border-bottom:3px double var(--ink);background:var(--sheet)}
+  /* 按钮：编辑式小钮（硬影 + 悬停上浮/按下下沉）；主按钮 = 杂志红 */
+  html[data-theme="editorial"] button{
+    font:12px/1 var(--sans2);letter-spacing:.02em;color:var(--ink);background:var(--card);
+    border:1.2px solid var(--ink);border-radius:2px;
+    box-shadow:2.5px 2.5px 0 rgba(29,24,19,.14);
+    transition:transform .12s ease,box-shadow .12s ease;
+  }
+  html[data-theme="editorial"] button:hover{background:var(--card);transform:translate(-1px,-1px);
+    box-shadow:3.5px 3.5px 0 rgba(29,24,19,.18)}
+  html[data-theme="editorial"] button:active{transform:translate(1px,1px);box-shadow:1px 1px 0 rgba(29,24,19,.2)}
+  html[data-theme="editorial"] button.primary{background:var(--red);border-color:var(--red2);
+    color:#fdf5e8;font-weight:700}
+  html[data-theme="editorial"] button.primary:hover{background:var(--red2)}
+  html[data-theme="editorial"] select{background:var(--card)!important;color:var(--ink)!important;
+    border:1.2px solid var(--ink)!important;border-radius:2px!important;font-family:var(--sans2)!important;
+    box-shadow:2.5px 2.5px 0 rgba(29,24,19,.14)!important}
+  html[data-theme="editorial"] input[type=text],html[data-theme="editorial"] input[type=password],
+  html[data-theme="editorial"] input[type=number]{font-family:var(--mono)}
+  /* 刊头字标：衬线 + 红字强调（New·Math·Agent 的 Math 点红）+ 红底线 */
+  html[data-theme="editorial"] header h1{font:600 22px/1.4 var(--serif);letter-spacing:.005em;
+    border-bottom:2.5px solid var(--red);padding-bottom:1px;background:none}
+  html[data-theme="editorial"] header h1:hover{color:var(--red)}
+  html[data-theme="editorial"] #pwrap{background:var(--card);border:1.2px solid var(--ink);height:6px}
+  html[data-theme="editorial"] #pbar{background:repeating-linear-gradient(135deg,var(--ink) 0 4px,#3d352b 4px 8px)}
+  html[data-theme="editorial"] #ptext{color:var(--mut);font-family:var(--mono)}
+  /* 计时：金色荧光笔垫底（日期栏的 .hl 同款） */
+  html[data-theme="editorial"] #timer{color:var(--ink)!important;text-shadow:none!important;
+    font-family:var(--sans2);background:linear-gradient(transparent 55%,rgba(192,138,30,.35) 55%);
+    padding:0 2px}
+  html[data-theme="editorial"] #status{color:var(--mut)}
+  /* C 行：虚线描边小签 + 衬线 GitHub + 托管钮 */
+  html[data-theme="editorial"] #delivchip{color:var(--ink)!important;background:var(--card)!important;
+    border:1.2px dashed var(--ink2)!important;border-radius:2px;
+    box-shadow:2px 2px 0 rgba(29,24,19,.10);font-family:var(--sans2)!important}
+  html[data-theme="editorial"] #ghbadge{color:var(--ink)!important;-webkit-text-fill-color:var(--ink);
+    font:600 13.5px var(--serif);border:0;background:none;animation:none;filter:none;border-radius:0!important;
+    border-bottom:1.5px solid var(--red);padding-bottom:1px;box-shadow:none}
+  html[data-theme="editorial"] #ghbadge svg{fill:var(--ink);filter:none}
+  html[data-theme="editorial"] #ghbadge:hover{color:var(--red)!important}
+  html[data-theme="editorial"] #autopilot,
+  html[data-theme="editorial"] #theme_btn,
+  html[data-theme="editorial"] #dtheme_btn,
+  html[data-theme="editorial"] #template_btn{height:26px;padding:0 12px;font-size:11.5px;top:0 !important}
+  html[data-theme="editorial"] #delivchip{height:26px;padding:0 12px!important;font-size:11.5px!important;
+    display:inline-flex;align-items:center;box-sizing:border-box}
+  /* D 勘误栏：斜纹底 + 贴纸角标（伪元素"做法变更"小签） */
+  html[data-theme="editorial"] #stalebar{position:relative;background:#f3ecd8!important;
+    background-image:repeating-linear-gradient(135deg,rgba(191,50,34,.05) 0 12px,transparent 12px 24px)!important;
+    border:0!important;border-top:1px solid var(--rule)!important;
+    border-bottom:1.5px solid var(--ink)!important;border-radius:0;box-shadow:none;margin:0;
+    color:var(--ink2);font-family:var(--sans2);font-size:12.5px!important}
+  html[data-theme="editorial"] #stalebar::after{content:"做法变更";position:absolute;top:-9px;right:26px;
+    font:700 10px/1 var(--sans2);letter-spacing:.18em;color:var(--red);border:1.4px solid var(--red);
+    background:#fcf7ea;border-radius:2px;padding:3px 7px;transform:rotate(-1.6deg);
+    box-shadow:2px 2px 0 rgba(141,34,23,.18)}
+  html[data-theme="editorial"] #stalebar::before{content:none}
+  html[data-theme="editorial"] #stalebar b{color:var(--ink)}
+  html[data-theme="editorial"] #stalebar code{font:11px var(--mono);background:#eadfc2;border:0;padding:0 3px}
+  html[data-theme="editorial"] #stalebar .fine{font:11.5px/1.78 var(--sans2);color:var(--ink2)}
+  html[data-theme="editorial"] #stale_chips button{font:11.5px var(--sans2);padding:2px 9px;height:auto;
+    transform:none;background:var(--card);border:1.2px solid var(--ink);border-radius:2px;
+    box-shadow:2px 2px 0 rgba(29,24,19,.12)}
+  html[data-theme="editorial"] #stale_chips button:hover{background:#fdf8ef}
+  html[data-theme="editorial"] #ws{color:var(--mut)}
+  /* 可折叠面板区 */
+  html[data-theme="editorial"] #updrop{border:1.5px dashed var(--red)!important;border-radius:2px;
+    background:rgba(191,50,34,.05)!important}
+  html[data-theme="editorial"] #updrop:hover{background:rgba(191,50,34,.09)!important}
+  html[data-theme="editorial"] #updrop.hot{background:rgba(191,50,34,.14)!important;border-style:solid!important}
+  html[data-theme="editorial"] #up_result{background:#f6f1e3!important;border:1px solid var(--rule2)!important;border-radius:2px}
+  html[data-theme="editorial"] #delivpanel input{background:var(--card)!important;
+    border:1.2px solid var(--ink)!important;border-radius:2px!important;color:var(--ink)!important}
+  html[data-theme="editorial"] #dv_wipe,html[data-theme="editorial"] #dv_wipe_all{border-color:var(--red)!important;color:var(--red)!important}
+  /* 黄灯/手工修复：纸卡 + 大硬影 + 红左条判据块 */
+  html[data-theme="editorial"] #decide{background:#fbf4e2!important;border-bottom:1.5px solid var(--ink)!important}
+  html[data-theme="editorial"] #decide > div:first-child{border-bottom:1px solid var(--rule2);
+    padding-bottom:8px;margin-bottom:7px}
+  html[data-theme="editorial"] #dc_title{font:600 13.5px/1.4 var(--sans2)!important;color:var(--amber)!important}
+  html[data-theme="editorial"] #decide input,html[data-theme="editorial"] #decide select{
+    background:var(--card)!important;color:var(--ink)!important;border:1.2px solid var(--ink)!important;border-radius:2px!important}
+  html[data-theme="editorial"] #dc_advhead,html[data-theme="editorial"] #dc_adv{color:var(--amber)!important}
+  html[data-theme="editorial"] #dc_adv{border-left-color:var(--red)!important;background:#f6ecd6}
+  html[data-theme="editorial"] #dc_tail{border-left-color:var(--rule2)!important;color:var(--ink2)!important}
+  html[data-theme="editorial"] #hilpanel{background:#fbf4e2!important}
+  html[data-theme="editorial"] #hil_body div[style*="#5a4520"]{border-left-color:var(--red)!important;background:#f6ecd6}
+  html[data-theme="editorial"] #hil_body div[style*="#3a2f10"]{background:rgba(191,50,34,.10)!important}
+  html[data-theme="editorial"] #hil_body div[style*="#e67e22"]{color:var(--amber)!important}
+  /* E 左栏：版心纸 + 墨右线；刊头式小标题（衬线 + 红底线） */
+  html[data-theme="editorial"] aside{background:var(--sheet);border:0;border-right:1.5px solid var(--ink);
+    border-radius:0;box-shadow:none;margin:0}
+  html[data-theme="editorial"] .sec{font:600 15px var(--serif);color:var(--ink);letter-spacing:.02em;
+    border-bottom:2px solid var(--ink);padding-bottom:4px;margin:6px 10px 6px;text-transform:none}
+  /* 阶段表：点线分隔 + 小圆点（状态色） + 运行行琥珀计时 */
+  html[data-theme="editorial"] .stage{border-bottom:1px dotted rgba(29,24,19,.16);border-radius:0;padding:5px 8px}
+  html[data-theme="editorial"] .stage.done{color:var(--ink2)}
+  html[data-theme="editorial"] .stage.stale{color:var(--mut)}
+  html[data-theme="editorial"] .stage.disclosed{color:var(--amber)}
+  html[data-theme="editorial"] .stage .dot{background:#c9c0ae}
+  html[data-theme="editorial"] .stage.done .dot{background:var(--green);box-shadow:0 0 0 2px rgba(46,125,70,.16)}
+  html[data-theme="editorial"] .stage.stale .dot{background:var(--amber);box-shadow:none}
+  html[data-theme="editorial"] .stage.disclosed .dot{background:var(--gold);box-shadow:none}
+  html[data-theme="editorial"] .stage.run .dot{background:var(--yellow);box-shadow:0 0 0 2px rgba(217,165,33,.28)}
+  html[data-theme="editorial"] .stage.run{background:#fbf4e2;color:var(--ink);font-weight:700}
+  /* 📝 角标：杂志小标签（红描边；留档 = 青） */
+  html[data-theme="editorial"] .advtag{font:10px var(--sans2);color:var(--red);border:1px solid var(--red);
+    border-radius:2px;padding:0 4px;line-height:1.5}
+  html[data-theme="editorial"] .advtag.advhard{color:#fdf5e8;background:var(--red);border-color:var(--red)}
+  html[data-theme="editorial"] .advtag.advvd{color:var(--teal);border-color:var(--teal)}
+  html[data-theme="editorial"] .tsk{font:10px var(--mono);color:var(--mut)}
+  html[data-theme="editorial"] .stage.run .tsk{color:var(--amber);font-weight:700}
+  html[data-theme="editorial"] .file{font:11.5px/1.9 var(--mono);color:var(--ink2);border-radius:0}
+  html[data-theme="editorial"] .file:hover{background:#f6f1e3;color:var(--ink)}
+  html[data-theme="editorial"] .grp{font:600 10.5px var(--sans2);letter-spacing:.14em;color:var(--mut);
+    border-top:1px solid var(--rule2)}
+  /* F 页签：出版物页签（底墨线；活动页 = 纸卡 + 边线 + 盖住底线） */
+  html[data-theme="editorial"] .tabs{background:none;border-bottom:1.5px solid var(--ink);padding:0 16px}
+  html[data-theme="editorial"] .tabs button{font:12.5px var(--sans2);color:var(--mut);background:none;
+    border:1.2px solid transparent;border-bottom:none;border-radius:0;box-shadow:none;transform:none;padding:9px 16px}
+  html[data-theme="editorial"] .tabs button:hover{color:var(--ink);transform:none;box-shadow:none}
+  html[data-theme="editorial"] .tabs button.on{color:var(--ink);font-weight:700;background:var(--card);
+    border-color:var(--ink);border-bottom:1.2px solid var(--card);position:relative;top:1.5px;
+    box-shadow:3px -3px 0 rgba(29,24,19,.10)}
+  /* G 内容区：版心 = **亮纸**（报告查看/原文的文件以墨字读）。
+     ★ 原来把整块 #view 铺成印版深底 ⇒ 报告里的墨色标题看不见（用户 2026-10-16：
+       「点报告查看后里面的文字有些看不清」）。印版只留给**日志**：.logpane 自己铺底，
+       它铺满整块 ⇒ 日志页签的观感一字不变。 */
+  html[data-theme="editorial"] #view{background:var(--sheet);color:var(--ink);border:0;border-radius:0}
+  html[data-theme="editorial"] .logpane{color:#e7ddc6!important;font-family:var(--mono)!important;
+    background-color:var(--plate)!important;
+    background-image:radial-gradient(rgba(239,230,210,.07) 1px,transparent 1.25px)!important;
+    background-size:4px 4px!important;font-size:11.5px!important;line-height:1.83!important}
+  html[data-theme="editorial"] .logpane .lt{color:#d9a745;background:none}
+  html[data-theme="editorial"] .logpane .tk{color:#f3ead4}
+  html[data-theme="editorial"] .logpane .cmd{color:#fdf6e3;font-weight:700}
+  html[data-theme="editorial"] .logpane .lx{color:#e7ddc6}
+  html[data-theme="editorial"] .logjump{background:#fbf4e2!important;color:var(--red)!important;
+    border:1.4px solid var(--red)!important;text-shadow:none!important;font-family:var(--mono)!important;
+    box-shadow:2px 2px 0 rgba(29,24,19,.25)!important}
+  /* 报告渲染：版心纸上的衬线刊式样 */
+  html[data-theme="editorial"] .markdown{font-family:var(--sans2);font-size:12.5px}
+  html[data-theme="editorial"] .markdown h1,html[data-theme="editorial"] .markdown h2,
+  html[data-theme="editorial"] .markdown h3{font:600 17px/1.35 var(--serif);color:var(--ink);background:none;
+    display:block;padding:0 0 5px;border-bottom:2.5px solid var(--ink)}
+  html[data-theme="editorial"] .markdown h1::before,html[data-theme="editorial"] .markdown h2::before,
+  html[data-theme="editorial"] .markdown h3::before{content:"# ";font:600 13px var(--mono);color:var(--red)}
+  html[data-theme="editorial"] .markdown p{color:var(--ink2);line-height:1.95}
+  html[data-theme="editorial"] .markdown p b{color:var(--ink)}
+  html[data-theme="editorial"] .markdown td,html[data-theme="editorial"] .markdown th{
+    border:1px solid var(--rule2);padding:4px 10px;text-align:left}
+  html[data-theme="editorial"] .markdown th{background:#f1e9d5;font-weight:700;letter-spacing:.06em}
+  html[data-theme="editorial"] .markdown tr:nth-child(even) td{background:#faf6ea}
+  html[data-theme="editorial"] .markdown code{font:11.5px var(--mono);background:#efe6ce;border:1px solid var(--rule);
+    border-radius:2px;padding:0 4px;color:var(--red2)}
+  html[data-theme="editorial"] a{color:var(--red)}
+  /* 浮层：纸卡 + 大硬影 + **左侧三角引角**（border 三角，设计稿签名） */
+  html[data-theme="editorial"] #advpop{background:var(--card);border:1.5px solid var(--ink);border-radius:0;
+    color:var(--ink2);box-shadow:8px 8px 0 rgba(29,24,19,.16);font-family:var(--sans2)}
+  html[data-theme="editorial"] #advpop::before{content:"";position:absolute;left:-13px;top:106px;width:0;height:0;
+    border:6.5px solid transparent;border-right-color:var(--ink)}
+  html[data-theme="editorial"] #advpop::after{content:"";position:absolute;left:-10px;top:107px;width:0;height:0;
+    border:5.5px solid transparent;border-right-color:var(--card)}
+  html[data-theme="editorial"] #advpop .advhead{color:var(--ink);border-bottom:1px dotted var(--rule2)}
+  html[data-theme="editorial"] #advpop .advhead b{color:var(--ink)!important}
+  html[data-theme="editorial"] #advpop [style*="#ff9f1a"]{color:var(--amber)!important}
+  html[data-theme="editorial"] #advpop .advlegend{color:var(--mut)}
+  html[data-theme="editorial"] .advitem b{font:11px var(--mono);color:var(--ink)}
+  html[data-theme="editorial"] .advsev{font:9.5px/1.5 var(--mono);padding:0 4px;border:1px solid;border-radius:2px;
+    transform:none;font-weight:400}
+  html[data-theme="editorial"] .advsev.hard{color:var(--red);border-color:var(--red);background:none}
+  html[data-theme="editorial"] .advsev.soft{color:var(--amber);border-color:var(--amber);background:none}
+  html[data-theme="editorial"] .advsev.info{color:var(--teal);border-color:var(--teal);background:none}
+  html[data-theme="editorial"] #dirpop{background:var(--card);border:1.5px solid var(--ink);border-radius:0;
+    box-shadow:8px 8px 0 rgba(29,24,19,.16)}
+  html[data-theme="editorial"] #dirpop .dp-path{background:#f6f1e3;border:1px solid var(--rule2);border-radius:2px;color:var(--ink)}
+  html[data-theme="editorial"] #dirpop .dp-list{border-color:var(--rule2)}
+  html[data-theme="editorial"] #dirpop .dp-row{border-bottom:1px solid var(--rule);color:var(--ink2)}
+  html[data-theme="editorial"] #dirpop .dp-row:hover{background:#f6f1e3;color:var(--ink)}
+  html[data-theme="editorial"] #ghmodal{background:rgba(29,24,19,.45)}
+  html[data-theme="editorial"] #ghcard{background:var(--sheet);border:1.5px solid var(--ink);border-radius:0;
+    box-shadow:14px 14px 0 rgba(29,24,19,.16)}
+  html[data-theme="editorial"] #ghcard .gh-neon{font:600 19px var(--serif);color:var(--ink);background:none;
+    -webkit-text-fill-color:var(--ink);animation:none;filter:none}
+  html[data-theme="editorial"] #ghcard .gh-sub{color:var(--ink2)}
+  html[data-theme="editorial"] #ghcard a.gh-link{color:var(--red);border-bottom:1.5px solid var(--red)}
+  html[data-theme="editorial"] #ghcard a.gh-link:hover{color:var(--red2)}
+  html[data-theme="editorial"] #gh_close{color:var(--mut)}
+  /* ⓪ 读题确认面板 */
+  html[data-theme="editorial"] #dc_intake div[style*="#0d1117"]{background:#f6f1e3!important;border-color:var(--rule2)!important}
+  html[data-theme="editorial"] #dc_intake textarea{background:var(--card)!important;color:var(--ink)!important;
+    border:1px solid var(--rule2)!important;font-family:var(--mono)!important}
+  html[data-theme="editorial"] #dc_intake td{border-top-color:var(--rule2)!important}
+  /* 开屏页：台面纸 + 网点 + 四角裁切标记 + 衬线红色刊式标题 */
+  html[data-theme="editorial"] #splash{--mono:Consolas,'Courier New',monospace;--font:var(--sans2);
+    background-color:var(--paper);
+    background-image:radial-gradient(rgba(29,24,19,.06) 1px,transparent 1.3px);
+    background-size:5px 5px}
+  html[data-theme="editorial"] #splash::after{content:"";position:fixed;inset:14px;pointer-events:none;z-index:0;
+    background-image:linear-gradient(var(--ink2),var(--ink2)),linear-gradient(var(--ink2),var(--ink2)),
+      linear-gradient(var(--ink2),var(--ink2)),linear-gradient(var(--ink2),var(--ink2)),
+      linear-gradient(var(--ink2),var(--ink2)),linear-gradient(var(--ink2),var(--ink2)),
+      linear-gradient(var(--ink2),var(--ink2)),linear-gradient(var(--ink2),var(--ink2));
+    background-size:26px 1.5px,1.5px 26px,26px 1.5px,1.5px 26px,26px 1.5px,1.5px 26px,26px 1.5px,1.5px 26px;
+    background-position:left top,left top,right top,right top,left bottom,left bottom,right bottom,right bottom;
+    background-repeat:no-repeat;opacity:.55}
+  html[data-theme="editorial"] #splash .orb{filter:blur(110px)}
+  html[data-theme="editorial"] #splash .orb-a{background:radial-gradient(circle at 50% 50%,rgba(191,50,34,.10),transparent 70%)}
+  html[data-theme="editorial"] #splash .orb-b{background:radial-gradient(circle at 50% 50%,rgba(29,24,19,.12),transparent 72%)}
+  html[data-theme="editorial"] #splash .orb-c{background:radial-gradient(circle at 50% 50%,rgba(192,138,30,.10),transparent 72%)}
+  html[data-theme="editorial"] #splash .grid-lines{background-image:none;-webkit-mask-image:none;mask-image:none}
+  html[data-theme="editorial"] #splash .vignette{background:radial-gradient(ellipse 60% 50% at 18% 8%,rgba(191,50,34,.07),transparent 70%),
+    radial-gradient(ellipse 55% 55% at 88% 92%,rgba(29,24,19,.10),transparent 72%);box-shadow:none}
+  html[data-theme="editorial"] #splash #splash_inner{background:var(--sheet);border:1.5px solid var(--ink);border-radius:0;
+    box-shadow:14px 14px 0 rgba(29,24,19,.16);-webkit-backdrop-filter:none;backdrop-filter:none}
+  html[data-theme="editorial"] #splash #splash_inner::before{background:none;animation:none}
+  html[data-theme="editorial"] #splash .term-bar{background:#f3ecd8;border-bottom:1.5px solid var(--ink)}
+  html[data-theme="editorial"] #splash .dots i{border:1px solid rgba(29,24,19,.5)}
+  html[data-theme="editorial"] #splash .term-path{color:var(--ink2)}
+  html[data-theme="editorial"] #splash .hero-title{font:600 clamp(40px,6.4vw,62px)/1.08 var(--serif);
+    letter-spacing:.01em;filter:none}
+  html[data-theme="editorial"] #splash .hero-title:hover{filter:none}
+  html[data-theme="editorial"] #splash .ht-line{background:none;color:var(--ink);-webkit-text-fill-color:var(--ink);
+    -webkit-background-clip:border-box;background-clip:border-box;-webkit-mask-image:none;mask-image:none;animation:none}
+  html[data-theme="editorial"] #splash .ht-indent{padding-left:1.5em!important;font-style:italic;color:var(--red);
+    -webkit-text-fill-color:var(--red);background:none;animation:none;
+    text-shadow:2.5px 2.5px 0 rgba(191,50,34,.14)}
+  html[data-theme="editorial"] #splash .hero-kicker{font:700 12.5px var(--mono);letter-spacing:.32em;color:var(--red);text-shadow:none}
+  html[data-theme="editorial"] #splash .hero-kicker::after{background:var(--red);box-shadow:none}
+  html[data-theme="editorial"] #splash .hero-sub{color:var(--ink2)}
+  html[data-theme="editorial"] #splash .hero-boot{color:var(--red)}
+  html[data-theme="editorial"] #splash .cfg{position:relative;background:var(--card);border:1.5px solid var(--ink);
+    border-radius:0;box-shadow:6px 6px 0 rgba(29,24,19,.12);-webkit-backdrop-filter:none;backdrop-filter:none}
+  html[data-theme="editorial"] #splash .cfg::before{content:"№ 1";position:absolute;top:-10px;right:20px;
+    font:700 10px var(--mono);letter-spacing:.1em;color:var(--red);border:1.4px solid var(--red);
+    background:#fcf7ea;padding:2px 6px;transform:rotate(1.4deg)}
+  html[data-theme="editorial"] #splash .cfg h2{font:600 13px/1 var(--sans2);letter-spacing:.22em;color:var(--ink2);
+    border-left:0;padding-left:0;text-shadow:none;background:none;border-bottom:2.5px solid var(--ink);
+    padding-bottom:9px;display:block}
+  html[data-theme="editorial"] #splash .cfg h2::after{content:none}
+  html[data-theme="editorial"] #splash .cfg .field .k code{font:12.5px var(--mono);color:var(--ink)}
+  html[data-theme="editorial"] #splash .cfg .field .eq{color:var(--rule2);font-family:var(--mono)}
+  html[data-theme="editorial"] #splash .cfg .field em{color:var(--mut)}
+  html[data-theme="editorial"] #splash .cfg .field:focus-within .k code{color:var(--ink);text-shadow:none}
+  html[data-theme="editorial"] #splash .input{background:transparent;border:0;border-bottom:1.5px solid var(--ink);
+    border-radius:0;color:var(--ink);padding:4px 2px;background-image:none}
+  html[data-theme="editorial"] #splash .input:hover{border-bottom-color:var(--ink2)}
+  html[data-theme="editorial"] #splash .input:focus{outline:none;border-bottom-color:var(--red);
+    box-shadow:none;background-size:0}
+  html[data-theme="editorial"] #splash .input::placeholder{color:#a99d87;font-family:var(--mono)}
+  html[data-theme="editorial"] #splash .check .box{display:inline-grid;place-items:center;width:13px;height:13px;
+    border:1.4px solid var(--ink);background:var(--card);color:var(--red);font-size:10px;line-height:1;border-radius:0}
+  html[data-theme="editorial"] #splash .check .box::before{content:""}
+  html[data-theme="editorial"] #splash .check input:checked ~ .box::before{content:"✓";font-weight:700}
+  html[data-theme="editorial"] #splash .check input:checked ~ .box{background:var(--card);text-shadow:none}
+  html[data-theme="editorial"] #splash .check .box::after{display:none}
+  html[data-theme="editorial"] #splash .check .lbl{color:var(--ink2)}
+  html[data-theme="editorial"] #splash .cfg-row{border-top:1px dashed var(--rule2)}
+  html[data-theme="editorial"] #splash .cfg-row button::before,
+  html[data-theme="editorial"] #splash .cfg-row button::after{content:""}
+  html[data-theme="editorial"] #splash #cf_save{background:var(--red);border-color:var(--red2);color:#fdf5e8;
+    font-weight:700;text-shadow:none;box-shadow:2.5px 2.5px 0 rgba(29,24,19,.14)}
+  html[data-theme="editorial"] #splash #cf_save:hover{background:var(--red2)}
+  html[data-theme="editorial"] #splash #cf_msg{font:12px var(--mono);color:var(--red)}
+  html[data-theme="editorial"] #splash #cf_msg:not(:empty){background:none;border:0;padding:0}
+  html[data-theme="editorial"] #splash #cf_msg:not(:empty)::before{content:"▸ ";color:var(--red)}
+
+  /* 第二排四件（模板框 / 默认主题 / GitHub / 🎨+托管）**同高、同底边**（用户 2026-10-17）。
+     旧规则里托管/主题带 top:-3px，且 sketch 把 GitHub 撑到 30px 而右侧按钮是 26px，
+     底边自然对不齐；这里统一覆盖，保留各自的皮肤颜色/字体。 */
+  /* 模板框本体只做布局壳；可见的边框/底色/内边距由 #template_btn 按同一套主题按钮规则画，
+     这样它和 🎚 默认主题 / 🎨 / 🤖托管 是同一个“框”，不是框套框。 */
+  #delivchip,html[data-theme] #delivchip{padding:0!important;border:0!important;background:none!important;
+    box-shadow:none!important;border-radius:0!important;transform:none!important;position:relative}
+  html[data-theme="sketch"] #delivchip,
+  html[data-theme="sketch"] #dtheme_btn,
+  html[data-theme="sketch"] #ghbadge,
+  html[data-theme="sketch"] #theme_btn,
+  html[data-theme="sketch"] #autopilot{height:30px!important;top:0!important;align-self:center!important;box-sizing:border-box!important}
+  html:not([data-theme="sketch"]) #delivchip,
+  html:not([data-theme="sketch"]) #dtheme_btn,
+  html:not([data-theme="sketch"]) #ghbadge,
+  html:not([data-theme="sketch"]) #theme_btn,
+  html:not([data-theme="sketch"]) #autopilot{height:26px!important;top:0!important;align-self:center!important;box-sizing:border-box!important}
+</style>
 </head>
 <body>
 <header>
   <h1 id="brand" title="点一下回到项目介绍与配置页；在那边再点标题回来">NewMathAgent</h1>
   <button id="upbtn">⬆ 上传题目</button>
-  <button id="delivbtn" title="设置产物落到哪、归档目录叫什么">📁 产物</button>
+  <button id="delivbtn" title="产物根 / 提交件根 / 各阶段产物 / 下一个归档名（点一下展开）">📁 产物</button>
   <select id="stage_sel" style="background:#26303a;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px"></select><button id="redo_btn">↺ 从所选阶段重跑</button><button id="wipe_btn">🗑 清空全部</button><button id="start" class="primary">▶ 开始全链</button>
   <button id="pause" title="从当前阶段停下并转黄灯 —— 面板上可接着选「再试一次 / 回退到某阶段 / 接受并披露 / 我已手工修好」">⏸ 暂停</button>
   <button id="stop" title="硬停，不给决策面板（黄灯若亮着则一并收起）。要「停下但保留出口」用暂停">⏹ 停止</button>
@@ -440,14 +1848,19 @@
        藏在面板里等于没设。点它可直接展开面板。
        一键托管（用户 2026-09-28）：开着的两个行为见 /api/autopilot 的 docstring。 -->
   <span class="auxrow">
-  <span id="delivchip" title="点一下展开设置、再点收起" style="cursor:pointer;font-size:11.5px;color:var(--dim);border:1px solid var(--line);border-radius:10px;padding:2px 9px;white-space:nowrap;max-width:44ch;overflow:hidden;text-overflow:ellipsis">📁 产物</span>
+  <!-- 左槽：产物 chip + 🎚 默认主题 包一层（用户 2026-10-16：「这个按钮的右边加个设置
+       默认主题的按钮」）—— 包 span 是为了不动 .auxrow 的三栏网格结构（同右槽的处置）。 -->
+  <span id="auxleft"><span id="delivchip" style="font-size:11.5px;color:var(--dim);border:1px solid var(--line);border-radius:10px;padding:2px 8px;white-space:nowrap;position:relative"><button id="template_btn" type="button" title="选择比赛/输出模板">选择比赛/输出模板 <span class="tpl-caret">▾</span></button><select id="dv_template" title="选择比赛/输出模板" style="display:none"></select><div id="template_pop" style="display:none"></div></span><button id="dtheme_btn" title="选择默认主题：每次进入先显示它">🎚 默认主题</button></span>
   <!-- ★ 第二排**正中**的 GitHub 标识（用户 2026-09-30）。点它：弹赠言浮层 + 新开项目标签页。
        整链跑完（⑯ 结束）时也会自动「点」它一次，见 showGhCard 的调用点。 -->
   <span id="ghbadge" title="点这里：项目主页 + 一句想说的话">
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
     <span class="gh-name">Cyllevantie</span>
   </span>
-  <button id="autopilot">🤖 托管</button>
+  <!-- 🎨 主题切换（用户 2026-10-16：「在托管中的左边加个切换主题的按钮」）：
+       与 🤖托管 包在同一个右槽里（不动 .auxrow 的三栏网格结构，也保住
+       「delivchip → ghbadge → autopilot」的元素顺序 —— 那条被回归夹具钉着）。 -->
+  <span id="auxbtns"><button id="theme_btn" title="切换主题（皮肤）——点一下换下一套">🎨</button><button id="autopilot">🤖 托管</button></span>
   </span>
 </header>
 <div id="uppanel" style="display:none;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);font-size:13px">
@@ -469,15 +1882,16 @@
   <div id="up_result" style="display:none;margin-top:8px;padding:8px;background:#0d1117;border:1px solid var(--line);border-radius:6px;font-size:13px"></div>
 </div>
 <div id="delivpanel" style="display:none;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel);font-size:13px">
+  <span id="dv_close" title="收起这个面板" style="float:right;cursor:pointer;color:var(--dim);padding:0 4px">✕</span>
   <b>产物设置：</b>
-  <span style="color:var(--dim);font-size:12px">全链跑完后打包成<b>提交形状</b>（正文.pdf / 附录A.pdf / demo.html / result*.xlsx / 题目附件 / *.py 平铺 / 运行说明.md，外加「其余文件」）→ 落在 <code>产物/提交作品/最新作品/</code>；各阶段产物镜像在 <code>产物/各阶段产物/最新产物/&lt;阶段名&gt;/</code>。<b>换题时</b>这两个「最新」整目录改名成 <code>&lt;题目标识_日期_时间&gt;/</code>，并新建两个空的 —— 所以同一题反复重跑不用清理。</span>
+  <span style="color:var(--dim);font-size:12px">全链跑完后打包成<b>提交形状</b>（正文.pdf / 附录A.pdf / demo.html / result*.xlsx / 题目附件 / *.py 平铺 / 运行说明.md，外加「其余文件」）→ 落在 <code>产物/提交作品/最新作品/</code>；各阶段产物镜像在 <code>产物/各阶段产物/最新产物/&lt;阶段名&gt;/</code>。<b>归档只按时间命名</b>；只有点「📦 归档本题并换新」时才弹框询问名称，留空 = 只用时间。</span>
   <div style="margin-top:6px;display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">
     <label>产物路径（留空 = 项目根下的 <code>产物/</code>）<br>
       <input id="dv_dir" type="text" size="46" placeholder="留空 → <项目根>/产物/" style="background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:4px">
       <button id="dv_pick" title="点着选一个目录（浏览器不让网页读本地绝对路径，所以由服务端列目录）">📁 选…</button></label>
-    <label>题目标识（进归档目录名，如 <code>2026A</code>；留空 = 只用日期）<br>
-      <input id="dv_pid" type="text" size="20" placeholder="2026A" style="background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:4px"></label>
-    <button id="dv_archive" title="把两个「最新」（提交作品/最新作品、各阶段产物/最新产物）整目录改名成 <产物>/&lt;题目标识_日期_时间&gt;/，再新建两个空的；同时把这两个框的设置存下来">📦 归档本题并换新</button>
+    <label>当前模板<br>
+      <span id="dv_template_desc" style="color:var(--dim);font-size:12px;display:inline-block;max-width:36ch"></span></label>
+    <button id="dv_archive" title="把两个「最新」（提交作品/最新作品、各阶段产物/最新产物）整目录改名成 <产物>/&lt;名称_日期_时间&gt;/（名称留空则只用时间），再新建两个空的">📦 归档本题并换新</button>
     <button id="dv_wipe" style="color:var(--fail);border-color:#5a2a2a" title="**不归档**，直接把本题的产物与状态删掉（题面与附件保留）。不可恢复">🗑 不归档删除本题</button>
     <button id="dv_wipe_all" style="color:var(--fail);border-color:#5a2a2a" title="把这道题在机器上留下的一切删干净：产物/reports/code/figures/paper/demo、request/（题面与附件）、data/、runtime 状态。**框架与脚本一个不动**。不可恢复，删完要重新上传赛题">🧨 删除全部内容</button>
   </div>
@@ -677,7 +2091,10 @@ const $=id=>document.getElementById(id), view=$('view');
 // ===== 上传 =====
 // 用户 2026-09-29：点这个**直接开文件夹选择框**，不再只是把面板翻出来。
 // 面板顺带展开（要露出拖放区/消息），收起改由面板右上角的 ✕ 负责。
-$('upbtn').onclick=()=>{ $('uppanel').style.display='block'; $('up_folder').click(); refreshWS(); };
+//   点「⬆ 上传赛题」时**顺带把「产物」也展开**：换题时这两件事总是连着做
+//   （先选好产物落到哪、比赛/输出模板，再传题），分两次点是把一件活拆成两步。
+$('upbtn').onclick=()=>{ $('uppanel').style.display='block'; dvPanel(true); $('up_folder').click(); refreshWS(); };
+$('dv_close').onclick=()=>dvPanel(false);
 
 // ---------------- 产物设置（落地路径 + 归档目录名） ----------------
 // 回退/重跑会把残留移到哪 —— 让用户在按下按钮**之前**就看清落点，而不是按完去猜。
@@ -686,12 +2103,12 @@ function deliveryCacheHint(){
   // 要显示的是**落点全路径**，用 resolved —— output_dir 是配置原值，可能是空串
   // （空串代表「用默认」）。两个字段的含义见 `_delivery_status` 的注释。
   const base=d.resolved||d.output_dir;
-  if(!base) return '<产物>\\cache\\<题目标识_日期_时间>\\';
-  return base+'\\cache\\'+(d.archive_name||'<题目标识_日期_时间>')+'\\';
+  if(!base) return '<产物>\\cache\\<日期_时间>\\';
+  return base+'\\cache\\'+(d.archive_name||'<日期_时间>')+'\\';
 }
 function fillDelivery(d){
   if(!d) return;
-  const dir=$('dv_dir'), pid=$('dv_pid');
+  const dir=$('dv_dir');
   // 正在输入时不回写，否则轮询会把用户打了一半的路径冲掉。
   // ★ 这里必须是**配置原值**（`output_dir`）：填成解析后的绝对路径会让「留空 = 用默认」
   //   这个语义在界面上消失。`/api/delivery` 与 `/api/state` 两个 payload 的口径已统一。
@@ -701,53 +2118,121 @@ function fillDelivery(d){
   //   被回写过的旧值 ⇒ **产物落到旧目录** ✗（而且用户以为自己已经改了）。
   //   改脏标记在 `input` 事件里置上、在保存成功时清掉。
   if(document.activeElement!==dir && !dir.dataset.dirty) dir.value=d.output_dir||'';
-  if(document.activeElement!==pid && !pid.dataset.dirty) pid.value=d.problem_id||'';
   $('dv_msg').textContent = d.error ? ('⚠ '+d.error)
     : ('提交件 → '+(d.submission_dir||'(未知)')+(d.submission_exists?'（已生成）':'（尚未生成）')
        +' · 各阶段产物 → '+(d.stage_dir||'(未知)')+(d.stage_exists?'（已生成）':'（尚未生成）')
        +' · 下一个归档名 '+d.archive_name);
-  // 工具栏上的常驻提示。项目内显示相对路径，项目外显示全路径（那时缩略会看不出在哪）。
-  const chip=$('delivchip');
-  if(d.error){ chip.textContent='📁 ⚠ 题目标识有问题'; chip.style.color='var(--fail)'; chip.title=d.error; }
-  else{
-    const root=(lastSt&&lastSt.delivery&&lastSt.delivery.root)||'';
-    const abs=d.resolved||d.output_dir||'(默认)';
-    let show=abs;
-    if(root && show.toLowerCase().startsWith(root.toLowerCase())) show=show.slice(root.length).replace(/^[\\/]+/,'');
-    chip.textContent='📁 '+show+(d.submission_exists?'':' ·未生成')+'   (归档 '+d.archive_name+')';
-    chip.style.color=d.submission_exists?'var(--ok)':'var(--dim)';
-    chip.title='产物根：'+abs
-      +'\n提交件根：'+(d.submission_dir||'')
-      +'\n各阶段产物：'+(d.stage_dir||'')
-      +'\n下一个归档名：'+d.archive_name+'\n点一下展开／收起';
+  // 比赛/输出模板：option 从 /api/delivery 的 templates 来；只在列表变化时重建，保住选中值。
+  const sel=$('dv_template');
+  if(sel && Array.isArray(d.templates)){
+    const ids=d.templates.map(t=>t.id).join('|');
+    if(sel.dataset.ids!==ids){
+      sel.innerHTML='';
+      d.templates.forEach(t=>{
+        const o=document.createElement('option');
+        o.value=t.id; o.textContent=t.label||t.id; o.title=t.description||'';
+        sel.appendChild(o);
+      });
+      sel.dataset.ids=ids;
+    }
+    const want=d.template || (d.templates[0]&&d.templates[0].id) || '';
+    if(want && [...sel.options].some(o=>o.value===want)) sel.value=want;
   }
+  const pop=$('template_pop');
+  if(pop && sel && Array.isArray(d.templates)){
+    pop.innerHTML='';
+    d.templates.forEach(t=>{
+      const on = t.id===sel.value;
+      const row=document.createElement('div');
+      row.className='tpl-row'+(on?' on':'');
+      const label=document.createElement('span');
+      label.textContent=(on?'✓ ':'')+(t.label||t.id);
+      const dsc=document.createElement('span');
+      dsc.className='tpl-desc'; dsc.textContent=t.description||'';
+      row.appendChild(label); row.appendChild(dsc);
+      row.onclick=()=>{
+        sel.value=t.id;
+        sel.dispatchEvent(new Event('change'));
+        pop.style.display='none';
+      };
+      pop.appendChild(row);
+    });
+  }
+  const desc=$('dv_template_desc');
+  if(desc){
+    const t=(d.templates||[]).find(x=>x.id===(sel&&sel.value));
+    desc.textContent=t?(t.description||t.label||''):'';
+  }
+  const tbtn=$('template_btn');
+  if(tbtn && sel){
+    const cur=sel.selectedOptions && sel.selectedOptions[0];
+    tbtn.title = cur && cur.textContent
+      ? ('选择比赛/输出模板（当前：'+cur.textContent.replace(/^✓\s*/,'')+'）')
+      : '选择比赛/输出模板';
+  }
+  // 工具栏上「产物」按钮与 chip 的说明：四行落点 + 下一个归档名。
+  const title='产物根：'+(d.resolved||d.output_dir||'(默认)')
+    +'\n提交件根：'+(d.submission_dir||'')
+    +'\n各阶段产物：'+(d.stage_dir||'')
+    +'\n下一个归档名：'+d.archive_name+'\n点一下展开/收起';
+  $('delivbtn').title=title;
 }
 // ★ 产物面板的开关**只有一个出口**（2026-09-27 用户报「点一下展开，再点一次应该收起」）。
 //   原先 `delivchip`（工具栏那个 `📁 产物 ·未生成 (归档 …)`）写死 `display='block'`
 //   —— 点它只会**开**，再点一次什么都不发生；只有旁边那个 `📁 产物` **按钮**才是真开关。
 //   同一个面板、两个长得几乎一样的入口、行为却不一样，用户当然会以为坏了。
 //   现在两者都走 `toggleDelivery()`：点一下开、再点一下收，行为一致。
+//   展开/收起「产物」面板的**统一出口**：`📁 产物` 按钮与 `delivchip` 的开关、
+//   右上角那个 ✕、以及「点上传赛题时顺带展开」「⓪ 确认后自动收起」全走它 ——
+//   三处各写一遍 `display=…` 的话，迟早有一处忘了同步 `refreshDelivery()`。
+function dvPanel(show){
+  const p=$('delivpanel'); if(!p) return;
+  const wasOpen=(p.style.display!=='none' && p.style.display!=='');
+  p.style.display=show?'block':'none';
+  if(show && !wasOpen) refreshDelivery();   // 只在**展开时**拉一次，收起时不必打扰后端
+}
 function toggleDelivery(){
   const p=$('delivpanel');
-  const opening=(p.style.display==='none'||!p.style.display);
-  p.style.display=opening?'block':'none';
-  if(opening) refreshDelivery();      // 只在**展开时**拉一次，收起时不必打扰后端
+  dvPanel(p.style.display==='none'||!p.style.display);
 }
-$('delivchip').onclick=toggleDelivery;
+const _tplSel=$('dv_template');
+if(_tplSel) _tplSel.onchange=async()=>{
+  try{
+    await fetch('/api/delivery',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({template:_tplSel.value})});
+  }catch(e){}
+  refreshDelivery();
+};
+const _tplBtn=$('template_btn'), _tplPop=$('template_pop');
+if(_tplBtn && _tplPop) _tplBtn.onclick=async(e)=>{
+  e.stopPropagation();
+  if(_tplPop.style.display==='block'){ _tplPop.style.display='none'; return; }
+  // 第一次点开前必须先拉一次模板列表；否则浮层是空的（用户看到“点开没有 CUMCM”）。
+  try{ await refreshDelivery(); }catch(err){}
+  _tplPop.style.display='block';
+};
+document.addEventListener('click',(e)=>{
+  if(_tplPop && _tplPop.style.display==='block'
+     && !_tplPop.contains(e.target) && e.target!==_tplBtn) _tplPop.style.display='none';
+});
+document.addEventListener('keydown',(e)=>{
+  if(e.key==='Escape' && _tplPop) _tplPop.style.display='none';
+});
 async function refreshDelivery(){
   try{ fillDelivery(await (await fetch('/api/delivery')).json()); }catch(e){}
 }
 // from：起了「从所选阶段重跑」时把**起点**一并交给后端（缺省 = ① 全链）。
 //   为什么必须交：`run_all` 原先恒从 ① 走、靠回执跳过，而上游**门禁**若是"裁决过期"，
 //   它会被当场真跑一遍 —— 于是「从 ⑨ 重跑」实际卡在 ⑤。用户要的就是从 ⑨ 开始。
-function dvPayload(from){ const o={output_dir:$('dv_dir').value, problem_id:$('dv_pid').value};
+function dvPayload(from){ const o={output_dir:$('dv_dir').value};
+  const sel=$('dv_template'); if(sel) o.template=sel.value;
   if(from) o.from_stage=from; return JSON.stringify(o); }
 $('delivbtn').onclick=toggleDelivery;      // 与 delivchip 同一出口，见 toggleDelivery 的说明
 
 // 产物设置两个输入框的「改脏」标记（见 fillDelivery 里那段：失焦后被轮询回写成旧值，
 // 会让 ▶ 把产物落到旧目录）。用户一敲键盘就置脏，保存成功/归档成功时清掉。
-['dv_dir','dv_pid'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input',()=>{ el.dataset.dirty='1'; }); });
-function clearDeliveryDirty(){ ['dv_dir','dv_pid'].forEach(id=>{ const el=$(id); if(el) delete el.dataset.dirty; }); }
+['dv_dir'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('input',()=>{ el.dataset.dirty='1'; }); });
+function clearDeliveryDirty(){ ['dv_dir'].forEach(id=>{ const el=$(id); if(el) delete el.dataset.dirty; }); }
 
 // 一键托管（右上角）。开着时：阶段超时自动延长、有推荐目标时自动按其回退。
 $('autopilot').onclick=async()=>{
@@ -764,16 +2249,19 @@ $('autopilot').onclick=async()=>{
 //   本来就会存，用户看不出它跟那两处有什么分别。归档那条**同时存两个框**，
 //   所以删掉保存之后"改完路径再归档"也不会丢。）
 $('dv_archive').onclick=async()=>{
-  const nm=((lastSt&&lastSt.delivery&&lastSt.delivery.archive_name)||'<题目标识_日期_时间>');
+  const raw=prompt('归档名（可留空：留空 = 只用时间；非空 = 名称_时间）','');
+  if(raw===null) return;                       // 取消
+  const name=raw.trim();
+  const nm=(name?name+'_':'')+'<日期_时间>';
   if(!confirm('把两个「最新」归档成 '+nm+'/？\n\n'
     +'· 提交作品/最新作品  →  提交作品/'+nm+'/\n'
     +'· 各阶段产物/最新产物  →  各阶段产物/'+nm+'/\n\n'
-    +'归档后新建两个空的「最新」。本题的产物不会丢 —— 工作区里那份照旧。\n'
-    +'同时会把这两个框的设置存下来。')) return;
+    +'归档后新建两个空的「最新」。本题的产物不会丢 —— 工作区里那份照旧。')) return;
   $('dv_msg').textContent='归档中…';
-  const r=await fetch('/api/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:dvPayload()});
+  const r=await fetch('/api/archive',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({output_dir:$('dv_dir').value, name})});
   const d=await r.json();
-  if(r.ok) clearDeliveryDirty();      // 归档会把这两个框存下来 ⇒ 脏标记清掉，轮询可以放心回写
+  if(r.ok) clearDeliveryDirty();      // 归档会把产物路径存下来 ⇒ 脏标记清掉，轮询可以放心回写
   // ★ 后端会如实回 `created`：两个「最新」都空时只建骨架、**没有**归档目录，
   //   这时不能再打「✓ 已归档 → X/」——那是冒充成功（假目录名会指向不存在的路径）。
   $('dv_msg').textContent = !r.ok ? ('⚠ '+(d.detail||'归档失败'))
@@ -929,7 +2417,7 @@ function fillStageSel(){ const el=$('stage_sel'); if(!el) return; el.innerHTML=S
 //   原先直接 `await r.json()` 然后读 `d.cleared` —— 而 `/api/redo` 在**链正在跑**时返回
 //   **409** `{"detail": "运行中不能移动阶段产物，请先停止并等待执行结束"}`，这份错误被吞掉，
 //   面板显示成「已清空：无」+「点 ▶ 开始全链」，而 ▶ 在运行中也点不动 ⇒ 用户看到的是
-//   **"点了没反应"**（实测那一发：⑩ 排版版式正在跑，点两次都被静默拒绝）。
+//   **"点了没反应"**（实测那一发：⑭ 排版与版式正在跑，点两次都被静默拒绝）。
 async function postRedo(stage){
   const r=await fetch('/api/redo',{method:'POST',headers:{'Content-Type':'application/json'},
                                   body:JSON.stringify({stage})});
@@ -1044,7 +2532,9 @@ function showAdv(sid,badge){
   const p=advPanel();
   const adv=(lastSt&&lastSt.advisories?lastSt.advisories[sid]:null)||[];
   const iss=(lastSt&&lastSt.issues?lastSt.issues[sid]:null)||[];
-  if(!adv.length&&!iss.length) return;
+  // 判词留档：门禁**过了也留**（用户 2026-10-16）—— 这一屏先回答"这一关最终判了什么"。
+  const vd=(lastSt&&lastSt.verdicts?lastSt.verdicts[sid]:null)||null;
+  if(!adv.length&&!iss.length&&!vd) return;
   const nH=a=>a.filter(x=>advSev(x)==='hard').length;
   const nS=a=>a.filter(x=>advSev(x)==='soft').length;
   const item=a=>'<div class="advitem"><span class="advsev '+advSev(a)+'">'+advSev(a)+'</span>'
@@ -1061,6 +2551,20 @@ function showAdv(sid,badge){
     //   图例跟它对上才看得懂；右边那句才是中文解释（用户 2026-09-29 指定）。
     +'<span class="advsev info">info</span>纯建议</span>';
   let html='';
+  // ★ 最上面一段：**这一关的最终判词**（过没过都留，2026-10-16 用户点名要）。
+  //   它只是留档、不参与任何处置 —— 处置看下面两段（门禁判据 / 建议）。
+  if(vd){
+    html+='<div class="advhead vdhead">📋 <b>这一关的最终判词</b>：'
+      +(vd.passed?'<span style="color:#2ecc71">✅ 通过</span>':'<span style="color:#ff9f1a">❌ 未通过</span>')
+      +'<i style="color:#9aa4ae"> '+esc(vd.status||'')+(vd.at?(' · '+esc(vd.at)):'')+'</i></div>';
+    // 通过时留下的判据（已结清）：`issues_by_stage` 按口径已经撤了，这里把它**留档**地显示出来 ——
+    //   只有这两边都空时才渲染，避免与下面"门禁判据"那段重复。
+    const vdIss=(vd.issues||[]);
+    if(vdIss.length&&!iss.length){
+      html+='<div class="advhead advsecond">🗂 这一关当时的判据 '+vdIss.length+' 条（已结清，留档）</div>'
+        +vdIss.map(item).join('');
+    }
+  }
   // ★ 上半段：**门禁判据**（会阻断的那批）。原先它们只活在黄灯面板上，黄灯一收就没了
   //   （用户 2026-09-29：「把黄灯面板里的那个复制过来」）。放上面是因为它们才是要命的那批。
   if(iss.length){
@@ -1102,6 +2606,7 @@ function fillAutopilot(on){
   const b=$('autopilot'); if(!b) return;
   b.className = on ? 'primary' : '';
   b.textContent = on ? '🤖 托管中' : '🤖 托管';
+  _iconizeEl(b);   // 文案是动态的，拆双身得跟在这里
   b.style.color = on ? '#39ff14' : '';
   b.title = (on ? '一键托管**开着**。' : '一键托管：')
     + '阶段超时自动延长、有推荐目标（agent 说该退到哪）时自动按其回退，'
@@ -1132,7 +2637,9 @@ function renderStages(st){
     const confirmed=String(s).startsWith('done(confirmed)');
     const cls=wait?'wait':manual?'manual':disclosed?'disclosed':confirmed?'done':stale?'stale':(String(s).startsWith('done'))?'done':isFailed(s)?'fail':(s==='running'?'run':'');
     const sec=stageSec(st,id,s);
-    const ts=sec>1?(' ⏱'+fmtHMS(Math.round(sec))):'';
+    // 时间包一层 `.tsk`（2026-10-16 用户：「时间这里还没改」——设计稿里运行行的
+    // 时间是**带框的计时章**：琥珀描边 + 底纹。纯文本没法只给它上风格，得有个抓手）。
+    const ts=sec>1?(' <span class="tsk">⏱'+fmtHMS(Math.round(sec))+'</span>'):'';
     // 四种「完成」必须长得不一样：✅ 干净通过 / 🔶 披露放行 / 🔧 人工认证 / ⚠ 按旧要求交付。
     // 把后者画成 ✅ 等于对读报告的人撒谎 —— 它是在**旧的做法要求下**做出来的。
     const tag=wait?((pend&&pend.kind==='overtime'&&pend.stage===id)?'⏱':'⏳')
@@ -1146,19 +2653,26 @@ function renderStages(st){
     //   点击开关没有这个时序问题，而且长文本（这里有 1400+ 字符）悬停提示本来也难读。
     const adv=(st&&st.advisories?st.advisories[id]:null)||[];
     const iss=(st&&st.issues?st.issues[id]:null)||[];
+    // ★ 判词留档（`verdicts`，2026-10-16 用户：「门禁过了以后 📝 也要显示最终的判词」）——
+    //   就是 ⑤⑫ 那种"跑完了还看得到判词"的形态，现在**每一关门禁**过没过都留一份。
+    const vd=(st&&st.verdicts?st.verdicts[id]:null)||null;
     // ★ 徽章上的数字**只数 hard**（用户 2026-09-29：原先印的是总数，看着像"这里有 6 条判据"）。
     //   判据和建议里的 hard 都算进来 —— 只数判据的话，"一条 hard 建议"就再也没有入口了。
     //   一条 hard 都没有时徽章不带数字（不是 📝0），但仍可点开看 soft / 纯建议。
     const nHard=[...iss,...adv].filter(a=>advSev(a)==='hard').length;
-    const advTag=(iss.length||adv.length)
-      ?`<span class="advtag${nHard?' advhard':''}" `
+    // 只有判词留档、没有待办（判据/建议都空）时，徽章走**安静档**（`advvd`，青色不带数字）：
+    //   它只是"这一关最终判了什么"的存档，不是"还没修" —— 用告警红会误导（同 2026-09-29 那次的教训）。
+    const onlyVd=!iss.length&&!adv.length&&!!vd;
+    const advTag=(iss.length||adv.length||vd)
+      ?`<span class="advtag${nHard?' advhard':''}${onlyVd?' advvd':''}" `
        +`title="点一下展开／收起：门禁判据 ${iss.length} 条（会阻断）、建议 ${adv.length} 条`
-       +`（不阻断）。其中 hard ${nHard} 条。" `
-       +`onclick="toggleAdv('${id}',event)">📝${nHard?nHard:''}</span>`
+       +`（不阻断）。其中 hard ${nHard} 条。`
+       +(vd?`这一关的最终判词：${vd.passed?'已通过':'未通过'}（${vd.at||''}）。`:'')+`" `
+       +`onclick="toggleAdv('${id}',event)">${_icHTML('📝')}${nHard?nHard:''}</span>`
       :'';
     return {id, cls, html:
       `<div class="dotline"><span class="dot"></span>${STAGE_NAME[id]||id}`
-      +`<span style="color:var(--dim);margin-left:auto;font-size:11px">${advTag}${advTag?' ':''}${tag}${ts}</span></div>`};
+      +`<span style="color:var(--dim);margin-left:auto;font-size:11px">${advTag}${advTag?' ':''}${_icHTML(tag)}${ts}</span></div>`};
   });
   const box=$('stages');
   rows.forEach((r,i)=>{
@@ -1187,9 +2701,12 @@ function renderStages(st){
     pend?('⏳ 等待你决策 · '+(STAGE_NAME[pend.stage]||pend.stage||'')):
     st.running?('运行中 · '+(st.cur||'')):
     st.halt_gate?('已挂起 · '+(st.halt_reason||'待处理')):
-    st.run_completed?('run '+(st.run_id||'—')+' 已完成交付'):   // run_id 为 null 时别渲染成「run null」
+    // ★ 跑完**不再显示**「run xxx 已完成交付」那一行（用户 2026-10-16：「这一行删掉」）。
+    //   元素保留（别处状态还要用），只是完成态不再写字。
+    st.run_completed?'':
     st.run_id?'已停止，未完成本轮交付':'未运行';
   $('status').style.color=pend?'var(--wait)':'var(--dim)';
+  _iconizeEl($('status'));   // 状态行开头的 ⏱/⏳ 也拆双身
   // 整链跑完（⑯ 结束）→ 自动「点」一次第二排正中那个 GitHub 标识（用户 2026-09-30）。
   // ★ 认**跳变**（false→true）而不是"当前是 true"：后者会让每次刷新页面都再弹一遍。
   //   `_lastDone` 初值 null ⇒ 打开面板时若链早已跑完，不补弹（驱动那时已经把 demo 开过了）。
@@ -1331,6 +2848,7 @@ function renderDecision(st){
   const halted=p.kind==='paused';
   $('dc_title').textContent = over?'⏱ 超时，任务仍在运行'
     : halted?'⏸ 已暂停 — 接着选下一步':'⏳ 等待你决策';
+  _iconizeEl($('dc_title'));
   // ★ 超时黄灯**不是**「它判你不合格」：主语是**当前这个阶段**（要延长的是它的限时），
   //   「回退」只是"不延长时的另一条路"。原先这句一律写成「推荐回退 X（默认映射）」——
   //   在超时灯上读起来像"这盏灯是关于 X 的"（实测 2026-09-26：⑤结果可信度审计 超时，
@@ -1438,6 +2956,7 @@ function renderDecision(st){
       +Math.round((p.retry_cap_max||10800)/60)+' 分钟）';
     // 按钮上写明**延长的是谁的限时** —— 光看"推荐回退 X"会以为这盏灯是关于 X 的（见上面 dc_sub）。
     $('dc_extend').textContent = '⏱ 延长「'+(STAGE_NAME[p.stage]||p.stage)+'」的限时';
+    _iconizeEl($('dc_extend'));
   }
   $('dc_retry').style.display    = acts.includes('retry')?'':'none';
   // ⓪ 读题：只有这盏灯给「确认」（服务端 `_action_set` 的 intake 分支）。
@@ -1664,7 +3183,19 @@ async function decide(action){
     const j=await r.json().catch(()=>({}));
     msg.textContent=r.ok?('已受理：'+action+(j.attested?(' → '+j.attested):''))
                         :('被拒：'+(j.detail||r.status));
-    if(r.ok) loadState();
+    if(r.ok){
+      loadState();
+      // ⓪ 读完题、人也确认过了 ⇒ 把「上传赛题」那块**收起来**（与点 ✕ 同一条路）：
+      //   原件已经搬到位，那块面板再占着版面只会把下面真正要看的东西挤下去。
+      //   **只是收起不是清空** —— 点「⬆ 上传赛题」随时能再展开（换题时还要用它）。
+      //   只对 `confirm` 这么做：点「再试一次」时用户很可能要重新选文件夹。
+      //   「产物」那块一并收起 —— 它与上传面板是**一起展开的**（见 `$('upbtn')` 那行），
+      //   收的时候也只收一半就会留一块空占着版面。
+      if(action==='confirm'){
+        const p=$('uppanel'); if(p) p.style.display='none';
+        dvPanel(false);
+      }
+    }
   }catch(e){ msg.textContent='提交失败：'+e; }
 }
 function _tickTimer(){
@@ -1693,6 +3224,7 @@ function logPane(){
     view.className=''; view.innerHTML='';   // 清掉上一标签页的 DOM（否则图片会从透明日志框底下透出来）
     view.style.position='relative'; view.style.padding='0'; view.style.overflow='hidden';
     const d=document.createElement('div');
+    d.className='logpane';   // 换皮抓手：主题层按这个类给日志上纸面（行内样式用 !important 压）
     d.style.cssText='position:absolute;inset:0;overflow-y:auto;white-space:pre-wrap;word-break:break-word;box-sizing:border-box;padding:10px 14px;font:13px/1.6 Consolas,Menlo,monospace;';
     d.onscroll=()=>{ syncLogJump(d); if(logAtBottom(d) && logBuf.join('\n').length!==_logPainted) renderLog(false); };
     // ★ 「↓ 回到最新」浮动按钮（用户 2026-09-28：「经常往上翻，然后回到下面还得往下翻」）。
@@ -1702,6 +3234,7 @@ function logPane(){
     //     `view` 是 `position:relative` 的，所以 `position:absolute` 正好浮在右下角。
     //   ★ 只在**离开底部**时出现：贴在底部还杵着它，会挡住最新几行。（App 里都是这个行为。）
     const b=document.createElement('div');
+    b.className='logjump';   // 换皮抓手（同 .logpane）；hover 的行内样式会被主题的 !important 压住
     b.textContent='↓ 回到最新';
     b.title='滚到最底下（往上翻历史之后用）';
     // 配色：**蓝色框 + 黄字**（用户 2026-09-28 拍板；黄字用 `--run` #f1c40f，比纯白更醒目）。
@@ -1748,7 +3281,51 @@ function renderLog(forceScroll){ forceScroll=(forceScroll===undefined)?true:forc
     if(!forceScroll && !logAtBottom(pane)) return;              // 正在翻历史，暂停自动刷新
     const text=logBuf.join('\n');
     if(!forceScroll && text.length===_logPainted) return;       // 无新内容，跳过重画
-    _logPainted=text.length; pane.textContent=text; pane.scrollTop=pane.scrollHeight;
+    _logPainted=text.length;
+    /* 逐行建 DOM：行首 `[时:分:秒]` 拆进 `.lt` —— 主题据此给时间戳上钢笔蓝 + 荧光笔底
+       （用户 2026-10-16：「日志这里是有颜色和底下有颜色线的」）。原先整块 textContent，
+       没法给局部上色。
+       ★ 一律 `textContent` 写入、**绝不 innerHTML**：日志是 agent 输出，
+         走 HTML 解析就是注入面（sanitizeLog 只去控制字符、不负责转义标签）。 */
+    /* 行结构（全部 textContent 拼装，零注入面）：
+         [时间] → .lt ｜ 行首图标 → .ic（emoji 一份 + 像素画一份，CSS 决定显示哪个）
+         ｜ `[demo]` 工具标签 → .tk ｜ 动作词 `Read:/Bash:/Edit:` → .cmd ｜ 正文 → .lx
+       像素主题据此上设计稿的日志配色（时间淡蓝 / 标签紫 / 动作亮 / 正文灰蓝）。 */
+    /* 图标映射表在全局（ICON_ART）：日志行首图标、按钮、阶段行共用同一张。 */
+    const frag=document.createDocumentFragment();
+    for(let li=0; li<logBuf.length; li++){
+      const line=logBuf[li];
+      const d=document.createElement('div'); d.className='ln';
+      let rest=line;
+      const mt=/^(\[\d{2}:\d{2}:\d{2}\])([\s\S]*)$/.exec(line);
+      if(mt){
+        const t=document.createElement('span'); t.className='lt'; t.textContent=mt[1];
+        d.appendChild(t); rest=mt[2];
+        if(rest.charAt(0)===' ') rest=rest.slice(1);
+      }
+      // 行首图标（一个码点；变体选择符 U+FE0F 跟着一起吞掉）
+      const cps=Array.from(rest);
+      if(cps.length && ICON_ART[cps[0]]){
+        let k=1; if(cps[1]==='️') k=2;
+        const wrap=document.createElement('span'); wrap.className='ic';
+        const em=document.createElement('span'); em.className='em'; em.textContent=cps.slice(0,k).join('');
+        const px=document.createElement('i'); px.className='pxa '+ICON_ART[cps[0]];
+        wrap.appendChild(em); wrap.appendChild(px); d.appendChild(wrap);
+        rest=cps.slice(k).join(''); if(rest.charAt(0)===' ') rest=rest.slice(1);
+      }
+      // 工具标签 + 动作词：只认 ASCII 方括号（`[第 17/17 步]` 这类中文开头的不吞）
+      const m2=/^(\[[A-Za-z][\w-]{0,23}\])(?:\s*([A-Za-z][A-Za-z]{1,11}:))?\s*([\s\S]*)$/.exec(rest);
+      if(m2 && (m2[2] || m2[1].toLowerCase()!=='[step]')){
+        const tk=document.createElement('span'); tk.className='tk'; tk.textContent=m2[1]; d.appendChild(tk);
+        if(m2[2]){ const cm=document.createElement('span'); cm.className='cmd'; cm.textContent=m2[2]; d.appendChild(cm); }
+        const lx=document.createElement('span'); lx.className='lx'; lx.textContent=(m2[2]?' ':'')+m2[3];
+        d.appendChild(lx);
+      } else {
+        const lx=document.createElement('span'); lx.className='lx'; lx.textContent=rest; d.appendChild(lx);
+      }
+      frag.appendChild(d);
+    }
+    pane.textContent=''; pane.appendChild(frag); pane.scrollTop=pane.scrollHeight;
     syncLogJump(pane);   // 画完就贴底了 ⇒ 「回到最新」该收起来（别等 scroll 事件，它是异步的）
   }catch(e){ if(view._lp) view._lp.textContent='(日志渲染失败: '+e.message+')'; }
 }
@@ -1907,8 +3484,12 @@ async function openFile(name,img){
   // ⚠️ 直接改 `curTab`，**不能**调 `setTab(...)`：setTab 的 'md' 分支会回调 openFile，
   // 而 openFile 又调 setTab —— 无终止条件，点一次报告就会无限循环发 /api/read
   // （历史实测每秒数百次，拖慢 /api/state 与 SSE），只能刷新页面才停。
-  // 保留用户当前选的页签（报告查看 / 图片 / PDF），只有从别处（如日志）点进来时才落到报告查看。
-  if(curTab!=='md'&&curTab!=='fig'&&curTab!=='pdf') curTab='md';
+  // ★ 点左边「报告」= **明确要看这份报告** ⇒ 一律切到「报告查看」页签。
+  //   原先这里是"保留用户当前选的页签（报告查看/图片/PDF）"，于是【先开图片或 PDF、再点报告】
+  //   会停在旧页签上、内容还是未渲染的原文 —— 用户 2026-10-16 报的就是这个。
+  //   走 openFile 的入口（侧栏 📄 报告、⓪ 面板的"看完整读题报告"、判词里的"打开报告"按钮）
+  //   **全部**是这个意图，按什么页签进来都该跳过去。
+  if(curTab!=='md') curTab='md';
   markTabs(curTab);
   renderFile();
 }
@@ -1947,6 +3528,20 @@ async function loadPDF(){
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>setTab(b.dataset.v));
 $('start').onclick=async()=>{
   $('stop').style.display='';
+  // ★ 先看一眼模型配置再开跑：三键不齐时**别闷头起链** —— 用户会等半小时才发现
+  //   某个阶段在报"密钥无效"。判据与开屏页同一个（`/api/model_config`，看的是生效值）。
+  //   **只提示、不硬拦**：机器上的 Claude Code 自己已登录是合法路径（新克隆的仓库
+  //   本来就可能是这种），那种情况 `.env` 与环境里都没键、但照样跑得动。
+  try{
+    const mc=await (await fetch('/api/model_config')).json();
+    if(mc && mc.configured===false){
+      const miss=(mc.missing||[]).join('、')||'模型三键';
+      const go=confirm('模型配置没找到（缺 '+miss+'）：`.env` 与环境里都没有。\n\n'
+        +'**只有**这台机器的 Claude Code 自己已登录时才跑得动 —— 那种情况可以点「确定」继续。\n\n'
+        +'点「取消」回开屏页去填配置。');
+      if(!go){ splShow('config'); return; }
+    }
+  }catch(e){ /* 查不通就不拦：这只是个提醒，不该因为它挡住起链 */ }
   // 产物设置随本轮一起提交 —— 用户可能是先填了路径、没点保存就点开始。
   const r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:dvPayload()});
   if(!r.ok){ const d=await r.json().catch(()=>({})); alert('无法开始：'+(d.detail||r.status)); }
@@ -2128,7 +3723,8 @@ $('dv_wipe').onclick=async()=>{
   //   （后端特意回传 removed/kept 就是为了给他看的）。
   if(r.ok){ clearDeliveryDirty(); await loadState(); await refreshDelivery(); }
   $('dv_msg').textContent = !r.ok ? ('⚠ '+(d.detail||'删除失败'))
-    : ('🗑 已删 '+d.removed.length+' 项；保留：'+d.kept.join('、'));
+    : ('🗑 已删 '+d.removed.length+' 项；保留：'+d.kept.join('、')
+       +((d.failed&&d.failed.length)?('；⚠ 没删掉 '+d.failed.length+' 项：'+d.failed.join('、')):''));
 };
 
 // ---------------- 删除全部内容（比上面那条更彻底：连题面一起删） ----------------
@@ -2137,7 +3733,7 @@ $('dv_wipe').onclick=async()=>{
 $('dv_wipe_all').onclick=async()=>{
   if(!confirm('把这道题在机器上留下的一切**全部删除**（回到刚 clone 的状态）？\n\n'
     +'会删：产物/ 下的全部内容（两个「最新」、cache 里的**往届归档**、其他产物、\n'
-    +'      以及「归档本题并换新」留下的那些 <题目标识_日期_时间>/ 旧归档目录）、\n'
+    +'      以及「归档本题并换新」留下的那些 <日期_时间>/ 旧归档目录）、\n'
     +'      reports / code / results / figures / paper / paper_appendix / demo / 运行说明.md、\n'
     +'      request/（你传的**题面与附件**）、data/、_tmp/ 与 tmp/（阶段草稿与探针）、\n'
     +'      plan.md / todo.md（每道题的规划件）、runtime 下的日志与 .watch_*.json、\n'
@@ -2152,7 +3748,8 @@ $('dv_wipe_all').onclick=async()=>{
   const d=await r.json();
   if(r.ok){ clearDeliveryDirty(); await loadState(); await refreshDelivery(); }
   $('dv_msg').textContent = !r.ok ? ('⚠ '+(d.detail||'删除失败'))
-    : ('🧨 已删 '+d.removed.length+' 项（含题面与附件）；保留：'+d.kept.join('、'));
+    : ('🧨 已删 '+d.removed.length+' 项（含题面与附件）；保留：'+d.kept.join('、')
+       +((d.failed&&d.failed.length)?('；⚠ 没删掉 '+d.failed.length+' 项：'+d.failed.join('、')):''));
 };
 
 // ---------------- 开屏页（品牌 + 配置向导） ----------------
@@ -2273,6 +3870,93 @@ function showGhCard(openTab){
   try{ window.open(GH_URL,'_blank','noopener'); }catch(e){}
 }
 $('ghbadge').onclick=()=>showGhCard(true);
+/* ---- 🎨 主题切换（皮肤）----
+   默认「手绘」（用户 2026-10-16 指定）；「深色」= 页面原来那套皮，**原样保留**（第五个画风）。
+   选哪套记进 localStorage（与侧栏展开状态同一处置）；<head> 里的预绘脚本先把它套到
+   `<html data-theme=…>` 上再让样式生效，所以刷新页面不会先闪一下另一套皮。 */
+const THEMES=[['sketch','手绘'],['blueprint','蓝图'],['pixel','像素'],['editorial','杂志'],['dark','深色']];
+/* 全部防御式：前端夹具把本脚本放进**桩 DOM** 里跑，桩里没有 documentElement /
+   localStorage / theme_btn —— 一个都不许抛（抛了整段脚本连同 boot() 一起没）。
+   两套语义（用户 2026-10-16）：
+     · 🎨（图标）＝**临时**切换，只管本次会话，刷新回默认 —— 不动 localStorage；
+     · 🎚 默认主题 ＝ 选「每次进入先显示哪套」，存 `nma_theme_default`，
+       <head> 的预绘脚本照它上色（首帧就是对的，不闪）。 */
+function _themeNow(){ try{ return (document.documentElement&&document.documentElement.dataset
+  &&document.documentElement.dataset.theme)||'sketch'; }catch(e){ return 'sketch'; } }
+function _themeDefault(){ try{ return localStorage.getItem('nma_theme_default')||'sketch'; }catch(e){ return 'sketch'; } }
+function _themeCN(name){ const t=THEMES.find(t=>t[0]===name); return t?t[1]:'手绘'; }
+function setTheme(name,asDefault){
+  if(!THEMES.some(t=>t[0]===name)) name='sketch';
+  try{ if(document.documentElement&&document.documentElement.dataset)
+        document.documentElement.dataset.theme=name; }catch(e){}
+  if(asDefault){ try{ localStorage.setItem('nma_theme_default',name); }catch(e){} }
+  const b=$('theme_btn'); if(b) b.title='切换主题（当前：'+_themeCN(name)+'）——刷新后回到默认主题';
+  const d=$('dtheme_btn'); if(d) d.title='选择默认主题（每次进入先显示它）——当前默认：'+_themeCN(_themeDefault());
+}
+const _tb=$('theme_btn');
+if(_tb) _tb.onclick=()=>{                       // 图标钮：循环切，**不落盘**（临时看效果用）
+  const i=Math.max(0,THEMES.findIndex(t=>t[0]===_themeNow()));
+  setTheme(THEMES[(i+1)%THEMES.length][0],false);
+};
+/* 🎚 默认主题：小浮层列全部主题，点哪个哪个进 `nma_theme_default`（并立即生效）。
+   浮层用变量着色（--panel/--fg/--acc），两套皮肤下都成立。 */
+function themeMenu(){
+  let p=document.getElementById('dtheme_pop');
+  if(!p){ p=document.createElement('div'); p.id='dtheme_pop'; document.body.appendChild(p);
+    document.addEventListener('click',e=>{ if(!p.contains(e.target)) p.style.display='none'; }); }
+  const cur=_themeDefault();
+  p.innerHTML='<div class="dt-head">默认主题（每次进入先显示它）</div>'
+    +THEMES.map(t=>'<div class="dt-row'+(t[0]===cur?' on':'')+'" data-t="'+t[0]+'">'
+      +(t[0]===cur?'✓ ':'　')+t[1]+'</div>').join('');
+  p.querySelectorAll('.dt-row').forEach(r=>r.onclick=(e)=>{ e.stopPropagation();
+    setTheme(r.dataset.t,true); themeMenu(); });
+  return p;
+}
+const _db=$('dtheme_btn');
+if(_db) _db.onclick=(e)=>{ e.stopPropagation();
+  const p=themeMenu(), r=_db.getBoundingClientRect();
+  p.style.display='block'; p.style.left=r.left+'px'; p.style.top=(r.bottom+6)+'px'; };
+setTheme(_themeNow(),false);   // 启动时把两个按钮的提示对齐当前皮/默认主题
+
+/* ---- 图标语言（2026-10-16 用户：「这些图标能不能随主题变化，像素的变了但没变全」）----
+   机制 = "双身图标"：有映射的 emoji 被包成 `<span class="ic"><span class="em">emoji</span>
+   <i class="pxa px-xxx"></i></span>` —— 一份 emoji + 一份 box-shadow 拼的像素画。
+   CSS 决定谁出场：默认只显示 emoji（深色皮原样）；像素主题 emoji 退场换像素画；
+   手绘/蓝图对 `.em` 做整体染色（暖铅笔调 / 青色单色化）当它们的图标语言。
+   没映射的 emoji 保持原样（例如 🎨/🎚 这种本身就是"主题控件"的记号）。 */
+const ICON_ART={'▶':'px-tplay','⏸':'px-pause','⏹':'px-stop','⬆':'px-up','📦':'px-tbox',
+  '↺':'px-redo','↩':'px-redo','🗑':'px-trash','🧹':'px-trash','🤖':'px-robot','🔁':'px-redo',
+  '🔶':'px-diamond','🛠':'px-tterm','⏱':'px-clock','⏳':'px-clock','✅':'px-tcheck','✓':'px-tcheck',
+  '❌':'px-warn','⚠':'px-warn','🔧':'px-plug','🔌':'px-plug','📝':'px-note','💬':'px-note',
+  '📄':'px-tdoc','📕':'px-book','🖼':'px-pic','📸':'px-tcam','✍':'px-tpen','🧩':'px-tgem',
+  '♻':'px-redo','🧨':'px-warn','🐙':'px-git','🎬':'px-tplay'};
+function _icEl(em){
+  const cls=ICON_ART[em]; if(!cls) return null;
+  const wrap=document.createElement('span'); wrap.className='ic';
+  const e=document.createElement('span'); e.className='em'; e.textContent=em;
+  const p=document.createElement('i'); p.className='pxa '+cls;
+  wrap.appendChild(e); wrap.appendChild(p); return wrap;
+}
+function _icHTML(em){ const cls=ICON_ART[em];
+  return cls?('<span class="ic"><span class="em">'+em+'</span><i class="pxa '+cls+'"></i></span>'):em; }
+/* 把元素文案**开头**的 emoji 拆进 .ic（其余文字原样用 textNode 放回）。
+   静态字标在启动时过一次（_iconizeAll）；动态改文案的（托管/延时/产物 chip/状态行/
+   决策标题）在各自的 setter 之后再叫它一次。 */
+function _iconizeEl(el){
+  if(!el) return; const s=el.textContent; if(!s) return;
+  const cps=Array.from(s); if(!ICON_ART[cps[0]]) return;
+  let k=1; if(cps[1]==='️') k=2;
+  const rest=cps.slice(k).join('').replace(/^\s+/,'');
+  const ic=_icEl(cps[0]);
+  el.textContent=''; if(ic) el.appendChild(ic);
+  if(rest) el.appendChild(document.createTextNode(rest));
+}
+function _iconizeAll(){
+  ['upbtn','delivbtn','redo_btn','wipe_btn','start','pause','stop','cleanup','up_go','dv_archive',
+   'dv_wipe','dv_wipe_all','dc_rollback','dc_extend','dc_retry','dc_confirm','dc_attest','dc_disclose',
+   'hil_apply','cf_test','cf_back','autopilot'].forEach(x=>_iconizeEl($(x)));
+}
+_iconizeAll();
 $('gh_close').onclick=()=>{$('ghmodal').style.display='none'};
 $('ghmodal').onclick=(e)=>{ if(e.target===$('ghmodal')) $('ghmodal').style.display='none' };
 addEventListener('keydown',(e)=>{ if(e.key==='Escape') $('ghmodal').style.display='none' });

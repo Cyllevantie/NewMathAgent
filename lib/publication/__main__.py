@@ -1,8 +1,17 @@
 import argparse
 import json
+import sys
 from pathlib import Path
 from .checks import bind_map, inspect
 from lib.visualization.evidence import write_json
+
+# Windows 默认 GBK 控制台下，`check` 的 JSON 含「①」这类字符会在 print 时抛
+# UnicodeEncodeError —— 恰好把“检查结果”变成一行 traceback。与 healthcheck /
+# check_skeleton 用同一条兜底：只在 stdout 可重配时切 UTF-8。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 
 def main():

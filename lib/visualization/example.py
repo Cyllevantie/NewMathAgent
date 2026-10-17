@@ -1,6 +1,5 @@
 """Explicit synthetic-data gallery; never writes production figures or solves a task."""
 import argparse
-import json
 import shutil
 from pathlib import Path
 

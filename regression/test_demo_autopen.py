@@ -15,7 +15,6 @@
 """
 import ast
 import os
-import sys
 import types
 import unittest
 from pathlib import Path

@@ -303,9 +303,36 @@ if not section_files:
 
 # Include/input detection: \input{...} or \include{...}
 include_re = re.compile(r'\\(?:input|include)\s*\{([^}]+)\}')
-raw_includes = [inc.strip() for inc in include_re.findall(main_text)]
-# \input{name} may omit .tex extension; normalize by appending .tex if missing
-includes = [inc if inc.endswith(".tex") else inc + ".tex" for inc in raw_includes]
+
+
+def collect_includes(path, stack=None):
+    """Recursively expand \input: main.tex -> paper-structure.tex -> blocks/sections.
+
+    All paths are resolved relative to the main document dir (TeX's cwd), not the
+    including file's dir — `_base/preamble.tex` itself says `\input{_base/math-style.tex}`.
+    """
+    stack = stack or []
+    if path in stack:
+        return []
+    out = []
+    for inc in include_re.findall(read(path)):
+        inc = inc.strip()
+        if not inc or "#" in inc:
+            continue
+        norm = inc if inc.endswith(".tex") else inc + ".tex"
+        # Optional \IfFileExists 桩：文件不存在是正常设计，不算缺 include。
+        if norm in ("labels_appendix.tex", "labels-appendix.tex"):
+            continue
+        out.append(norm)
+        child = (main.parent / norm).resolve()
+        # 只递归正文结构（paper-structure.tex / blocks / sections），不钻进 _base：
+        # macros.tex 里的 \input{sections/#2} 是宏定义，不是真实 include。
+        if child.is_file() and child.suffix == ".tex" and "_base" not in child.parts:
+            out.extend(collect_includes(child, stack + [path]))
+    return out
+
+
+includes = collect_includes(main)
 include_paths = [(main.parent / inc).resolve() for inc in includes]
 include_names = [Path(inc).name for inc in includes]
 
@@ -374,7 +401,12 @@ if all_results:
 internal_terms = sorted(set(term for term in internal_terms if term))
 internal_re = re.compile("|".join(re.escape(term) for term in internal_terms)) if internal_terms else None
 
-paper_files = unique_paths([main] + section_files + ([refs] if refs and refs.exists() else []) + sorted(paper.glob(section_ext)))
+blocks_dir = paper / "blocks"
+paper_files = unique_paths(
+    [main] + section_files
+    + ([refs] if refs and refs.exists() else [])
+    + sorted(paper.glob(section_ext))
+    + (sorted(blocks_dir.glob(section_ext)) if blocks_dir.is_dir() else []))
 file_texts = []
 combined = []
 section_titles = []
@@ -390,7 +422,8 @@ for path in paper_files:
     if placeholder_re.search(text):
         fail(f"placeholder text remains in {path_rel}")
 
-    is_appendix = path.name.startswith("A_") or "appendix" in path.name.lower()
+    is_appendix = (path.name.startswith("A_") or path.name.startswith("A1")
+                   or "appendix" in path.name.lower())
     if not no_internal_check and internal_re and internal_re.search(text):
         if is_appendix:
             warn(f"internal workflow term appears in appendix: {path_rel}")
@@ -409,6 +442,7 @@ for path in paper_files:
         lower_name = path.name.lower()
         is_aux_section = (
             path.name.startswith("A_")
+            or path.name.startswith("A1")
             or lower_name.startswith("abstract")
             or lower_name.startswith("appendices")
         )

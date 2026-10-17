@@ -90,7 +90,7 @@ def measure(pdf_path, expect_margins=True):
                 s0_y = votes.most_common(1)[0][0]
                 x0, y0, x1, y1 = line["bbox"]
                 lines.append((s0_y, x0))
-                # 页边距只统计**正文块**。带页眉的模板族（如 zh/default-latex）把页眉与
+                # 页边距只统计**正文块**。带页眉的模板族把页眉与
                 # 横线排在版心上方、横线还向左伸出正文左边界 —— 直接取全场包围盒会把
                 # 「左 20.1mm / 上 11.6mm」量成页边距，是纯假阳性。
                 # 判据：整行都落在正文上边界之上的，一律是页眉，不计入。

@@ -3,7 +3,7 @@
 FastAPI + SSE；阶段编排 + 门禁回退；可复用 reports 断点续跑。
 用法: python server.py [--port 8901]   （在 new math agent 根目录下启动）
 """
-import asyncio, ctypes, hashlib, io, json, os, re, shutil, stat, subprocess, sys, threading, time, uuid
+import asyncio, atexit, ctypes, hashlib, io, json, os, re, shutil, stat, subprocess, sys, threading, time, uuid
 import webbrowser   # 整链跑完时把 ⑯ 的 demo 用系统默认浏览器打开（见 `_open_demo_page`）
 from ctypes import wintypes
 from urllib.parse import urlparse
@@ -430,7 +430,7 @@ STAGES = [
     {"id": "drawio", "name": "技术路线图",      "skill": "7Route-diagram",                "report": "DRAWIO_REPORT.md",          "gate": None},
     # 绘图门禁：⑦ 之后**所有图都在盘上了**（8 张数据图来自 ④，4 张非数据图来自 ⑦），
     #   这是最早能对**全集**做检查的位置。在这一步拦住，就不必让 ⑨⑩⑪⑫ 在注定被退回的
-    #   图上接着干活；而 ⑫ 验收那条图闸门仍在（它管"成稿后图又被动过"的晚场）。
+    #   图上接着干活；而 ⑮ 验收那条图闸门仍在（它管"成稿后图又被动过"的晚场）。
     #   失败只回 ⑦ —— 它的下标严格小于这里，所以 `_target_index` 合法（这正是它比
     #   "把 ⑦ 自己变成门禁"好的地方：门禁的 target 必须是**前序**阶段，⑦ 不能指自己）。
     #   ⑦ 若查明根子在数据图，按它自己的交回规则写 HANDBACK_REQUEST 交回 ④。
@@ -445,6 +445,9 @@ STAGES = [
     #   它本身就是门禁的产物；跑完由 ⑫↔⑬ 环路把判词交回 ⑫ 复评（见 `_back_to_judge`）。
     {"id": "fix", "name": "按评分判词返修",         "skill": "13Repair-by-rubric-verdict",                  "report": "FIX_REPORT.md",             "gate": None},
     # format 独占模板/排版层（`paper/_base/` 与 main.tex 导言区），写作者不碰。
+    #   提交清单 / 正文末页清单表 / 运行说明 由 ⑨ 收尾首产（2026-10-17 解耦：
+    #   用户要求「停在 ⑨ 就是完整稿」；见 `ARTIFACTS["write"]`）—— 本阶段对它们
+    #   **对账与版式层修补**（塞不下 / 叠印 / 合并行这类版式事故仍是它的活），不再从零写。
     #   它排在**内容判据之后**：先把内容判据定稿，再排这一道 ~2h 的工序，
     #   否则每改一句措辞都要重排一次。它改过 `paper/` 之后那几个内容判官的**回执会失配，
     #   但那不算"判决过期"** —— 见 `_review_object_stale` 的例外与 `state["layout_superseded"]`
@@ -475,7 +478,9 @@ STAGES = [
 #     一个已知的例外：⑯ 不再"只写 `demo/`"，它还会往 `paper_appendix/`
 #       里补 demo 那一节（标题 + 图 A1 + 介绍）并重编 `附录A.pdf`。所以**附录**在 ⑮ 之后还会
 #       变一次。这是可接受的：那一节是**新增的展示内容**，不改动任何已有推导/数值，与"版式打磨"
-#       同一性质；而且 `附录A.pdf` 没有哈希绑定，不会让任何已通过的裁决失效。
+#       同一性质。它**不会**让已通过的裁决失效 —— 不是靠"附录没有哈希绑定"（`lib/publication`
+#       确实不绑附录，但产物/输入指纹里原本有它），而是靠 `_DEMO_OWNED_PATHS`：
+#       ⑯ 的附录改动已从 write/format 的产物指纹与 verify 的输入指纹里排除。
 #   · 谁在什么时候被打磨过，痕迹留在 `state["layout_superseded"]`（面板可见），需要时手动重跑。
 # （原 SKIP_OPTIONAL 已删：全项目无读取方，且 7Route-diagram 早已接入正式链。）
 
@@ -523,6 +528,12 @@ state = {"running": False, "stopping": False, "run_id": None, "cur": None,
          #     存一份之后，阶段行上的建议角标既能看建议、也能看判据，且**判据还在**这件事本身就有信息量。
          #   口径与 `adv_by_stage` 对齐：门禁没过就留着、过了就撤。
          "issues_by_stage": {},
+         # verdict_by_stage: sid → 该阶段**最后一次门禁裁决**的留档（过没过都记）。
+         #   与 issues_by_stage 的口径**故意不同**：那个只留"没结清的"（过了就撤，否则
+         #   读面板的人会以为还没修）；这个什么都留 —— 用户 2026-10-16 要的就是
+         #   「门禁过了以后，📝 里还看得到这一关最终判了什么」（⑤⑫ 那样的留档要看得到）。
+         #   落盘 `runtime/quality/verdict_by_stage.json`，重启后面板照旧。
+         "verdict_by_stage": {},
          # fix_required: 12Rubric-final 判词里 must/fatal 的 issue id，供 13Repair-by-rubric-verdict 交处置表时逐条对账。
          #   必须**在 rubric 那一关就地**存下：13Repair-by-rubric-verdict 一改 paper/，rubric 的 input_digest
          #     就变了，事后重读裁决只会读到 UNVERIFIED。
@@ -626,12 +637,40 @@ def log(msg):
         except Exception:
             pass
 
+def _paper_template_id():
+    """当前论文模板族：优先 effective_profile.template，否则唯一 roles.json 的族。"""
+    try:
+        data = json.loads((ROOT / "runtime/effective_profile.json").read_text(encoding="utf-8"))
+        tpl = data.get("template") if isinstance(data, dict) else None
+        if isinstance(tpl, str) and tpl.strip():
+            return tpl.strip()
+    except (OSError, ValueError):
+        pass
+    # 前端选中的模板也记在 delivery.local.json；effective_profile 还没写时以它为准。
+    try:
+        _cfg_tpl = _delivery_config().get("template")
+        if _cfg_tpl:
+            return _cfg_tpl
+    except Exception:
+        pass
+    found = sorted((ROOT / "skills/9Paper-writing/templates").glob("*/*/roles.json"))
+    if len(found) == 1:
+        return found[0].parent.relative_to(ROOT / "skills/9Paper-writing/templates").as_posix()
+    return None
+
+
 def prompt_for(stage, first):
     sid, skill, rep = stage["id"], stage["skill"], stage["report"]
     base = f"""你在工作区 {ROOT} 执行「NewMathAgent」建模工作流。
 先读取工作区根 CLAUDE.md 了解阶段链与产物契约（阶段清单见 docs/STAGE_CHAIN.md），再打开 skills/{skill}/SKILL.md，按其全部要求完成「{sid}」阶段。
 只做该阶段，不要跳级、不要动其它阶段的产出。完成后按该 SKILL.md 要求写报告。
-输入契约（若存在）来自 reports/ 下前序报告；README/CLAUDE.md 里有每个报告含义。"""
+输入契约（若存在）来自 reports/ 下前序报告；README/CLAUDE.md 里有每个报告含义。
+【硬红线】驱动此刻的 pid 是 {os.getpid()}（也写在 runtime/driver.pid）。**永不许按进程名杀进程**
+（taskkill /IM、Stop-Process -Name python 之类一律不行）：驱动本身就是个 python.exe，
+在 tasklist 里跟你起的后台计算长得一模一样，杀掉它这一轮白跑、不留任何诊断（2026-10-15 真发生过）。
+要停自己的后台任务只用 TaskStop；它之后底层子进程还在跑是正常的、不归你管。
+**你自己起的进程真跑飞了**是唯一例外，且只能「按 pid、且先读 runtime/driver.pid 跳过它」
+（读不到那个文件 ⇒ 一个都不杀）—— 完整三步见 skills/_references/stage_discipline.md 第七节。"""
     # 这里不再有「第 N 轮评审」提示：`MAX_ATTEMPTS_PER_STAGE=1` 之后调用点传的 attempt 恒为 1
     #   （除非环境类错误重试），而且它把 attempt 当"轮次"，语义也不对。真要按轮次提示，
     #   数据源是 state["rounds"]；而门禁回执已经通过 _save_feedback 落盘并由 seed_hint 送达，
@@ -665,18 +704,33 @@ def prompt_for(stage, first):
                  "source_semantics/model_semantics 的 quantifier/scope/unit/time_reference 如实对照且一致。"
                  "题面『每年相对 2023 ±5%』是固定基期波动而非逐年连乘；『所有土地/全部面积』不得弱化为『种过即可/发生过一次』。"
                  "写完后自测 quotes 能在对应文件中逐字命中（子串匹配）。")
+    if sid == "write":
+        _tpl = _paper_template_id() or "<template>"
+        base += ("\n\n【结构计划（P1）】本阶段按角色计划生成正文：复制模板后先运行 "
+                 f"`python -m lib.paper_structure assemble --root . --template {_tpl} --out paper`，"
+                 "生成 `paper/paper-structure.tex` 与 `paper/structure.json`；"
+                 "以 structure.json 的 enabled/order/problem_count 为准。"
+                 "`paper/paper-structure.tex` 与 `paper/structure.json` 是生成物，不许手改；"
+                 "`paper/main.tex` 是 14Layout-and-format 的稳定外壳，不要改。"
+                 "收尾写标题后运行 `python -m lib.paper_structure sync-title --root . --out paper`，"
+                 "再重编译两遍。")
     if sid in ("code", "robustness"):
         # 【方法标记】纪律（_references/stage_discipline.md 第四节）要求凡落盘到
         # code/outputs/ 的中间产物都写同名 .meta.json，并把「驱动注入的 code/ 指纹」抄进
         # `_code_fp`，好让「改了脚本」这一最常见的方法变更在**产物层可机器比对**。
         # 这里必须真把 `_code_fp()` 注入 prompt：以前只定义了函数却没注入，纪律文档与实现是断的，
         #   `.meta.json` 里那个字段无从填写。
+        #   ⚠ 下面这段是 stage_discipline.md §4 的**注入副本**：改 §4 必须同步改这里
+        #   （`regression/test_doc_drift.py` 有逐字哨兵；只改一处 = 两份口径打架）。
         base += (f"\n\n【方法标记】当前 code/ 目录指纹：`{_code_fp()}`。"
                  "凡落盘到 `code/outputs/` 的中间产物，必须同时写一个同名 `.meta.json`，"
                  "把上面这个值**原样**抄进 `_code_fp` 字段（连同 `_method` 与 `_params`）。"
                  "重跑时先扫 `code/outputs/*.meta.json` 逐项比对：方法与参数都一致才可复用，"
                  "不一致的必须重算并标注「作废旧产物（方法变更：A → B）」——"
-                 "不得因为「文件在、名字对」就复用。口径见 stage_discipline.md 第四节。")
+                 "不得因为「文件在、名字对」就复用。**别把 _code_fp 写成 code/ 里的常量**"
+                 "（常量在被哈希的目录里，写回注入值就会改指纹，永远没有不动点）；"
+                 "复用判定要**同时比 `_method` 与 `_params`**，指纹只是附加佐证。"
+                 "口径见 stage_discipline.md 第四节。")
     # 这里没有 `_audit_needsfix_current.md` 分支：全项目**没有任何代码或技能写这个文件**，
     #   永远不触发。「audit NEEDS_FIX → code」的实际通道是 _save_feedback() + rollback seed_hint。
 
@@ -722,6 +776,22 @@ def _artifact_ok(stage):
     rep = stage["report"]
     m = REPORTS / rep if not rep.startswith("paper") else (ROOT / "paper" / "main.pdf")
     if not m.exists(): return False
+    if stage["id"] == "write":
+        # 角色化模板：⑨ 的成功不再只是 main.pdf >80B —— 结构文件必须存在且可解析。
+        tpl = _paper_template_id()
+        if tpl and (ROOT / "skills/9Paper-writing/templates" / tpl / "roles.json").is_file():
+            for rel in ("paper/structure.json", "paper/paper-structure.tex"):
+                p = ROOT / rel
+                if not p.is_file() or p.stat().st_size == 0:
+                    return False
+            try:
+                plan = json.loads((ROOT / "paper/structure.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return False
+            if not isinstance(plan.get("problem_count"), int) or plan["problem_count"] < 1:
+                return False
+            if not plan.get("enabled"):
+                return False
     if rep == "RESULTS_REPORT.md":
         # 编码阶段要求：结果报告 + code/ 非空
         return m.stat().st_size > 200 and (ROOT / "code").exists() and any((ROOT / "code").iterdir())
@@ -759,13 +829,8 @@ def _prepare_workspace():
         previous = {}
     if not isinstance(previous, dict) or previous.get("source_digest") != digest:
         # 换题 = 归档两个「最新」指针（`提交作品/最新作品`、`各阶段产物/最新产物`）。
-        #   题目标识必须取**上一轮记下的那个**，不能用当前配置 —— `/api/start` 是
-        #   **先落盘新 problem_id、再起链**的，用当前配置会把旧题的产物装进新题的名字里
-        #   （2026B_… 装 2026A 的东西）。
-        # 记录值优先，旧文件没有该字段时退到面板配置
-        # （否则**第一次**轮转的归档名只剩时间戳，题目标识在磁盘上哪一处都没体现）。
-        old_pid = str(previous.get("problem_id") or _delivery_config()["problem_id"] or "")
-        info = _rotate_pointers(reason="输入已变更（换题）", problem_id=old_pid)
+        # P1 起归档名只按时间；用户要自定义名称时走「📦 归档本题并换新」的弹框。
+        info = _rotate_pointers(reason="输入已变更（换题）", problem_id="")
         # 轮转**在搬源之前**：轮转失败会抛 RotationBlocked，此时工作区原件一件未动、
         #   还能原地救人；顺序反过来的话源已搬走而归档又没成。落点跟着本轮归档名走，
         #   于是 cache 里的「工作区原件」与两个「最新」归档**同名**，从 cache 里一眼对得上。
@@ -888,7 +953,7 @@ def _gate_logic_fingerprint():
 #     那三条里）—— 根因就是白名单漏记：它们**全是经 PowerShell 用的**。
 #
 # 两条纪律：
-#   ① **没有运行证据的阶段保守给全**（⑬验收/⑭评分标/⑮返修/⑯Demo 等）。给多了只是多跑
+#   ① **没有运行证据的阶段保守给全**（⑬按评分判词返修/⑭排版与版式/⑮验收/⑯交互Demo 等）。给多了只是多跑
 #      一轮；给少了会让阶段**漏掉真变化** —— 后者危险得多。
 #   ② 只在**有足够访问量且零命中**时才敢摘（本表用的门槛是 ≥50 次记录访问）。样本太小的
 #      "没读到"分不清"不需要"还是"这次恰好没读"。摘错了的代价同上。
@@ -909,20 +974,32 @@ _DERIVED_RESULT_FILES = ("results/registry.json", "results/validation.json",
                          "results/metric-spec.json", "results/validation-spec.json")
 
 # 内容 ↔ 版式 的解耦（见 `_input_split` 末尾那段注释）：
-#   `_LAYOUT_OWNED_PATHS` = `14Layout-and-format` 独占或由它产出的路径（导言区、编译产物、
-#   版式报告与提交清单）；`_CONTENT_SIDE_STAGES` = 只认内容的那几个阶段。
+#   `_LAYOUT_OWNED_PATHS` = `14Layout-and-format` 独占或由它经手的路径（导言区、编译产物、
+#   版式报告；提交清单与运行说明 ⑨ 首产、⑭ 对账修补 —— 同属"版式侧"）；
+#   `_CONTENT_SIDE_STAGES` = 只认内容的那几个阶段。
 #   两者只在 `_input_split` 的 artifacts 指纹里用 —— **不是**把它们从产物里删掉，
 #   只是"它们变了不算内容变了"。13 真改了 `paper/sections/` 时，10/11/12 仍会失效。
-_LAYOUT_OWNED_PATHS = ("paper/_base", "paper/math-style.tex", "paper/main.pdf",
+_LAYOUT_OWNED_PATHS = ("paper/_base", "paper/main.tex", "paper/math-style.tex", "paper/main.pdf",
                        # 表里凡是 `paper/**/*.pdf` 与 `paper/main.<ext>` 的条目其实**永远不会生效**
                        #    —— `workflow_quality._is_paper_build_output` 已经把所有编译产物排除在
-                       #    指纹之外了。留着是**声明"这些归 ⑭"**（人读），不是运行需要；
-                       #    真起作用的只有 `paper/_base`、`paper/math-style.tex`、
-                       #    `reports/FORMAT_REPORT.md`、`reports/SUBMISSION_MANIFEST.json`、`运行说明.md` 这几条。
+                       #    指纹之外了。留着是**声明"这些归版式侧"**（人读），不是运行需要：
+                       #    对 `_CONTENT_SIDE_STAGES` 而言这几条本就不在它们输入里（`_input_split`
+                       #    的 art 只含 request/data/前序报告/paper/code），本表是**防御性**的 ——
+                       #    防将来给内容侧加输入时把版式侧文件算了进去。
                        "paper/page-map.json", "paper/main.aux", "paper/main.log",
                        "paper/main.out", "paper/texput.log", "reports/FORMAT_REPORT.md",
                        "reports/SUBMISSION_MANIFEST.json", "运行说明.md")
 _CONTENT_SIDE_STAGES = {"mathproof", "cross", "rubric", "fix"}
+
+# ⑯ demo 按契约会**合法改写**这些附录路径（`lib/web/appendix_demo_figure.py`：整段插入
+#   demo 展示块 + 把 13 处图号顺延；随后重编 `附录A.pdf`）。而 `write`/`format` 的产物与
+#   `verify` 的输入都含 `paper_appendix` —— 不排除它们，每次重启都会把这些回执判失配，
+#   重跑 ⑨（无 fix 回执时）/⑭/⑮；若 ⑨ 重跑又重写附录 ⇒ 永续循环（2026-10-17 A/B 实测）。
+#   与 `_LAYOUT_OWNED_PATHS` 对内容判官是同一条思路：**后序阶段的合法打磨，不算前序产物被改**；
+#   demo 的改动由 demo 自己的回执负责。
+_DEMO_OWNED_PATHS = ("paper_appendix/sections/A_appendix.tex",
+                     "paper_appendix/figures",
+                     "paper_appendix/main.pdf")
 
 # ⑫评分标终审 ↔ ⑬按评分判词返修 的**自动来回修上限**：
 #   ⑬ 只是 ⑫ 的工具步骤 —— ⑫ 变绿则 ⑬ 自动也绿（`_rubric_hands_off()` 直接跳过它）；
@@ -978,7 +1055,20 @@ _LIB_INSTRUCTION_USERS = {
                         "write", "verify"},
     "config/result_contract.json": {"code", "audit", "drawio", "verify"},
     "docs/RESULT_CONTRACT.md": {"code", "audit", "robustness", "verify"},
+    # 骨架/版式判据：⑨/⑭/⑦ 的 SKILL 都要求 agent 手工运行它。
+    # 它不在任何阶段的包导入链上，也不被 `_prompt_fingerprint()` 哈希（那只哈希 server.py）——
+    # 不显式放进这张表，改完检查器后旧回执会被原样复用，新判据一次都没跑过
+    # （2026-10-17 用户要求修；守它的是 `regression/test_doc_drift.py`）。
+    "lib/web/check_skeleton.py": {"write", "format", "drawio"},
+    # 角色化结构装配器：⑨ 生成、⑭/⑮ 读 structure.json；改判据必须让这些阶段失配。
+    "lib/paper_structure": {"write", "format", "verify"},
 }
+
+# 这张表（以及 `_REFERENCE_USERS`）**按历史访问证据手维护** —— 新阶段/新引用不会自动进表。
+#   已知真空（与 docs/KNOWN_GAPS.md 的 G2 同族）：`lib/delivery` 的判据不在任何 instructions
+#   指纹里。为什么可以接受：交付件的**链尾**打包（`_collect_outputs(final=True)`）永远用当前
+#   代码重跑 `check()`，旧回执骗不过那一次；受影响的只有 ⑮ 门禁的早查结论 —— 改
+#   `lib/delivery` 的判据后，显式「从 ⑮ 重跑」一次即可（改 content_quality 的模块级表同理）。
 
 # `skills/_references/**` → **真正读它的阶段**。为什么拆掉"整目录"：
 #
@@ -1063,6 +1153,8 @@ _REPORT_INPUT_EXCLUDE = {
 #   `reports/SUBMISSION_MANIFEST.json`（提交清单）、`运行说明.md` **此前谁都没进指纹** ——
 #   改了附录，⑮ 的回执照样判"新鲜"，这是**漏**（给少了那一侧），与上面的"给多了"一起修。
 _EXTRA_INPUT_PATHS = {
+    # ⑨ 的结构计划来自读题事实与运行期 profile；两者以前都没进指纹。
+    "write": ["reports/INTAKE.json", "runtime/effective_profile.json"],
     "verify": ["paper_appendix", "reports/SUBMISSION_MANIFEST.json", "运行说明.md"],
 }
 
@@ -1147,6 +1239,15 @@ def _input_paths(stage):
             continue
         art.append("paper" if rep.startswith("paper") else "reports/" + rep)
     art += _EXTRA_INPUT_PATHS.get(stage["id"], [])
+    if stage["id"] == "write":
+        # 结构计划依赖模板角色表与默认 profile；它们变了必须让 ⑨ 失配。
+        tpl = _paper_template_id()
+        if tpl:
+            tdir = ROOT / "skills/9Paper-writing/templates" / tpl
+            for rel in ("roles.json", "structure.default.json"):
+                p = tdir / rel
+                if p.is_file():
+                    art.append(p.relative_to(ROOT).as_posix())
     if any(s["id"] == "code" for s in STAGES[:index]):
         art += ["code", "results"]
         # `figures/` **刻意不在**这里（`skills/8Figure-gate/SKILL.md` 说的"它搬过家"就是这件）：
@@ -1230,6 +1331,10 @@ def _input_split(stage):
     excl = list(_DERIVED_RESULT_FILES)
     if stage["id"] in _CONTENT_SIDE_STAGES:
         excl += list(_LAYOUT_OWNED_PATHS)
+    # ⑮ 的输入含 `paper_appendix`（它要核对附录）；但 ⑯ 之后的合法附录改动
+    #   不该让它在下一轮重启时重跑 —— 排除 demo 的领地（见 `_DEMO_OWNED_PATHS`）。
+    if stage["id"] == "verify":
+        excl += list(_DEMO_OWNED_PATHS)
     art_fp = fingerprint(ROOT, art, exclude=excl)
     # 解释器/工具链按**身份**计入，不按"装在哪"（见 `_env_identity`）：
     #   ④ 及下游的数值结果取决于**哪个版本**的 python 与求解器，不取决于它的盘符。
@@ -1392,7 +1497,11 @@ def _output_digest(stage):
     #   代价：重做 code 时不会自动清理它上一轮画的数据图；过期图由 manifest 失配抓出。
     if stage.get("gate"):
         rels.append("reports/" + str(Path(stage["report"]).with_suffix(".verdict.json")))
-    return fingerprint(ROOT, rels, exclude=_DERIVED_RESULT_FILES)
+    excl = list(_DERIVED_RESULT_FILES)
+    # ⑯ 的合法附录改动不算 write/format 的「产物被改」（见 `_DEMO_OWNED_PATHS`）。
+    if stage["id"] in ("write", "format"):
+        excl += list(_DEMO_OWNED_PATHS)
+    return fingerprint(ROOT, rels, exclude=excl)
 
 
 def _invalidate_from(index):
@@ -2368,10 +2477,15 @@ def _parse_scale_estimate(text):
 
 
 def _code_fp():
-    """code/ 目录指纹。注入 prompt 供 SKILL 写进产物 .meta.json 的 _code_fp，
-    使「方法变没变」在产物层面可机器比对（详见 _references/stage_discipline.md 第四节）。"""
+    """**code/ 源码**目录指纹。注入 prompt 供 SKILL 写进产物 .meta.json 的 _code_fp，
+    使「方法变没变」在产物层面可机器比对（详见 _references/stage_discipline.md 第四节）。
+
+    必须排除 `code/outputs/`：那是**产物**，写一个 npz 就会改整目录指纹 ⇒ 该值退化成
+    批次戳，每轮都把上一版产物全判成「方法变了」（2026-10-17 实测：注入值
+    cb5256c098fe，盘上 6 份 .meta.json 记的是 e3f944903258 ⇒ scan_reuse 永远 stale）。
+    """
     try:
-        return fingerprint(ROOT, ["code"])[:12]
+        return fingerprint(ROOT, ["code"], exclude=("code/outputs",))[:12]
     except Exception:
         return ""
 
@@ -2503,7 +2617,13 @@ def _taken_over(idx, store):
         if not (mine & theirs):
             continue
         try:
-            if store.matches(t["id"], _input_digest(t), _output_digest(t)):
+            orec = store.records.get(t["id"]) or {}
+            # 与 `_later_paper_owner` / `_taken_over_by` 同一套判据：**只比事实半份**
+            #   （artifacts + outputs）。拿整份 digest（含 instructions）比时，改一条共享的
+            #   `CLAUDE.md` 就会让所有 owner 的匹配落空 ⇒ 面板误报「产物已改」、
+            #   attest 默认指错阶段（2026-10-17 审计实测）。
+            if (orec.get("artifacts") == _input_digest(t)
+                    and orec.get("outputs") == _output_digest(t)):
                 return t["id"]
         except Exception:
             continue
@@ -2962,18 +3082,122 @@ def _append_residual(stage, reason, verdict, issues, note, run_id):
 #   孤儿的危害：它和新起一轮的 analysis 会并发改写**同一份报告与题意契约**，
 #   结果是契约锚点对不上、门禁判 task_contract_failed —— 现场看起来只是"随机失败"。
 STAGE_PIDS = LOG_DIR / "quality" / "stage_pids.json"
+# ---------------------------------------------------------------------------
+# 驱动自己的 pid 档案（`runtime/driver.pid`）。
+#
+# 2026-10-15 的事故催生了它：④编码计算的 agent 想清掉"残留的 stray python"，于是
+#   `tasklist | grep python` 数出两个 python.exe、`taskkill /F` 两个一起杀 —— 其中一个
+#   **就是驱动本体**（`lib/web/server.py` 也是个 python.exe，跟它的后台计算长得一模一样）。
+#   现场：控制台窗口当场消失（launch.py 直接跑 python.exe，进程一死窗口就没了）、
+#   日志断在半句、这一轮从 ④ 白跑。而 `taskkill /F` 不给对方任何写日志的机会 ⇒
+#   事后只能靠翻阶段 agent 的会话转录才查得出是谁干的。
+#
+# 于是留这份档案，两个用途：
+#   ① 阶段 agent 的纪律里点名"`runtime/driver.pid` 里那个 pid 永远不许碰"
+#      （`CLAUDE.md` / `AGENTS.md` / `skills/_references/stage_discipline.md` 三处都写了）；
+#   ② 下一任驱动启动时能说出**上一任没有正常退出**（而不是只留一句泛泛的"被外部强杀"），
+#      并把 pid 打进就绪横幅 —— 下次再出这种事，一眼就知道死的是哪个 pid。
+# ---------------------------------------------------------------------------
+DRIVER_PID = LOG_DIR / "driver.pid"
+
+
+def _driver_pid_record():
+    """读 `runtime/driver.pid`。读不到 / 坏了 / 结构不对都返回 None。
+
+    它只是个**线索**：任何情况下都不许把服务带崩（与 `_restore_stale_instr` 同一条纪律）。
+    """
+    try:
+        d = json.loads(DRIVER_PID.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return d if isinstance(d, dict) and d.get("pid") else None
+
+
+def _write_driver_pid(port):
+    """启动时把自己的 pid / 端口 / 启动时刻写下来。"""
+    try:
+        atomic_json(DRIVER_PID, {"pid": os.getpid(), "port": int(port),
+                                 "python": sys.executable, "cwd": str(ROOT),
+                                 "started_at": datetime.now().isoformat(timespec="seconds")})
+    except OSError as exc:                                          # noqa: BLE001
+        log(f"⚠️ 写不进 runtime/driver.pid（{exc}）—— 阶段 agent 那条"
+            f"「别杀这个 pid」就只能靠纪律了")
+
+
+def _clear_driver_pid():
+    """正常退出时撤掉自己那份档案。**只删自己的** —— 别人（例如刚重启的下一任）写的那份不许动。"""
+    rec = _driver_pid_record()
+    if rec and int(rec.get("pid") or 0) == os.getpid():
+        try:
+            DRIVER_PID.unlink()
+        except OSError:
+            pass
+
+
+@ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
+def _console_ctrl(event):
+    """控制台事件处理器：**用来把"人关窗口"和"被强杀"分开**。
+
+    Windows 给控制台进程发的事件里：`2`=关闭窗口、`5`=注销、`6`=关机。
+    而 **`taskkill /F` 一个事件都不发** —— 这就是那条分水岭：2026-10-15 的现场是
+    阶段 agent 把驱动当 stray python `taskkill /F` 掉，什么痕迹都没留下，下一任驱动
+    只能看到"pid 档案还在、而那个 pid 死了"，于是那句话只能写成含糊的"被杀/崩了/断电"。
+    收到事件 ⇒ **是人手动关的**（那是最常见的重启方式）⇒ 如实记一行、并把 pid 档案撤掉
+    （当作正常退出）⇒ 下一任启动时不必再报那句吓人的话 —— 而**没收到事件**的那一档
+    才真的该被人看见。
+
+    返回 `False` = 交回系统默认处理（我们只留痕，不阻塞退出）。
+    这个回调对象必须**挂在模块级**（放局部会被 GC 掉，那样处理器会静默失效）。
+    """
+    if event in (2, 5, 6):
+        try:
+            log("🪟 控制台窗口被关闭（或系统注销/关机）—— 这是**手动**停的，不是被强杀。"
+                "已撤掉 pid 档案；下次启动不会再报「上一任没有正常退出」。")
+            _clear_driver_pid()
+        except Exception:                                           # noqa: BLE001 —— 退出路径上绝不许再抛
+            pass
+    return False
+
+
+def _pid_alive(pid):
+    """这个 pid 现在还活着吗？（用既有的进程快照，不另起 PowerShell；查不到就当活着，别误报。）"""
+    try:
+        return int(pid) in _snapshot_pids()
+    except Exception:                                               # noqa: BLE001
+        return True
+
+
+def _stage_pid_entry(e):
+    """登记表里的一条 → `(pid, 记它的那个驱动的 pid 或 None)`；读不出来返回 None。
+
+    兼容两种形态：老版本只存 `int`（那时还没记 driver），新版存 `{"pid":…,"driver":…}`。
+    """
+    if isinstance(e, int):
+        return (e, None)
+    if isinstance(e, dict) and isinstance(e.get("pid"), int):
+        d = e.get("driver")
+        return (e["pid"], d if isinstance(d, int) else None)
+    return None
 
 
 def _register_stage_pid(pid):
-    """记下刚 spawn 的阶段 agent pid，供下次启动时收容。只留最近 50 个，防无限增长。"""
+    """记下刚 spawn 的阶段 agent pid **连同"是哪个驱动实例 spawn 的"**，供下次启动时收容。
+
+    为什么要记 driver：这份登记表是**跨实例共享**的一个文件。同时活着两个驱动时
+      （例如手动 `python lib/web/server.py --port 8902` 再起一个做试验 —— `run.bat`
+      有端口探测会挡，手动起挡不住），第二实例启动时的收容会把**第一实例正在用的阶段 agent**
+      当成孤儿杀掉。这与"自己人杀自己人"是同一族事故（见下面 `_reap_orphan_agents` 的说明）。
+      记下 spawn 者之后，收容前先看它还在不在：还在 ⇒ 那不是孤儿，跳过。
+    只留最近 50 条，防无限增长。
+    """
     try:
         STAGE_PIDS.parent.mkdir(parents=True, exist_ok=True)
         try:
             data = json.loads(STAGE_PIDS.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = []
-        data = [p for p in data if isinstance(p, int) and p != pid]
-        atomic_json(STAGE_PIDS, (data + [int(pid)])[-50:])
+        data = [e for e in data if (_stage_pid_entry(e) or (None,))[0] != pid]
+        atomic_json(STAGE_PIDS, (data + [{"pid": int(pid), "driver": os.getpid()}])[-50:])
     except Exception:
         pass
 
@@ -3012,14 +3236,21 @@ def _reap_orphan_agents(kill=None):
       把正在跑的阶段 agent 自己也登记进表里，若这段逻辑从 agent 进程内被触发（模块级调用
       时就会），它会把自己 `taskkill /F /T` 掉，以 exit code 1 静默死亡。
       见 `if __name__ == "__main__"` 处那段说明。
+
+    **也不杀"别人正在用的"**：登记表是跨实例共享的，条目里记着 spawn 它的那个驱动。
+      收容前先看那个驱动还在不在 —— 还在 ⇒ 那不是孤儿（是我这第二个实例多管闲事），跳过。
+      没有这一条时：手动再起一个驱动（`--port 8902`）就会把第一个实例正在跑的阶段 agent 杀掉，
+      与"自己人杀自己人"是同一族事故。老格式（纯 int，不知道谁 spawn 的）按孤儿处理。
     """
     try:
         if not STAGE_PIDS.is_file():
             return 0
-        pids = {p for p in json.loads(STAGE_PIDS.read_text(encoding="utf-8")) if isinstance(p, int)}
+        entries = [_stage_pid_entry(e) for e in json.loads(STAGE_PIDS.read_text(encoding="utf-8"))]
         STAGE_PIDS.unlink(missing_ok=True)
     except Exception:
         return 0
+    owners = {p: d for p, d in (e for e in entries if e)}
+    pids = set(owners)
     pids.discard(os.getpid())          # 不杀自己（见 docstring）
     if not pids:
         return 0
@@ -3032,6 +3263,11 @@ def _reap_orphan_agents(kill=None):
             continue
         if root not in cmdline.replace("\\", "/").lower():
             continue                      # pid 被复用，或不是本工作区的调用 —— 不动
+        owner = owners.get(pid)
+        if owner and owner != os.getpid() and _pid_alive(owner):
+            # 另一个**还活着**的驱动实例 spawn 的 ⇒ 它正在用这个 agent，不是孤儿。
+            log(f"（跳过 pid {pid}：spawn 它的驱动 pid {owner} 还活着 —— 那不是孤儿）")
+            continue
         try:
             kill(pid)
             killed.append(pid)
@@ -3892,22 +4128,30 @@ def _mechanical_floor(stage):
         problems = report["issues"]
         if problems:
             # 回退目标按「**谁有权改**」分，不按「哪一类检查」：
-            #   `publication` 类的默认目标是 ⑩排版，但**摘要写没写满**是文字层面的缺陷，
-            #   ⑩ 只管版式、无权动内容 ⇒ 判给 ⑩ 必然来回打转（摘要是 ⑨ 写在 main.tex 的
+            #   `publication` 类的默认目标是 ⑭排版，但**摘要写没写满**是文字层面的缺陷，
+            #   ⑭ 只管版式、无权动内容 ⇒ 判给 ⑭ 必然来回打转（摘要是 ⑨ 写在 main.tex 的
             #   `\abstractcn{}` 里的）。判据 = checks.py 打的 `prose_issues` 标记。
-            #   条件取「**沾上文字缺陷就归 ⑨**」而不是「只有文字缺陷才归 ⑨」：⑨ 在 ⑩ 的**上游**，
-            #   回退到 ⑨ 会把 ⑩ 一起重跑（版式那几条照样会在 ⑩ 的机械地板里被再查一遍）；
-            #   反过来判给 ⑩，文字那一条谁也改不了 ⇒ 下一轮还是 FAIL ⇒ **死循环**。
+            #   条件取「**沾上文字缺陷就归 ⑨**」而不是「只有文字缺陷才归 ⑨」：⑨ 在 ⑭ 的**上游**，
+            #   回退到 ⑨ 会把 ⑭ 一起重跑（版式那几条照样会在 ⑭ 的机械地板里被再查一遍）；
+            #   反过来判给 ⑭，文字那一条谁也改不了 ⇒ 下一轮还是 FAIL ⇒ **死循环**。
             #   宁可多跑一轮 ⑨，也不能让链子转不出去。
             _prose = set(report.get("prose_issues") or [])
             _has_prose = bool(_prose) and not set(problems).isdisjoint(_prose)
+            # 返修文案里的阈值**现读 config**（2026-10-17：散文里写死的 ≥90% 是又一处副本，
+            #   改 config 后它会漂 —— `regression/test_doc_drift.py` 对散文有同类哨兵）。
+            try:
+                _policy = json.loads((ROOT / "config/publication.json").read_text(encoding="utf-8-sig"))
+                _fill_target = float(_policy["min_kind_fill"]["abstract"]["target"])
+            except (OSError, ValueError, KeyError, TypeError):
+                _fill_target = 0.90          # 配置读不出时回落历史默认，只影响文案
             return {"status": "FAIL", "reason": "publication_check_failed",
                     "target": "write" if _has_prose else "format",
                     "issues": [{"id": "publication", "severity": "hard", "evidence": "; ".join(problems),
-                                "fix": ("按 docs/PUBLICATION.md 补写摘要正文（每问的方法要点、结论数字、"
-                                        "检验与灵敏度各写足，把版心填充做到 ≥90%；规则见 ⑨ 的 SKILL"
-                                        "「摘要与关键词纪律」），改完重编译两遍并重新绑定 page-map；"
-                                        "同批里的页数/映射/裁切问题由下游的 ⑩ 一并处理"
+                                "fix": (f"按 docs/PUBLICATION.md 补写摘要正文（每问的方法要点、结论数字、"
+                                        f"检验与灵敏度各写足，把版心填充做到 ≥{_fill_target:.0%}；"
+                                        f"阈值以 config/publication.json 的 min_kind_fill.abstract 为准；"
+                                        f"规则见 ⑨ 的 SKILL「摘要与关键词纪律」），改完重编译两遍并重新绑定 page-map；"
+                                        f"同批里的页数/映射/裁切问题由下游的 ⑭ 一并处理"
                                         if _has_prose else
                                         "按 docs/PUBLICATION.md 修复页数、物理页映射或裁切问题，保留核心证据"),
                                 "recheck": "python -m lib.publication check"}]}
@@ -3942,7 +4186,7 @@ def _mechanical_floor(stage):
     #   少了这个 gate 时，任何没有提交清单的工作区都会在 verify 卡死 —— 会把
     #   22 个全链用例一次打红（它们大多不碰交付层）。
     if stage["id"] == "verify" and DELIVERY_CFG.exists():
-        # 提交清单的**早期**核对。打包发生在整链收口时，那时才发现「清单没写 / 清单里
+        # 提交清单的**早期**核对。打包的**严格对账**发生在整链收口时（中途的阶段性打包只收不判），那时才发现「清单没写 / 清单里
         # 少了一个 .py」，已经白跑好几小时（demo 之后还要再跑一遍 format+verify+rubric）。
         # verify 是 demo 之前最后一关，在这里拦住最划算。
         # `demo.html` 是例外：它由排在 verify **之后**的 16Web-demo 产出，此刻本就不该存在。
@@ -3952,9 +4196,12 @@ def _mechanical_floor(stage):
             return {"status": "FAIL", "reason": "delivery_manifest_incomplete", "target": "format",
                     "issues": [{"id": "delivery_manifest", "severity": "hard",
                                 "evidence": "; ".join(problems),
-                                "fix": "补齐 reports/SUBMISSION_MANIFEST.json，并确保它声明的每个文件都在盘上"
-                                       "（`python -m lib.delivery check` 可本地复核 —— **只在收口打包之后跑**："
-                                       "链中途提交目录还是空的，跑了必然 FAIL，那是时序问题不是缺件）",
+                                "fix": "补齐 reports/SUBMISSION_MANIFEST.json（或按 ⑨ 的「交付层」节整份重建），"
+                                       "并确保它声明的每个文件都在盘上、与正文末页清单表逐项一致"
+                                       "（`python -m lib.delivery check` 可本地复核，链中途它可能报两类："
+                                       "① `demo.html`（要等 ⑯）的**时序缺件**——**别去删清单里那一行**；"
+                                       "② 清单↔末页表不一致——那是真问题，把表或清单改到一致。"
+                                       "收口打包之后再跑才是判据）",
                                 # 不能写 `--root .` —— argparse 的全局选项必须在子命令**之前**，
                                 #   那个形式会报 "unrecognized arguments"。
                                 #   命令在项目根跑，`--root` 默认就是 cwd。
@@ -4110,7 +4357,16 @@ def _has_actionable_feedback(decision):
     return decision.get("reason") not in PROTOCOL_REASONS
 
 
-def _save_feedback(stage):
+def _save_feedback(stage, target=None):
+    """把门禁的回执落盘，并在同一个目录里记下**路由**（这份回执要求谁返修）。
+
+    为什么连路由一起写：`round_hint` / `state["hint_src"]` / `seed_hints` **全是内存态** ——
+      驱动一旦在返修中途被杀（2026-10-15 真发生过：⑤ 判 NEEDS_FIX(6 条) → 托管自动回退 ④ →
+      ④ 跑到一半驱动被杀），重启后提示就没了，被退回来的阶段会被当成**普通重跑**：
+      它照样跑、门禁照样重判，但它**不知道上一轮被点名的 6 条是什么** ⇒ 大概率原样再犯、白烧一轮。
+      把 target 写进 `route.json` 之后，这一条就能从盘上认回来（见 `_recovered_repair_hint`）。
+    `target` 缺省 None（调用方没给路由时）：那样只记 `judge`，认回那条路会跳过它 —— 宁可少借，不可借错。
+    """
     folder = LOG_DIR / "quality" / "feedback" / (state["run_id"] or "manual") / uuid.uuid4().hex[:8]
     folder.mkdir(parents=True, exist_ok=True)
     # 回退端点紧跟着就会把它记进 `state["hint_src"]`（见那里的注释）—— 交回那条路要用。
@@ -4124,6 +4380,20 @@ def _save_feedback(stage):
         decision = dict(decision, issues=decision["stale_issues"],
                         reason="content_repair_required")
     atomic_json(folder / "gate_decision.json", decision)
+    # 路由：这份回执**要求谁**返修（重启后靠它把提示认回来）。缺 target 就留空 ——
+    #   认回那条路只认有 target 的条目（宁可少借，不可借错）。
+    #
+    # **必须写在 `feedback/` 之外**（这里选 `runtime/quality/routes/<run>/<uid>.json`）：
+    #   `receipt_ledger._receipts()` 是 `feedback/*/*/*.json` 无差别 glob（它的 docstring 说
+    #   只要"带 issues 的回执"，实现里没有这个过滤），而 `receipt_ledger_issues()` 会拿
+    #   **mtime 最新的那一个**当"最近一次回执"去和台账声明比对。把这个文件放进同一个目录
+    #   （它必然比 `gate_decision.json` 新）⇒ ②建模设计收尾的台账自检**必然**报
+    #   "receipt 指错了"并当场硬挂 —— 一条因为"多写了一个文件"而废掉整条链的坑。
+    #   目录名与 uid 刻意和回执目录**同名**，认回时据此还原出回执目录（见 `_recovered_repair_hint`）。
+    atomic_json(LOG_DIR / "quality" / "routes" / folder.parent.name / (folder.name + ".json"),
+                {"judge": stage["id"], "target": str(target or ""),
+                 "run_id": state.get("run_id") or "",
+                 "at": datetime.now().isoformat(timespec="seconds")})
     for p in (REPORTS / stage["report"], HANDBACK):
         if p.is_file():
             shutil.copy2(p, folder / p.name)
@@ -4160,6 +4430,154 @@ def _save_feedback(stage):
             f"不是它判你不合格。它的原始输出留在 {folder}，**仅供排查**，"
             f"里面那条修法是针对门禁自己产物的，与本阶段无关。"
             "你按本阶段 SKILL 的自检清单重做并交齐产物即可，不要去补别的阶段的产物。")
+
+
+def _unsettled_feedback(sid):
+    """这一阶段**还没有结清**的那份门禁回执（每个目标只取最新的一条）；没有返回 None。
+
+    返回 `(判官, 回执目录的相对路径, 裁决 dict)` 或 None。
+
+    **两个消费者共用这一份判据**：提示词（`_recovered_repair_hint`）与面板角标
+      （`_restore_issues_by_stage`）—— 各写一套的话，迟早出现"提示词说欠返修、面板说干净"
+      这种自相矛盾，而人只看得到面板那一半。
+
+    三条边界（缺一不可）：
+      · **只认门禁的裁决** —— 非门禁的"裁决"是空壳（`gate` 为空），它的路由一律不看；
+      · **回执与路由都还在盘上** —— 换题轮转会把 `feedback/` 整份搬进 cache，而 `routes/`
+        不跟着走（路由档在 `runtime/quality/routes/`，不在 `feedback/` 里，理由见 `_save_feedback`）；
+      · **该阶段手上没有回执记录** —— `invalidate()` 是 **pop** ⇒ 记录没了 = 退活还没交付；
+        有记录 = 这一轮交付过（或它本就会被复用/接管），**不能拿旧回执压它**。
+        这一条同时就是"用掉就失效"，不需要额外状态；而且它是把那五条**复用近路**一起让开的
+        唯一办法 —— `run_stage` 里豁免/回执复用/stale-instr/taken-over/读题**共同前置都是
+        `not round_hint`**，非空提示一给，它们全部失效。最要命的是 taken-over：⑨论文撰写/⑬返修
+        被 ⑭排版 改过 `paper/` 之后回执**必然**对不上（那正是 taken-over 存在的理由），
+        按"对不上"判就会把整篇论文重新拉起来跑。
+        判据只认"记录在不在"，不要去挑记录里的字段：`StageReceipts.save` 存的是
+        `inputs`/`outputs`，而 `_save_receipt` 存的是拆开的 `artifacts`/`instructions`，
+        挑字段会漏掉一半回执。
+      另外：人工「接受并披露」过的直接跳过 —— 那是人的显式决定，优先级高于一份旧回执。
+
+    **只读** `runtime/quality/`，**一个字节都不往 `reports/` 写** —— 往 `reports/` 放交回单
+      正是"交回单泄漏到下游"那类坑的入口（一个留在盘上的 `HANDBACK_REQUEST.md` 会被下游阶段
+      读到并误认成"给我的返修单"，见 `_save_feedback` 里"投递即出队"那段）。
+    """
+    if sid not in STAGE_IDX:
+        return None
+    base = LOG_DIR / "quality" / "routes"
+    if not base.is_dir():
+        return None
+    fb_base = LOG_DIR / "quality" / "feedback"
+    best = None
+    for route in base.glob("*/*.json"):
+        try:
+            d = json.loads(route.read_text(encoding="utf-8-sig"))
+            key = route.stat().st_mtime
+        except (OSError, ValueError):
+            continue
+        if not (fb_base / route.parent.name / route.stem).is_dir():
+            continue                                   # 回执被轮转搬走/清理掉了
+        if not isinstance(d, dict) or str(d.get("target") or "") != sid:
+            continue
+        judge = str(d.get("judge") or "")
+        if judge not in STAGE_IDX or not STAGES[STAGE_IDX[judge]].get("gate"):
+            continue                                   # 边界①：只认门禁的裁决
+        if best is None or key > best[0]:
+            best = (key, route, judge)
+    if best is None:
+        return None
+    if _waived(sid, STAGES[STAGE_IDX[sid]]):
+        return None
+    # 边界②：`invalidate()` 是 pop ⇒ "记录不在"才是"退活还没交付"
+    #   （attest 不必单独挡：认证会把 `manual` 标记写进**回执**里 ⇒ 落在这一条上 ✓）
+    if _receipt_store().records.get(sid):
+        return None
+    folder = LOG_DIR / "quality" / "feedback" / best[1].parent.name / best[1].stem
+    try:
+        decision = json.loads((folder / "gate_decision.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        decision = {}
+    return (best[2], folder.relative_to(ROOT), decision if isinstance(decision, dict) else {})
+
+
+def _recovered_repair_hint(sid):
+    """重启之后，把"这一阶段还欠一次返修"从**盘上**认回成提示词；认不出返回 None。
+
+    为什么需要它：返修提示（`round_hint` / `state["hint_src"]` / `state["seed_hints"]`）
+      全是**内存态**。2026-10-15 的事故链：⑤ 结果可信度审计 判 NEEDS_FIX（6 条）→
+      托管自动回退 ④编码计算 → ④ 跑到一半**驱动被阶段 agent 误杀** ⇒ 重启后提示没了，
+      ④ 会被当成一次**普通重跑**：它照样跑、⑤ 照样重判（不会漏检），但它不知道上一轮
+      被点名的 6 条是什么 ⇒ 大概率原样再犯、白烧一整轮。
+    判据见 `_unsettled_feedback`（与面板角标**同一份**）。
+    """
+    found = _unsettled_feedback(sid)
+    if not found:
+        return None
+    judge, folder, _decision = found
+    log(f"♻️ [{sid}] 从盘上认回一份**未结清的返修回执**（判官 {judge}）——"
+        f"重启把内存里的提示弄丢了，这份不会丢")
+    return (f"盘上有一份**未结清的返修回执**（判官 {judge}）：先读 {folder} 里的 `gate_decision.json`，"
+            f"**逐条核对**其中每一处是否已在当前产物里落实 —— 已落实的在报告里说明（并给出复验证据），"
+            f"未落实的按它修。保留正确内容，只动清单内。"
+            f"若那份回执与当前产物完全不符、或你上一轮已经处理过：**说明白即可**，"
+            f"不要为了对上它去改本来正确的东西。")
+
+
+# 判词留档的落盘点（📝 浮层的"最终判词"段；见 state["verdict_by_stage"] 的注释）。
+VERDICT_LOG_REL = "runtime/quality/verdict_by_stage.json"
+
+
+def _save_verdicts():
+    try:
+        atomic_json(ROOT / VERDICT_LOG_REL, dict(state.get("verdict_by_stage") or {}))
+    except OSError as exc:
+        # 留档写不动最坏的后果只是"重启后看不到" —— 不该拖停整条链，记一行继续。
+        log(f"⚠️ 判词留档写盘失败（只影响重启后的显示）：{exc}")
+
+
+def _note_verdict(sid, entry):
+    """记录某阶段最后一次门禁裁决（内存 + 落盘）。见 state["verdict_by_stage"] 的注释。"""
+    state.setdefault("verdict_by_stage", {})[sid] = entry
+    _save_verdicts()
+
+
+def _restore_verdicts_by_stage():
+    """启动时把判词留档读回内存（面板 📝 的"最终判词"段）。
+
+    读的是**自己落的档**、不从回执反推（对照 `_restore_issues_by_stage`）：
+    这个功能的口径是"面板显示过什么就留什么——过没过都记"，而回执只在"判了要返修"
+    时才存在，**干净通过的裁决在回执体系里根本没有对应文件**，反推不出来。
+    只读 + 只写内存，没有文件副作用，可以放模块级。
+    """
+    try:
+        data = json.loads((ROOT / VERDICT_LOG_REL).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return
+    if isinstance(data, dict):
+        state["verdict_by_stage"] = {str(k): v for k, v in data.items() if isinstance(v, dict)}
+
+
+def _restore_issues_by_stage():
+    """启动时从**盘上**把那批"未结清的门禁判据"填回 `state["issues_by_stage"]`（面板上的 📝 角标）。
+
+    为什么必须反推：`issues_by_stage` 是**内存态**（门禁没过时写、过了就 pop），而那份回执
+      **在盘上**。驱动在返修中途被杀（2026-10-15：⑤ 判 NEEDS_FIX(6 条) → 回退 ④ → 驱动被杀）
+      之后重启，面板上那个 📝 角标与点开的判词会**整批消失** —— 人看到的是一排干净的阶段，
+      实际上有一关判了 6 条、活还没干完。
+      与 `_restore_stale_instr` 同一范式、同一个理由：**重启不该抹掉"还有活没干完"这个事实**。
+    判据与提示词**共用** `_unsettled_feedback`（见那里的三条边界）。
+    只读 + 只写内存，没有文件副作用 ⇒ 可以放模块级（不像 `_recover_pending_markers` 会搬文件）。
+    """
+    for stage in STAGES:
+        found = _unsettled_feedback(stage["id"])
+        if not found:
+            continue
+        judge, _folder, decision = found
+        issues = [i for i in (decision.get("issues") or []) if isinstance(i, dict)]
+        if not issues:
+            continue
+        state["issues_by_stage"][stage["id"]] = issues
+        log(f"♻️ [{stage['id']}] 重启后从盘上恢复 {len(issues)} 条未解决判据（判官 {judge}）"
+            f"—— 面板上那个 📝 角标不该因为重启就消失")
 
 
 def _write_revision_diff(sid, before_path):
@@ -4418,7 +4836,7 @@ def _open_demo_page():
 
 
 def _maybe_collect_outputs(stage):
-    """⑨ 论文撰写 / ⑭ 排版与版式 一跑完，就先把**已就绪的提交件**收一批。
+    """⑨ 论文撰写起，每个阶段一跑完，就先把**已就绪的提交件**收一批。
 
     契约：⑨ 结束、进 ⑩ 的时候，就把需要提交的移入 `产物/提交作品/最新作品`；
       先移已经做好的，剩下的做好一个移一个。
@@ -4442,10 +4860,9 @@ def _maybe_collect_outputs(stage):
         return
     try:
         # **必须 `final=False`**：缺省 `final=True` 走严格分支，
-        #   而 ⑭ 写的清单声明了要等 ⑯ 才产出的 `demo.html` ⇒ `package()` 抛「找不到」
-        #   ⇒ 被这里吞成一行日志 ⇒ **从 ⑭ 起每一次同步都失败**、`提交作品/最新作品/` 再也
-        #   不更新（"每阶段把已做好的移入"等于没生效）。只有 ⑨~⑬ 那几次因为清单还没写
-        #   出来、走 provisional 分支才碰巧成功。
+        #   而清单（⑨ 收尾首产）声明了要等 ⑯ 才产出的 `demo.html` ⇒ `package()` 抛「找不到」
+        #   ⇒ 被这里吞成一行日志 ⇒ **每一次同步都失败**、`提交作品/最新作品/` 再也
+        #   不更新（"每阶段把已做好的移入"等于没生效）。
         _collect_outputs(final=False)
     except Exception as exc:                        # noqa: BLE001
         log(f"⚠️ {stage['id']}: 阶段性打包跳过（不影响本阶段结果）：{exc}")
@@ -4708,6 +5125,12 @@ async def run_all():
                 return
             stage = STAGES[index]
             round_hint = hints.pop(stage["id"], "")
+            # 内存里没有提示 ≠ 这一阶段不欠返修：驱动可能是**在返修中途被杀**的
+            #   （重启后 `hints`/`hint_src`/`seed_hints` 全空）。从盘上认回那一份 ——
+            #   认不出（或它已经交付过）就返回 None，与从前一字不差。
+            #   注意这条**不会**让它多跑：只有"没有有效回执"才会认回提示，而那种阶段本来就要跑。
+            if not round_hint:
+                round_hint = _recovered_repair_hint(stage["id"]) or ""
             # ⑫ 的**复评轮**走增量（⑬ 修完再回 ⑫ 重判本该快很多，因为 ⑫ 之前判过一次），
             #   而驱动做不到：
             #   `_back_to_judge` 把 index 指回 ⑫ 后，⑫ 的输入指纹因为 `paper/` 被 ⑬ 改过而失配
@@ -4951,6 +5374,16 @@ async def run_all():
                 state["issues_by_stage"][stage["id"]] = decision["issues"]
             else:
                 state["issues_by_stage"].pop(stage["id"], None)
+            # 判词留档：**过没过都记**（用户 2026-10-16：「门禁过了以后 📝 也要显示最终的判词」）。
+            #   不动上面那条"过了就撤"的语义 —— 那是防误读"还没修"；这一条只是把
+            #   「这一关最终判了什么」留一份给 📝 浮层（用户点名 ⑤⑫ 那两关要看得到）。
+            _note_verdict(stage["id"], {
+                "status": str(decision.get("status") or ("PASS" if verdict == "ok" else "FAIL")),
+                "reason": str(decision.get("reason") or ""),
+                "issues": [i for i in (decision.get("issues") or []) if isinstance(i, dict)],
+                "passed": verdict == "ok",
+                "at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            })
             # ---- 门禁失败 / agent 交回上游 ----
             # 不能按默认映射**自动回退**：那条路把最坏耗时放大到 6 次执行，
             # 且人在关键决策上插不上手。现在一律转黄灯，把「agent 推荐退到哪个阶段」
@@ -5249,6 +5682,8 @@ def state2dict():
             # 各阶段**未解决的门禁判据**（会阻断的那批）。与 `advisories` 同一套口径暴露 ——
             # 面板把两者分段显示：判据在上、建议在下。
             "issues": {k: v for k, v in (state.get("issues_by_stage") or {}).items() if v},
+            # 判词留档（过没过都记）：面板 📝 用它显示"这一关最终判了什么"。
+            "verdicts": {k: v for k, v in (state.get("verdict_by_stage") or {}).items() if v},
             # 产物落在哪、归档会叫什么名字。工具栏要显示它 —— 路径是用户选的，得能一眼看到。
             "delivery": _delivery_status(),
             # 「清理全部残留」按钮的显隐依据（只在整链跑完且还有残留时为真）
@@ -5260,9 +5695,9 @@ def state2dict():
 # ---------------- 质量护栏清单（前端"质量护栏"面板；以后加护栏=在此加一行） ----------------
 GUARDRAILS = [
     {"g": "门禁/审查", "items": [
-        {"n": "建模门禁 4review", "d": "数学/题意/机理/数据 4 维独立子 agent 评审；两轮修复仍失败则挂起，缺失或冲突裁决不放行"},
+        {"n": "建模门禁 ③ review", "d": "数学/题意/机理/数据 4 维独立子 agent 评审；两轮修复仍失败则挂起，缺失或冲突裁决不放行"},
         {"n": "结果审计 5Result-credibility-audit", "d": "拦泄漏(训练/测试)、小样本高 AUC 虚高、非识别点值当结论、可复现性抽查"},
-        {"n": "跨问一致 10cross", "d": "全链符号/口径/数值自洽；抓论文与 code 矛盾"},
+        {"n": "跨问一致 ⑪ cross", "d": "全链符号/口径/数值自洽；抓论文与 code 矛盾"},
         {"n": "数学论证 10Math-proof-gate", "d": "成稿定理/命题/证明字样须带可复核等式推导+前提声明；禁仿真代证明；独立复推后 APPROVED / REVISE(回 write)；不自动重试，失败转黄灯由人决定"},
         {"n": "终验 15Verification", "d": "编译/结构/图表引用/文本门禁/数值溯源终检"},
         {"n": "评分终审 12Rubric-final", "d": "四份评委视角评分标（适配性15维/AI痕迹10维/合规红线26条/官方四大项16维）"
@@ -5283,7 +5718,7 @@ GUARDRAILS = [
     {"g": "工程能力", "items": [
         {"n": "非破坏暂存 cache", "d": "回退/打断前产物移入 cache/ 可恢复，不误删；断点续跑"},
         {"n": "看门狗判活", "d": "ctypes 查 EST/CPU 区分假死与长计算，300s 静默强杀重试"},
-        {"n": "技术路线图 drawio", "d": "verify 后产出 fig_roadmap + 各问流程（paper-diagram 模板 + matplotlib 兜底）"},
+        {"n": "技术路线图 ⑦ drawio", "d": "⑧ 绘图门禁之前产出 fig_roadmap + 各问流程（paper-diagram 模板 + matplotlib 兜底）"},
         {"n": "交互落地 16Web-demo", "d": "PDF 定稿后产出可运行交互工具 + UI 截图入论文"},
         {"n": "全阶段计时", "d": "总耗时 + 每阶段耗时实时显示"},
     ]},
@@ -5296,7 +5731,8 @@ async def guardrails():
 class StartReq(BaseModel):
     stages: list[str] | None = None   # None=全链；或指定子集 id
     output_dir: str | None = None     # 产物路径；None/空/项目根 → <根>/产物/
-    problem_id: str | None = None     # 题目标识，进 cache 归档目录名；空 → 只用日期
+    problem_id: str | None = None     # legacy：面板已不再填；保留给旧配置/测试
+    template: str | None = None       # 模板族 id；None=沿用配置，空=默认
     # from_stage：**从哪个阶段起跑**（缺省 = ① 开始，靠回执逐级复用）。
     # 为什么要有它：不设起点时 `run_all` 的起点恒为 0，
     #   于是"从 ⑨ 重跑"实际是"从 ① 走一遍、靠回执跳过"—— 而**上游门禁会把它拦下来**：
@@ -5358,23 +5794,34 @@ async def start(req: StartReq):
         raise HTTPException(400, "当前只支持全链运行；请使用阶段重跑接口选择续跑起点")
     if req.from_stage is not None and req.from_stage not in STAGE_IDX:
         raise HTTPException(400, f"未知阶段 {req.from_stage}")
+    # 没找到模型配置也要**留一行**：面板在那之前已经弹过确认框（只提示不硬拦），
+    #   这里管的是托管/命令行起链那条路 —— 出问题时日志里得看得出"这一轮压根没配密钥"。
+    #   判据与开屏页/`_model_config_note()` 同一份（看生效值，不是看 .env 有没有那个文件）。
+    _mc = _model_config_status()
+    if not _mc["configured"]:
+        log(f"⚠️ 没找到模型配置（缺 {'、'.join(_mc['missing'])}；`.env` 与环境里都没有）"
+            f"—— 只有这台机器的 Claude Code 自己已登录时才跑得动。照常起链。")
     _set_start_from(req.from_stage)
     # 产物设置随本轮生效并落盘（下次打开页面还在）。
-    if req.output_dir is not None or req.problem_id is not None:
+    if req.output_dir is not None or req.problem_id is not None or req.template is not None:
         cfg = _delivery_config()
         pid = cfg["problem_id"] if req.problem_id is None else req.problem_id
-        # 先校验题目标识再落盘：含 Windows 保留字符（例如
-        #   `2026A:2026.9.18`）的标识一旦存进配置，之后每一次回退/清空都会 500 ——
-        #   而黄灯那条路会因此在清掉面板之后才炸，连重试入口都没有。
-        #   唯一会校验的 `POST /api/delivery` 前端从来不调，所以必须在这里挡。
-        from lib.delivery.core import delivery_name
-        try:
-            delivery_name(pid)
-        except ValueError as exc:
-            raise HTTPException(400, f"题目标识不能这么写：{exc}")
+        tpl = cfg["template"] if req.template is None else str(req.template).strip()
+        if tpl and tpl not in {t["id"] for t in _paper_templates()}:
+            raise HTTPException(400, f"未知模板：{tpl}")
+        # 先校验题目标识再落盘：含 Windows 保留字符的标识一旦进配置，
+        #   之后每一次回退/清空都会 500。P1 起面板不再填它，但旧配置/CLI 仍要挡。
+        if str(pid or "").strip():
+            from lib.delivery.core import delivery_name
+            try:
+                delivery_name(pid)
+            except ValueError as exc:
+                raise HTTPException(400, f"题目标识不能这么写：{exc}")
         try:
             _save_delivery_config(cfg["output_dir"] if req.output_dir is None else req.output_dir,
-                                  pid)
+                                  pid, tpl)
+            if req.template is not None and tpl:
+                _write_effective_profile(tpl)
         except OSError as exc:
             raise HTTPException(400, f"产物设置写不进去：{exc}")
     # 全链重开才清「临时延长」与决策遗留。run_all 绝不清 retry_cap（见那里的注释）。
@@ -5411,10 +5858,14 @@ ARTIFACTS = {
     # write/format 现在管**两个** LaTeX 工程：paper/（正文）与 paper_appendix/（附录A）。
     # 附录是独立编译的第二个 PDF，`A_code`/`\appendixBcn` 那条「源码排进论文」的路已按用户
     # 要求去掉（源码改以散装 .py 提交）。
-    "write": ["paper", "paper_appendix"],
+    # 提交清单与运行说明.md 也在这里：**⑨ 是第一声明者**（2026-10-17 从 ⑭ 前移 ——
+    # 用户要求「停在 ⑨ 就是完整稿」，正文末页 P32 的清单表不该等到 ⑭ 才填）。
+    # 回退到 ≤⑨（或整链清空）时会连它们一起暂存；⑭ 的「读着清单再修补」重跑不搬。
+    "write": ["paper", "paper_appendix", "reports/SUBMISSION_MANIFEST.json", "运行说明.md"],
     # format 的产物是**整个 paper/**（导言区 + 各节版式 + 编译出的 PDF），
     # 回退/暂存时与 write 同样处理：整目录进 cache/。
-    # 它还负责提交清单、正文末页的清单表、运行说明.md。
+    # 提交清单 / 正文末页清单表 / 运行说明.md 由 ⑨ 首产；它负责**对账与修补**
+    # （所以仍声明在这里：镜像里该看到它对过账的那一份；own_only 下不重复暂存）。
     "format": ["reports/FORMAT_REPORT.md", "paper", "paper_appendix",
                "reports/SUBMISSION_MANIFEST.json", "运行说明.md"],
     "mathproof": ["reports/MATH_PROOF_REPORT.md"],
@@ -5449,10 +5900,11 @@ def _delivery_config():
     if not isinstance(value, dict):
         value = {}
     return {"output_dir": str(value.get("output_dir") or "").strip(),
-            "problem_id": str(value.get("problem_id") or "").strip()}
+            "problem_id": str(value.get("problem_id") or "").strip(),
+            "template": str(value.get("template") or "").strip()}
 
 
-def _save_delivery_config(output_dir, problem_id):
+def _save_delivery_config(output_dir, problem_id, template=None):
     """存产物设置。**归一化在这一层做** —— 单一收口。
 
     为什么不让各调用方自己 `_store_output_dir`：写这份配置的路有**四条**
@@ -5460,8 +5912,10 @@ def _save_delivery_config(output_dir, problem_id):
       只在其中一条上归一化等于没做 —— 用户实际走的是 `/api/start` 那条。
       放错那一条的话，归一化等于没接到真正在用的落盘入口。
     """
+    current = _delivery_config()
     atomic_json(DELIVERY_CFG, {"output_dir": _store_output_dir(output_dir),
-                              "problem_id": problem_id or ""})
+                              "problem_id": problem_id or "",
+                              "template": current["template"] if template is None else (template or "")})
 
 
 def _is_unc_path(p):
@@ -5522,16 +5976,11 @@ def _cache_dir():
 
 
 def _recorded_problem_id():
-    """`workspace.json` 里记着的「**当前这道题**」的标识 —— 两个「最新」指针里装的就是它的产物。
+    """`workspace.json` 里记着的「**当前这道题**」的标识。
 
-    归档（手动 `/api/archive` 或自动换题）**必须**用它命名，不能用面板的当前配置：
-      面板那个框描述的是「**接下来**要跑的题」，而归档的是「**已经**跑完的那道题」——
-      换题那一刻两者正好不同。弄错的形态：面板把 2026A 改成 2026B 再点「📦 归档本题并换新」
-      ⇒ **2026A 的提交件被盖上 2026B 的名字**；反过来，换到 B 题后自动轮转又拿记录值
-      把 **B 题的提交件** 归成 2026A。同一件事两个入口两套口径，两次都贴错标签。
-
-    读不到（首次运行、或升级前写的旧文件没有该字段）就退到面板配置 —— 再没有才给空串
-    （`delivery_name("")` 只用时间戳），这样第一次轮转也**不会**把题目标识丢掉。
+    P1 起**归档目录名只按时间**（自动换题不询问名称；手动归档才用用户填的名称），
+    本函数仍用于：① 回退/HANDBACK 的 cache 暂存子目录；② 「删除本题」时按前缀清理
+    旧版留下的 cache。读不到就退到面板配置，再没有给空串。
     """
     try:
         prev = json.loads((LOG_DIR / "quality" / "workspace.json").read_text(encoding="utf-8"))
@@ -5560,16 +6009,37 @@ def _stage_dir():
     return resolve_stage_dir(ROOT, _delivery_config()["output_dir"])
 
 
+def _paper_templates():
+    """可选的论文模板族（扫 `skills/9Paper-writing/templates/*/*/roles.json`）。"""
+    base = ROOT / "skills/9Paper-writing/templates"
+    out = []
+    for p in sorted(base.glob("*/*/roles.json")):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        out.append({"id": p.parent.relative_to(base).as_posix(),
+                    "label": str(data.get("label") or p.parent.name),
+                    "description": str(data.get("description") or "")})
+    return out
+
+
+def _write_effective_profile(template):
+    """把前端选中的模板族落成 runtime/effective_profile.json（结构沿用模板默认）。"""
+    base = ROOT / "skills/9Paper-writing/templates" / template
+    data = json.loads((base / "structure.default.json").read_text(encoding="utf-8"))
+    data["profile"] = "frontend_selection"
+    data["template"] = template
+    atomic_json(ROOT / "runtime/effective_profile.json", data)
+
+
 def _delivery_status():
     """前端工具栏显示用：产物落在哪、归档会叫什么名字。"""
     from lib.delivery.core import delivery_name, resolve_output_dir
     cfg = _delivery_config()
     out = resolve_output_dir(ROOT, cfg["output_dir"])
-    try:
-        # 面板显示的「下一个归档名」必须与**实际会用的**一致（见 _recorded_problem_id）
-        name, error = delivery_name(_recorded_problem_id()), ""
-    except ValueError as exc:
-        name, error = "", str(exc)
+    # 归档名只按时间；只有手动归档时用户填的名称才做前缀。
+    name, error = delivery_name(""), ""
     sub, stg = _submission_dir(), _stage_dir()
     # `output_dir` 给**配置原值**（可能为空串）、解析后的绝对路径另放 `resolved` ——
     #   与 `GET /api/delivery` 口径一致。给解析值的话，前端 `fillDelivery` 同时被
@@ -5578,7 +6048,8 @@ def _delivery_status():
     # `*_exists` 看**有没有东西**、不是「目录在不在」：轮转为了保证结构立即可见会无条件
     #   建回两个**空**指针，只看 is_dir() 会让面板对一个空提交件报绿灯。
     return {"output_dir": cfg["output_dir"], "resolved": str(out),
-            "problem_id": cfg["problem_id"],
+            "problem_id": cfg["problem_id"], "template": cfg["template"],
+            "templates": _paper_templates(),
             "archive_name": name, "error": error, "exists": out.is_dir(),
             # 两个「最新」指针的落点（换题时的归档就是把这俩整目录改名）。
             "submission_dir": str(sub), "stage_dir": str(stg),
@@ -6316,8 +6787,9 @@ def _collect_outputs(final=True):
 
     布局：提交件根下只放提交项（正文.pdf / 附录A.pdf / demo.html / 运行说明.md /
     result*.xlsx / 题目附件 / *.py 平铺）+ `其余文件/`；论文的 .tex 工程、辅助脚本、
-    中间数据、内部报告全部进 `其余文件/`。清单是 `14Layout-and-format` 写的
-    `reports/SUBMISSION_MANIFEST.json` —— 它同时是论文末页清单表的来源，两边必须一致，
+    中间数据、内部报告全部进 `其余文件/`。清单由 `9Paper-writing` 收尾写出
+    （`reports/SUBMISSION_MANIFEST.json`；`14Layout-and-format` 保有对账与修补权）——
+    它同时是论文末页清单表的来源，两边必须一致，
     所以**缺失即报错**，不猜、不静默兜底。
 
     `package()` 自带原子性：在 `最新作品` 旁边建 staging、成功了才换上去，失败保留上一份。
@@ -6339,21 +6811,22 @@ def _collect_outputs(final=True):
         else:
             items = None
         if items is None:
-            # ⑭ 之前没有清单（它才写）⇒ 先按内置最小清单把**已就绪的**收进去
+            # 盘上没有清单（⑨ 收尾才写；旧工作区 / 被人工删掉 / 刚被回退暂存走时都可能）⇒
+            #   先按内置最小清单把**已就绪的**收进去
             #   （口径：「9 结束的时候先把已经做好的移入，剩下的做好再移」）。
-            #   为什么值得：清单由 ⑭ 写、而 ⑭ 排在 ⑨ 之后 ⇒ 链一旦在 ⑨~⑬ 停下，
-            #   `最新作品/` 里会一片空白，尽管正文 PDF、附录、result*.xlsx 早就做好了。
-            #   这只是**临时占位**：⑭ 跑完会用清单**整份重建**（名字同源、不会打架）。
+            #   为什么值得：链一旦在清单出现之前停下，`最新作品/` 里会一片空白，
+            #   尽管正文 PDF、附录、result*.xlsx 早就做好了。
+            #   这只是**临时占位**：清单出现后会用清单**整份重建**（名字同源、不会打架）。
             items = provisional_items(ROOT)
             if not items:
-                log("打包产物：提交清单还没写出来（⑭ 才写），盘上也还没有可收的提交件 ⇒ 先不建包")
+                log("打包产物：提交清单还没写出来（⑨ 收尾才写），盘上也还没有可收的提交件 ⇒ 先不建包")
                 return False
             provisional = True
-            log(f"打包产物：提交清单还没写出来（⑭ 才写）⇒ 先按内置最小清单把**已就绪的 "
-                f"{len(items)} 项**收进 提交作品/最新作品/；⑭ 跑完会用清单整份重建")
+            log(f"打包产物：提交清单还没写出来（⑨ 收尾才写）⇒ 先按内置最小清单把**已就绪的 "
+                f"{len(items)} 项**收进 提交作品/最新作品/；清单出现后会整份重建")
         if not final:
             # 中途收：清单里**还没产出**的项（`demo.html` 要等 ⑯）跳过，不报错。
-            #   不跳过的坑：⑭ 写的清单声明了 demo.html ⇒ 在 ⑭ 跑完那一次就会抛
+            #   不跳过的坑：清单（⑨ 收尾首产）声明了 demo.html ⇒ 在 ⑨ 跑完那一次就会抛
             #   「清单里这些提交项在工作区找不到」，**一个文件都收不进去** ——
             #   于是"⑨ 跑完先收一批"这条等于没生效（用户翻那个文件夹还是空的）。
             from lib.delivery.core import build_plan
@@ -6369,11 +6842,17 @@ def _collect_outputs(final=True):
         problems = check(ROOT, out, items)
         if problems:
             if provisional:
-                # 临时包**本来就不完整**（demo.html / 运行说明 之类还没产出）⇒ 不合规是预期的，
-                # 不能当成失败上报：链尾那次调用会据此判"未产生本轮正式交付"而停链。
-                # 如实记一行，正式校验留给 ⑭ 之后那次（那时用清单、provisional=False）。
+                if final:
+                    # **正式交付不能吞**：没有清单时 provisional 只是"先收一批"，
+                    #   它 check 出来的硬问题必须上抛 —— 2026-10-17 审计实测：
+                    #   缺核心件的临时包曾在这里被报成「链完成并收集交付物」（fail-open）。
+                    log(f"打包产物失败：无提交清单的临时包未通过校验（{len(problems)} 条，"
+                        f"例如 {problems[0]}）—— 先补 reports/SUBMISSION_MANIFEST.json 再收口")
+                    return False
+                # 阶段性打包的临时包**本来就不完整**（demo.html 之类还没产出）⇒ 不合规是预期的；
+                #   正式校验留给 ⑨ 写出清单之后那次（那时 provisional=False）。
                 log(f"阶段性打包：临时包不完整是预期的（{len(problems)} 条，"
-                    f"例如 {problems[0]}）—— ⑭ 写出清单后会整份重建并严格校验")
+                    f"例如 {problems[0]}）—— 清单写出后会整份重建并严格校验")
                 return True
             raise ValueError("产物不合规：" + problems[0]
                              + (f"（另有 {len(problems) - 1} 条）" if len(problems) > 1 else ""))
@@ -6432,7 +6911,11 @@ def _taken_over_by(stage):
     # 两类适用：① 产物含 `paper/` 的（⑨⑬，被下游改写的是**产物**）；② 内容判官（⑩⑪⑫，
     # 被改写的是**审查对象** —— 口径「打磨不作废内容判决」，见 `_layout_superseded`）。
     if sid in _CONTENT_JUDGE_STAGES:
-        return "format" if _layout_superseded(stage) else None
+        if not _layout_superseded(stage):
+            return None
+        # 实际打磨者可能是 `fix`（`_polisher_owners("mathproof")` 含 fix）—— 别再写死
+        #   "format"，否则日志/痕迹会把「正文被 fix 改过」写成「只被 format 版式改过」。
+        return _later_paper_owner(stage, owners=_polisher_owners(sid)) or "format"
     if sid not in _PAPER_OWNED_STAGES:
         return None
     return _later_paper_owner(stage)
@@ -6497,6 +6980,11 @@ def _redo_from(sid, keep_rounds=False, figure_only=False):
     抽出来是为了让 /api/redo（用户手动重跑）与「回退」决策共用同一套经过验证的语义。
     """
     start_i = STAGE_IDX[sid]
+    # 判词留档：被作废的这几个阶段即将重判，旧的"最终判词"不能继续挂在面板上冒充现任 ——
+    #   与 issues_by_stage "过了就撤"同一口径（面板上留着的必须对得上现状）。
+    for _s in STAGES[start_i:]:
+        state.get("verdict_by_stage", {}).pop(_s["id"], None)
+    _save_verdicts()
     # 先暂存、后作废：反过来（先 _invalidate_from）时若暂存中途抛错（Windows 上
     #   有别的进程占着文件 → WinError 32，Excel/Acrobat/编辑器开着报告是常态），
     #   回执已经清空、产物只搬了一半 —— 状态是错的。先搬，搬不动就不作废。
@@ -6631,6 +7119,7 @@ async def redo(req: StageReq):
 class DeliveryReq(BaseModel):
     output_dir: str | None = None
     problem_id: str | None = None
+    template: str | None = None
 
 
 @app.get("/api/delivery")
@@ -6639,14 +7128,13 @@ async def get_delivery():
     from lib.delivery.core import delivery_name, resolve_output_dir
     cfg = _delivery_config()
     out = resolve_output_dir(ROOT, cfg["output_dir"])
-    try:
-        archive_name, error = delivery_name(_recorded_problem_id()), ""
-    except ValueError as exc:
-        archive_name, error = "", str(exc)
+    # 归档名只按时间；只有手动归档时用户填的名称才做前缀。
+    archive_name, error = delivery_name(""), ""
     # `output_dir` 给的是**配置里的原值**（可能为空字符串）—— 前端要拿它回填那个输入框，
     #   填成解析后的绝对路径会让「留空 = 用默认」这个语义在面板上消失。解析后的值走 `resolved`。
     sub, stg = _submission_dir(), _stage_dir()
     return {"output_dir": cfg["output_dir"], "problem_id": cfg["problem_id"],
+            "template": cfg["template"], "templates": _paper_templates(),
             "resolved": str(out), "archive_name": archive_name, "error": error,
             "exists": out.is_dir(), "root": str(ROOT),
             "submission_dir": str(sub), "stage_dir": str(stg),
@@ -6662,40 +7150,57 @@ async def set_delivery(req: DeliveryReq):
     cfg = _delivery_config()
     out_dir = cfg["output_dir"] if req.output_dir is None else req.output_dir
     pid = cfg["problem_id"] if req.problem_id is None else req.problem_id
-    try:
-        delivery_name(pid)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    _save_delivery_config(out_dir, pid)          # 归一化在 _save_delivery_config 里收口
-    return {"ok": True, "resolved": str(resolve_output_dir(ROOT, out_dir))}
+    tpl = cfg["template"] if req.template is None else str(req.template).strip()
+    if tpl and tpl not in {t["id"] for t in _paper_templates()}:
+        raise HTTPException(400, f"未知模板：{tpl}")
+    if str(pid or "").strip():
+        try:
+            delivery_name(pid)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+    _save_delivery_config(out_dir, pid, tpl)     # 归一化在 _save_delivery_config 里收口
+    if req.template is not None:
+        try:
+            if tpl:
+                _write_effective_profile(tpl)
+            else:
+                (ROOT / "runtime/effective_profile.json").unlink(missing_ok=True)
+        except OSError as exc:
+            raise HTTPException(500, f"模板选择写不进 runtime/effective_profile.json：{exc}")
+    return {"ok": True, "resolved": str(resolve_output_dir(ROOT, out_dir)), "template": tpl}
 
 
 class ArchiveReq(BaseModel):
-    problem_id: str | None = None
+    name: str | None = None          # 手动归档的可选名称；空 = 只用时间
+    problem_id: str | None = None    # legacy（旧前端/测试）
     output_dir: str | None = None
 
 
 @app.post("/api/archive")
 async def archive_delivery(req: ArchiveReq):
-    """**手动轮转**：把两个「最新」指针归档成 `<题目标识_日期_时间>/`，再建两个空的。
+    """**手动轮转**：把两个「最新」指针归档成 `<名称_日期_时间>/`（名称可空 = 只用时间）。
 
     换题时这件事是自动的（`_prepare_workspace` → `_rotate_pointers`）；这个按钮留给两种
     正当需求：① 输入没变也想划一条边界（把这题冻结成一份归档再在其上做实验）；
     ② 自动轮转被占用文件挡回时的手动恢复出口。
 
-    顺带把前端那两个框一起存下来 —— 「保存」按钮删掉之后，这里是唯一"改完设置
-    还能落盘"的入口（`/api/start` 是另一个），不存的话改完路径点归档会白改。
+    名称只在**手动**归档时询问；自动换题一律只用时间戳。顺带把产物路径存下来。
     """
     if state["running"]:
         raise HTTPException(409, "运行中不能归档产物，请先停止")
-    if req.problem_id is not None or req.output_dir is not None:
-        cfg = _delivery_config()
-        _save_delivery_config(cfg["output_dir"] if req.output_dir is None else req.output_dir,
-                              cfg["problem_id"] if req.problem_id is None else req.problem_id)
+    cfg = _delivery_config()
+    archive_name = req.name if req.name is not None else (req.problem_id or "")
+    archive_name = str(archive_name or "").strip()
+    if archive_name:
+        from lib.delivery.core import delivery_name
+        try:
+            delivery_name(archive_name)
+        except ValueError as exc:
+            raise HTTPException(400, f"归档名不能这么写：{exc}")
+    if req.output_dir is not None:
+        _save_delivery_config(req.output_dir, cfg["problem_id"], cfg["template"])
     try:
-        # 用**记录值**（这道题的标识），不是面板当前配置 —— 面板那个框描述的是
-        #   「接下来要跑的题」，把 A 题的成果盖上 B 题的名字就是这么错的。
-        info = _rotate_pointers(reason="手动归档", problem_id=_recorded_problem_id())
+        info = _rotate_pointers(reason="手动归档", problem_id=archive_name)
     except RotationBlocked as exc:
         raise HTTPException(400, f"归档未完成（两个「最新」都还在原地）：{exc}") from exc
     # 如实回答：两个「最新」都是空的时候 `rotate_pointer` 只建骨架、**不建归档目录**
@@ -6708,7 +7213,7 @@ async def archive_delivery(req: ArchiveReq):
     if created:
         # 报**真正被改名的那些落点**：硬编码成 `提交作品/<name>` 的话，
         #   而「链只跑到一半就点归档」是常态 —— 那时只有 `各阶段产物/最新产物` 非空、
-        #   `提交作品/最新作品` 还没东西（它要等整链收口打包）⇒ 回的是一个**从未建过**的
+        #   `提交作品/最新作品` 还没东西（⑨ 起每阶段收尾才同步；再早的链它从未建过）⇒ 回的是一个**从未建过**的
         #   路径，正是同一个函数上面那条注释要防的「冒充成功」。
         resp["archived_to"] = list(info["rotated"])
     else:
@@ -6816,10 +7321,12 @@ async def _wipe(req: WipeReq, scope: str):
         log(f"⚠️ 产物根 {out_root} 认不出是本项目的（仓外、且没有两个「最新」指针）"
             f"—— 只清指针本身，不整棵删 cache/ 与其他归档目录")
     removed = []
+    failed = []          # 删不掉的项：必须回给面板（下面 `runtime/web_run.log` 会被本函数删掉，
+                         #   只写日志的话警告自己也会被冲掉 —— 2026-10-17 `_tmp/` 就是这样无声留下的）
 
     def _rm(p, label):
-        """删一个文件/目录，**删不掉也不算失败**（只记进日志）—— 被别的程序占着时
-        宁可留个尾巴让人看见，也不要删到一半抛异常、留下说不清的状态。"""
+        """删一个文件/目录，**删不掉也不算失败**（记进 `failed` 回给面板）—— 被别的程序
+        占着时宁可留个尾巴让人看见，也不要删到一半抛异常、留下说不清的状态。"""
         try:
             if p.is_dir():
                 shutil.rmtree(p)
@@ -6829,6 +7336,7 @@ async def _wipe(req: WipeReq, scope: str):
                 return
             removed.append(label)
         except OSError as exc:                                        # noqa: BLE001
+            failed.append(label)
             log(f"⚠️ 删不掉 {label}：{exc}（被别的程序占着？关掉再删一次）")
 
     # ① 本题在工作区里的产物（清单与 🧹 清理**同一份**，不另立一套）；
@@ -6922,6 +7430,15 @@ async def _wipe(req: WipeReq, scope: str):
                  ".watch_progress.json", ".watch_input.json"):
         _rm(LOG_DIR / name, f"runtime/{name}")
     # ⑤ 重建工作区记录（digest 记成**现在**的 —— 见上面第 ③ 条）
+    if every:
+        # 题目标识是**每题**的，不是本机配置：删干净后必须清零，否则下一题会继承上一题的
+        #   `seeing-sound-…`（面板 2026-10-17 起已不再提供编辑入口，留着就再也改不掉）。
+        #   `output_dir` / `template` 是本机偏好，保留。
+        try:
+            _cfg = _delivery_config()
+            _save_delivery_config(_cfg["output_dir"], "", _cfg["template"])
+        except OSError as exc:                                        # noqa: BLE001
+            log(f"⚠️ 题目标识清零失败：{exc}（产物已删，下次启动仍会带着旧标识）")
     try:
         qdir.mkdir(parents=True, exist_ok=True)
         atomic_json(qdir / "workspace.json",
@@ -6948,6 +7465,10 @@ async def _wipe(req: WipeReq, scope: str):
     state["rounds"] = {}
     state["adv_by_stage"] = {}          # 阶段行上的 📝N 建议条数
     state["issues_by_stage"] = {}       # 📝 面板上半段：该阶段未解决的门禁判据
+    # 📝 的"最终判词"留档（过没过都记）。落盘那份就在 `runtime/quality/` 下，
+    #   上面整目录删的时候**已经连文件一起删了** —— 这里只同步内存（不再 `_save_verdicts()`，
+    #   那会把刚删掉的档立刻写回来）。
+    state["verdict_by_stage"] = {}
     # 类型必须与初始化（`:508` `"waived": {}`）和唯一的写点（`:7280`
     #   `state["waived"][sid] = rec`）一致：写成 `set()` 的话，删完之后第一次
     #   「接受并披露」会在**已经落盘之后**抛 `TypeError`（`'set' object does not
@@ -6960,17 +7481,21 @@ async def _wipe(req: WipeReq, scope: str):
     for sid in state["stages"]:
         state["stages"][sid] = "idle"
     state["progress"] = {"done": 0, "total": len(STAGES)}
+    fail_txt = (f"；⚠️ 没删掉 {len(failed)} 项：{', '.join(failed[:8])}"
+                f"{'…' if len(failed) > 8 else ''}（关掉占用它的程序后再点一次）") if failed else ""
     if every:
         log(f"🗑 删除全部内容：删了 {len(removed)} 项（{', '.join(removed[:8])}"
-            f"{'…' if len(removed) > 8 else ''}）；**保留**框架本体与本机配置 —— 下次要重新上传赛题")
+            f"{'…' if len(removed) > 8 else ''}）{fail_txt}；"
+            f"**保留**框架本体与本机配置 —— 下次要重新上传赛题")
         kept_txt = ["框架本体（lib/ skills/ docs/ regression/ config/）", ".env 与本机配置",
                     "2026A试跑示例/"]
     else:
         log(f"🗑 不归档删除本题：删了 {len(removed)} 项（{', '.join(removed[:8])}"
-            f"{'…' if len(removed) > 8 else ''}）；**保留** request/（题面与附件）、data/、框架本体")
+            f"{'…' if len(removed) > 8 else ''}）{fail_txt}；"
+            f"**保留** request/（题面与附件）、data/、框架本体")
         kept_txt = ["request/（题面与附件）", "data/",
                     "框架本体（lib/ skills/ docs/ regression/ config/）"]
-    return {"ok": True, "removed": removed, "kept": kept_txt, "scope": scope,
+    return {"ok": True, "removed": removed, "failed": failed, "kept": kept_txt, "scope": scope,
             "resolved": str(out_root)}
 
 
@@ -7260,7 +7785,7 @@ async def _apply_decision(req: DecisionReq) -> dict:
             _target_index(target, STAGE_IDX[sid])   # 复用同一套校验：必须是当前阶段的前序
         except ValueError as e:
             raise HTTPException(400, str(e))
-        feedback = _save_feedback(stage)
+        feedback = _save_feedback(stage, target=target)
         hints = {s["id"]: feedback for s in STAGES[STAGE_IDX[target]:]}   # 见上：不含 sid 上界
         # 记下「这一轮谁拿到了哪一份回执」—— 交回那条路要用它回查缺陷清单
         #   （见 `_borrowed_upstream_issues`）。记在**回退区间内每个阶段**头上：
@@ -8009,6 +8534,8 @@ def _recover_pending_markers():
 _clock_load()               # 服务器启动即读回计时（中途关机/中断后续跑累计；收口后待下次 start 归零）
 _load_pending()             # 读回待决策项：黄灯状态下重启服务器，面板应当还在
 _restore_stale_instr()      # 从回执反推「按旧要求交付」，重启后蓝条不许消失
+_restore_issues_by_stage()  # 从盘上反推「还有哪一关判了没结清」，重启后 📝 角标不许消失
+_restore_verdicts_by_stage()  # 判词留档读回内存：重启后 📝 里的「最终判词」还在（过没过都留）
 # `_recover_pending_markers()` **不能放在模块级**：
 #   它**搬文件**，而门禁/生产阶段的 agent 正是被鼓励 `from server import STAGES` 的
 #   ⇒ agent 一 import 就把**正在被审的那份报告**从 `_pending_markers/` 搬回 `reports/`
@@ -8035,6 +8562,17 @@ if __name__ == "__main__":
     #   `_pending_markers/` 里 ⇒ `_action_set` 判 `_artifact_ok(stage)` 为假
     #   ⇒ 复活的黄灯**丢掉「接受并披露」那个按钮**（明明有产物可披露）。
     #   所以这里再读一次：上面刚把文件搬回盘上，这一次算得出来。
+    # 上一任驱动有没有留下"没正常退出"的档案：必须在 `_write_driver_pid()` **之前**读，
+    #   否则读到的是自己刚写的那份。`_clear_driver_pid()` 只在正常退出时删它 ⇒
+    #   档案还在、而那个 pid 已经不在了 = 它没走⏹（被杀/崩溃/断电）。见 `DRIVER_PID` 那段注释。
+    _prev = _driver_pid_record()
+    if _prev and not _pid_alive(_prev.get("pid")):
+        # 到这一步说明**既不是 Ctrl+C、也不是关窗口**（两者都会撤掉这份档案）⇒ 真被强杀了。
+        log(f"⚠️ 上一任驱动（pid {_prev.get('pid')}，起于 {_prev.get('started_at') or '?'}）"
+            f"**没有留下正常退出的记录** —— 既不是 Ctrl+C 停的（那会撤档），也不是**关窗口**停的"
+            f"（那会留一行「控制台窗口被关闭」）⇒ 多半是被 **taskkill 之类强杀**，或者崩溃/断电。"
+            f"2026-10-15 那次就是阶段 agent 误把驱动当成 stray python 杀掉（见 CLAUDE.md「绝不许杀进程」）。"
+            f"紧接着那条「收掉孤儿」就是它留下的；这一轮从哪接着跑由面板决定。")
     _recover_pending_markers()
     _load_pending()          # 幂等：按 PENDING_FILE 重建 pending 与阶段状态
     # 把「现在用的是哪套模型配置」打出来（密钥打码）—— 要的就是"显式"：
@@ -8058,5 +8596,13 @@ if __name__ == "__main__":
               "`log()` 写的行会被进程自身的输出缓冲整段覆盖掉（实测丢过一整晚）。"
               "请改成 `python lib/web/server.py > 别处.log 2>&1`，或干脆不重定向。",
               flush=True)
-    log(f"web 就绪 http://127.0.0.1:{a.port}  claude={CLAUDE.name}")
+    # 装控制台事件处理器：**关窗口**会发事件、`taskkill /F` 不会 —— 靠它把两者分开
+    #   （见 `_console_ctrl` 的说明）。装不上也不影响运行，只是少一条留痕。
+    try:
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(_console_ctrl, True)
+    except Exception as exc:                                        # noqa: BLE001
+        log(f"（控制台事件处理器没装上：{exc} —— 关窗口时少一行留痕，不影响运行）")
+    _write_driver_pid(a.port)
+    atexit.register(_clear_driver_pid)        # 正常退出（Ctrl+C / uvicorn 收尾）时撤档
+    log(f"web 就绪 http://127.0.0.1:{a.port}  claude={CLAUDE.name}  pid={os.getpid()}")
     uvicorn.run(app, host="127.0.0.1", port=a.port)

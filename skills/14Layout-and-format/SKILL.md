@@ -1,6 +1,6 @@
 ---
 name: 14Layout-and-format
-description: "论文排版与版式验收阶段（9Paper-writing 与内容判据之后、15Verification 之前）。独占模板/排版层（paper/_base/ 与 main.tex 导言区）：统一字号字体行距标题图题表题、修浮体位置与溢出重叠、执行篇幅预算、维护正文/附录跨 PDF 的编号接续、编译并逐页视觉验收。只做定点版式手术，不改一句话的措辞、不改任何数值 —— 需要动内容时写 HANDBACK_REQUEST.md 交回 write。"
+description: "论文排版与版式验收阶段（9Paper-writing 与内容判据之后、15Verification 之前）。独占模板/排版层（paper/_base/ 与 main.tex 导言区）：统一字号字体行距标题图题表题、修浮体位置与溢出重叠、执行篇幅预算、维护正文/附录跨 PDF 的编号接续、编译并逐页视觉验收；对账并修补 9Paper-writing 首产的提交清单与正文末页清单表（版式事故与对账缺口归本阶段）。只做定点版式手术，不改一句话的措辞、不改任何数值 —— 需要动内容时写 HANDBACK_REQUEST.md 交回 write。"
 allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent
 ---
 
@@ -39,12 +39,13 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent
 
 | 做 | 不做 |
 |---|---|
-| 施加并维护模板导言区（**本阶段独占 `paper/_base/` 与 `main.tex` 导言区**） | 不改一句话的措辞（→ write） |
+| 施加并维护模板导言区（**本阶段独占 `paper/_base/` 与 `paper/main.tex` 稳定外壳/导言区**） | 不改 `paper/paper-structure.tex` / `blocks/` 的结构（→ write；结构问题写 HANDBACK） |
 | 检查正文是否都在用宏（`\paperfigure` 而非手写 `figure` 环境） | 不重写论证结构、不增删结论 |
 | 把「列结构与行数完全相同的两张表」并排（见下「并排双表」） | 不把已并排的表拆回 `\threelinetable` |
 | 浮体位置、表格列宽字号、图宽、caption 格式 | 不改任何数值（→ code） |
 | 溢出、重叠、孤立残行、公式压正文 | 不重新建模（→ analysis） |
 | 篇幅预算（`python -m lib.publication`）与超页处置 | 不改数据、不改绘图方法（见下方「重画图的口子」） |
+| 对账并修补提交清单与正文末页清单表（**首产归 ⑨**；对账缺口与版式事故见「交付包」节） | 首产提交清单/清单表/运行说明（→ 9Paper-writing；**整份缺失的保底重建除外**） |
 | 正文/附录跨 PDF 的编号接续 | |
 | 编译（xelatex ×2）+ 逐页 PNG 视觉验收 | |
 
@@ -64,7 +65,14 @@ paper/_base/macros.tex      \papertitle \abstractcn \referencescn \appendixAcn
 paper/_base/math-style.tex  数学字体与环境
 ```
 
-`main.tex` 只写 `\input{_base/preamble.tex}` + `\input{_base/macros.tex}` + 赛事差异。
+`main.tex` 是**稳定外壳**：`\documentclass` + `\input{_base/preamble.tex}` + `\input{_base/macros.tex}` +
+结果登记/断行/孤行/附录 labels + `\input{paper-structure.tex}`。正文角色顺序在
+`paper/paper-structure.tex`（⑨ 生成），本阶段**只读**；改结构必须写 `HANDBACK_REQUEST.md` 回 ⑨。
+
+> `paper/_base/` 是模板的**运行副本**。P1 起 ⑨ **只在文件缺失时复制**，重跑不覆盖它
+> （也不覆盖 `main.tex`），以保护本阶段的定点手术。发现副本与
+> `skills/9Paper-writing/templates/_base/` 不一致、且不是你的定点手术痕迹时，按模板重拷 ——
+> **模板源才是规范**（模板本身的归属字样有 `regression/test_doc_drift.py` 的逐字哨兵）。
 
 **`preamble.tex` 里几乎每条设置都带「现象 → 原因 → 改法」注释。删任何一条前先读注释** ——
 多数看似多余的设置都是为了修具体的排版问题。几条最容易被人"顺手清理掉"的：
@@ -77,7 +85,7 @@ paper/_base/math-style.tex  数学字体与环境
 | `\xeCJKsetup{PunctStyle=plain}` | 行首标点悬挂出版心（左边界 22.1mm vs 版心 25.0mm） |
 | `\renewcommand{\emph}[1]{\textbf{#1}}` | ctex 把 `\emph` 映射到 KaiTi，正文出现第三种中文字体 |
 | 四值同取的 `14pt` 公式间距 | 短公式与长公式到上下文的距离不一致（原为 6pt 带伸缩，两行高公式会压住下文 7.64pt） |
-| `\jot=8pt` | `\jot` 是同一行间公式内相邻两行（`align`/`gather`/`cases`/`aligned`）的附加间距，LaTeX 默认只有 3pt —— 而正文行距是 19.9pt，于是"公式内部"比"公式↔文字"紧一个量级。有的公式两行挤在一起（如 (17)），而公式与公式/文字之间又显得远 ⇒ 设 8pt，让公式内 / 公式间 / 公式与文字三处净空落在同一档 |
+| `\jot=14pt` | `\jot` 是同一行间公式内相邻两行（`align`/`gather`/`cases`/`aligned`）的附加间距，LaTeX 默认只有 3pt —— 而正文行距是 19.9pt，于是"公式内部"比"公式↔文字"紧一个量级。模板实测抬到 **14pt** ⇒ 多行公式内部基线间距 26.1pt，与正文 19.9pt 同档（模板值是 14pt；旧稿的 8pt 已作废，别按它改回去） |
 
 **表格内必须重置行距**：preamble 的全局刚性行距会让表内上下相邻两行落到同一基线（叠印）。
 凡多行单元格的表，表内加：
@@ -289,24 +297,26 @@ pdftoppm -png -r 160 paper/main.pdf _tmp/pdf-pages/page   # 或 mutool draw / ma
   `paper_appendix/figures/demo_shot.pdf`，不是 `figures/fig_demo.pdf` —— 去插 `fig_demo` 只会插到一张缺图。
 - 本阶段对附录只做版式的事（页边界、浮动体、公式编号接续），demo 节的内容与编号归 ⑯。
 
-## 交付包：两个 PDF、清单表、运行说明
+## 交付包：对账、修补与两个 PDF
 
 提交出去的是一个目录（默认 `<项目根>/产物/提交作品/最新作品/`，产物根路径用户可改），形状固定：
 
 ```
 产物/                                    ← 产物根（用户可选）
 └── 提交作品/最新作品/                    ← 提交件根，形状固定：
-    ├── 正文.pdf / 附录A.pdf / demo.html / 运行说明.md
+    ├── 正文.pdf / 附录A.pdf / demo.html / 运行说明.md / AI工具使用详情.pdf
     ├── result*.xlsx / 题目附件 / *.py（平铺，不带 code/ 前缀）
     └── 其余文件/  ← 正文/ 附录/（两个 LaTeX 工程）、辅助脚本/、内部报告/
 ```
 
 提交件根下只放要提交的东西 —— 这条由 `python -m lib.delivery check` 的白名单机械校验，
 
-> 链跑到本阶段时，提交件根还不存在（打包发生在整链收口，见 `lib/delivery/core.py` 的
-> `package()`）⇒ **不要在本阶段跑 `python -m lib.delivery check`**：它必然报「提交件根还不存在」，
-> 而那条报错里没有任何关于"该写哪些文件"的信息，读了 `lib/delivery/checks.py`/`core.py`/`产物` 树也是白花时间。
-> 要写 A1 清单就**按白名单规则 + `reports/SUBMISSION_MANIFEST.json` 写**；要自查就用
+> 链跑到本阶段时，提交件根**已经存在**（⑨ 起每个阶段收尾都会同步一次）—— 里面只差
+> ⑯ 才产出的 `demo.html` ⇒ **不要把 `python -m lib.delivery check` 当本阶段的对账判据**：
+> 它此刻可能报两类 —— ①「清单声明了 'demo.html'，但产物里没有」：那是**时序、不是缺件**，
+> **绝不许**为了让它变绿去删清单里 `demo.html` 那行（删了链尾对账也再抓不到它）；
+> ②「正文末页清单表少了/多了…」：那是**真问题**，把表或清单改到一致。
+> 要对账就按白名单规则对照 `reports/SUBMISSION_MANIFEST.json` 与盘面、用
 > `lib/delivery/checks.py` 的判据逐项对照，**不要求那条命令跑通**。
 不是靠自觉。多出任何一个东西都会报错并指出它该去哪。
 
@@ -314,80 +324,18 @@ pdftoppm -png -r 160 paper/main.pdf _tmp/pdf-pages/page   # 或 mutool draw / ma
 > `cache/`（回退快照）—— 都不是提交件，不归本阶段管，也不许往那里写。换题时驱动把
 > 两个「最新」整目录改名成 `<题目标识_日期_时间>/` 再建两个空的。
 
-本阶段负责的交付件（其余由各生产阶段产出、驱动打包）：
+**交付层三件（提交清单 / 正文末页清单表 / `运行说明.md`）与 `AI工具使用详情.pdf` 的首产归 ⑨**（2026-10-17 解耦：用户要求「停在 ⑨ 就是完整稿」，正文末页 P32 不该等到本阶段才填）—— 产出规则见 `skills/9Paper-writing/SKILL.md` 的「交付层」节（**单一出处，这里不复制 —— 复制必然漂移**）。本阶段对它们只做两件事：
 
-**① `reports/SUBMISSION_MANIFEST.json` —— 提交清单，也是打包依据。**
+- **对账（必做）**：清单 ↔ 工作区盘面 ↔ 末页表**三方逐项**核对 —— 清单每个 `path` 在盘上有源；末页表按名与说明都能在清单里找到；末页表覆盖全部支撑材料（`.py` 不许漏、`AI工具使用详情.pdf` 必须在、正文 PDF 不入表）；题目附件逐件有交代。差一处就修到对得上。
+- **修补（本阶段保留的"改文字"权）**：末页清单表塞不下 / 表题表头叠印 / 行数太长把表体顶出 P32 —— 那是**版式事故**、归本阶段：优先重跑 ⑨ 留下的生成脚本调行粒度（同类合并），脚本不在 / 不够用时就地修补；**改完必须重新对账**。清单缺项或有新增提交件时，同样就地补齐并让两边一致；**清单整份缺失**（回退把它暂存走了、而本轮不从 ⑨ 起跑）时按 ⑨ 的「交付层」节**整份重建** —— 那是保底，不是抢首产；内容口径（每件是什么、`desc` 怎么写）以 ⑨ 写的为准。名字集合的一致性另有机器判据（`lib/delivery` 的清单表核对：链尾终检必跑；⑮ 预检在启用交付配置（`config/delivery.local.json`）的工作区里跑），`desc`↔「说明」的文字对应仍需这里人核。
 
-```json
-{"schema_version": 1, "stage": "format",
- "items": [{"path": "正文.pdf", "desc": "本文正文"},
-           {"path": "run_all.py", "desc": "主程序入口，依次完成附件读取、四问求解、收支核对、结果导出与检验。"}],
- "exclude": [{"path": "request/attachments/附件3/临时表.xlsx", "why": "中间产物，题目要交的是填好的 result*.xlsx"}]}
-```
-
-- `path` 是提交件根下的文件名（不带任何前缀、不带 `提交作品/` 之类的上层目录名 ——
-  上层由驱动钉死，清单只描述提交件根那一层）；`desc` 一句话说清它做什么。
-- **题目附件必须**每件都有交代（`lib/delivery/checks.py` 会逐件核）：
-  `request/attachments/` 与 `data/` 下的每个文件，要么进 `items`、要么在
-  `exclude` 里声明一句为什么不用交。漏一件都会被 `delivery check` 报出来 ——
-  这条是补上"附件悄悄没进提交包、一路绿灯到交付"那个洞。
-  - 附件常有子目录（如 `request/attachments/附件3/result1.xlsx`）：`items` 的 `path` 只能
-    是平铺文件名，所以用 `source` 指真实相对路径（`{"path": "附件3_result1.xlsx",
-    "source": "request/attachments/附件3/result1.xlsx"}`）；不写 `source` 时驱动会按基名递归找，
-    只在唯一命中时采用，同名两处会报错让你写清楚。
-  - `request/problem.md` / `problem.pdf` 是链的输入、不算附件，不必进清单。
-- 正文 PDF 的 `path` = 论文标题 + `.pdf`（对齐参考稿
-  `基于变物性耦合传热传质与动域模型的.pdf`）；工作区里那份仍叫 `paper/main.pdf`，
-  只在打包时改名 —— 驱动按 `paper/main.tex` 的 `\papertitle{}` 推出这个名字
-  （`lib/delivery/core.py:body_pdf_name()`，取不到回落 `正文.pdf`，两种名字都能打包）。
-- 逐项核对：每个 `.py` 读它的文件头注释来写 `desc`，不要凭空编。
-- 这份清单同时是正文末页清单表的来源，两边必须逐字一致。
-
-清单表的行粒度与「说明」怎么写（照下面这份口径写，它就是样板）：
-
-- 粒度：一行一个提交件；同类可合并成一行 —— 样板里 `附件1.xlsx、附件2.xlsx` 合一行、
-  `q1.py、q2.py、q3.py、q4.py` 合一行，其余各占一行。
-- **`说明` 必须带读者能用的信息，不许只写空话**。样板的写法可直接套：
-  - `resultN.xlsx` ⇒ 行数 / 时间间隔 / 径向位置数 / 列语义。例：
-    「问题二的温度与水分浓度结果，分为两个工作表；每表 10800 个数据行，时间间隔 1 s，包含 21 个径向位置。」
-  - 源程序 ⇒ 它实现什么。例：`core.py`「实现传热传质方程的有限体积离散、隐式时间推进、
-    非线性迭代和达标时刻求根。」；`export_xlsx.py`「按题目模板导出 result1.xlsx 至 result4.xlsx。」
-  - `附录A.pdf` ⇒ 它补充了什么。例：「补充推导、误差与守恒检验、补充图表，以及二维端面效应和灵敏度分析的详细结果。」
-  - `附件*.xlsx` ⇒ 「题目给定的输入数据，分别记录…」。
-  - `AI工具使用详情.pdf` ⇒ 「说明论文研究与写作过程中 AI 工具的使用情况。」
-- 覆盖要全：提交件根下每一个要提交的文件都要有一行（`.py` 也不许漏），
-  与 `SUBMISSION_MANIFEST.json` 逐项对上 —— 这张表空着或只剩占位符是最严重的形态问题
-  （只剩模板占位符时这一页只有几十个字符；样板那页 1022 字符）。
-- 登记范围 = 「支撑材料」，不含论文本身：
-  样板的表 10 登记 **AI工具使用详情.pdf / 附录A.pdf / result1–4.xlsx / 附件1–2.xlsx / 全部 .py**，
-  没有 `正文.pdf` —— 论文是论文，不是"支撑材料"，末页表里去掉它
-  （`SUBMISSION_MANIFEST.json` 是打包清单，照样要含正文，两者口径不同，
-  别混：清单=全部提交项；末页表=支撑材料）。
-- **`AI工具使用详情.pdf` 必须产出并登记**：它在提交件根放一件，
-  表 10 第 1 行登记它（说明写「说明论文研究与写作过程中 AI 工具的使用情况。」），
-  而正文 §八 只写一句摘要 + 「详细使用情况见支撑材料（文件清单见表 10）」。
-  缺了这件，而 `paper/main.tex` 里同一句话已存在 ⇒ 悬空引用。
-  做法：⑩ 在交付层产出该 PDF（内容 = 正文八节的展开：用了哪些工具、用在哪些环节、怎么核验），
-  写进 `SUBMISSION_MANIFEST.json`，并在 `lib/delivery/core.py` 的 `FIXED_SOURCES` 登记源路径
-  （否则打包会抛「清单里这些提交项在工作区找不到」）。
-
-**② `paper/sections/A1_materials.tex` —— 正文末页的清单表**，照 `SUBMISSION_MANIFEST.json`
-逐行生成。**表内必须重置行距**（`\lineskiplimit=0pt`/`\lineskip=\baselineskip`/
-`\arraystretch=1.0`，模板里已写好）—— preamble 的全局刚性行距会让表内上下相邻两行
-落到同一基线、叠印到看不清。
-
-**③ `运行说明.md`（项目根）** —— 四段：文件准备（哪些是输入、哪些由程序生成）/
-安装依赖（从 `requirements.lock.txt` 抄精确版本，不写"最新版"）/ 运行程序（入口命令）/
-补充计算（灵敏度、二维对照这类不进主流程的脚本）。**文件清单必须是平铺后的名字** ——
-提交件里没有 `code/` 前缀，写成 `code/run_all.py` 就与实际对不上。
-
-④ 编译两个 PDF（各跑两遍）：
+**编译两个 PDF（各跑两遍）**：
 - `paper/` → `正文.pdf`（31 页正文 + 1 页清单表）
 - `paper_appendix/` → `附录A.pdf`（不限页）
 - 附录工程的 `\setcounter{equation}{N}` 里 N 用正文公式总数填。
 
-> 循环依赖：清单表在 `正文.pdf` 里，而 `正文.pdf` 又在产物里。解法是清单是声明 ——
-> 本阶段先声明、驱动按声明打包、`delivery check` 再逐项对账。
+> 循环依赖：清单表在 `正文.pdf` 里，而 `正文.pdf` 又在产物里。解法是清单是**声明** ——
+> ⑨ 收尾先声明、驱动按声明打包、`delivery check` 再逐项对账。
 > 声明的那一刻 `demo.html` 还不存在（⑯ 排在链尾），这件事靠两处收口，不靠本阶段重跑：
 >   ① `lib/delivery/checks.py` 的 `LATE_ITEMS = {"demo.html"}` —— 早期那关 `precheck` 直接跳过它；
 >   ② 驱动在每个阶段收尾都会重打包一次（`_maybe_collect_outputs`，⑨ 及之后全覆盖），
@@ -401,10 +349,11 @@ pdftoppm -png -r 160 paper/main.pdf _tmp/pdf-pages/page   # 或 mutool draw / ma
 - 编译通过的 `paper/main.pdf`（= 提交件 `正文.pdf`，末页是清单表）
 - 编译通过的 `paper_appendix/main.pdf`（= 提交件 `附录A.pdf`，独立工程）
 
-交付层（见上面「交付包」一节 —— 漏了这几样，整链会在 `15Verification` 被拦下）
-- `reports/SUBMISSION_MANIFEST.json` —— 提交清单，同时是打包依据与末页清单表的来源
-- `paper/sections/A1_materials.tex` —— 正文末页的清单表，逐项照 manifest 生成
-- `运行说明.md`（项目根）—— 文件准备 / 安装依赖 / 运行程序 / 补充计算
+交付层（**首产归 ⑨** —— 见上面「交付包」节；本阶段保底：漏了/坏了这几样，整链会在 `15Verification` 被拦下）
+- `reports/SUBMISSION_MANIFEST.json` —— 提交清单 / 打包依据 / 末页清单表的来源（对账、修补到与末页表、盘面一致）
+- `paper/sections/A1_materials.tex` —— 正文末页的清单表（⑨ 生成；本阶段修复塞不下/叠印这类版式事故并重新对账）
+- `运行说明.md`（项目根）—— 对账范围内；四段口径见 ⑨ 的「交付层」节，不符时修补
+- `paper/ai_tools/AI工具使用详情.pdf` —— 四件之一（⑨ 首产）；发现缺失且盘上造得出时补齐（内容 = 正文八节的展开，口径见 ⑨ 的「交付层」节 ④）
 
 报告
 - `reports/FORMAT_REPORT.md`：

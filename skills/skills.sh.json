@@ -5,7 +5,7 @@
     {
       "title": "工作流 Skills（按顺序使用）",
       "skills": [
-    "0Start-mathmodel", "1Literature-orientation", "2Modeling-design", "3Modeling-review-gate", "4Coding-and-computation", "5Result-credibility-audit", "6Robustness", "7Route-diagram", "8Figure-gate", "9Paper-writing", "10Math-proof-gate", "11Cross-question-check", "12Rubric-final", "13Repair-by-rubric-verdict", "14Layout-and-format", "15Verification", "16Web-demo"
+    "0Start-mathmodel", "0Intake-readproblem", "1Literature-orientation", "2Modeling-design", "3Modeling-review-gate", "4Coding-and-computation", "5Result-credibility-audit", "6Robustness", "7Route-diagram", "8Figure-gate", "9Paper-writing", "10Math-proof-gate", "11Cross-question-check", "12Rubric-final", "13Repair-by-rubric-verdict", "14Layout-and-format", "15Verification", "16Web-demo"
   ]
     },
     {

@@ -38,7 +38,7 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 所以代码之间的 import 必须是同目录裸名（`import core`，不是 `from code import core`），
 读数据/写结果的路径要相对当前工作目录解析，不能写死 `code/outputs/…`。
 至少提供一个主入口（约定 `run_all.py`），依次跑完「读附件 → 各问求解 → 收支核对 → 导出结果 → 检验」。
-分问脚本（`q1.py`…）与辅助脚本保留，由 `14Layout-and-format` 决定哪些进提交清单、哪些只进产物的 `其余文件/`。
+分问脚本（`q1.py`…）与辅助脚本保留，由 `9Paper-writing` 收尾写提交清单时决定哪些进提交、哪些只进产物的 `其余文件/`（`14Layout-and-format` 对账）。
 
 ## 被退回重跑时：上一版的 `code/`+`results/` 就在盘上，先捞回来（别重算）
 

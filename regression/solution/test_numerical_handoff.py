@@ -3,7 +3,6 @@ import copy
 import json
 from pathlib import Path
 import sys
-import tempfile
 import unittest
 from unittest.mock import patch
 import numpy as np

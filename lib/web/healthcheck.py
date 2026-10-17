@@ -42,11 +42,30 @@ for d in workflow:
 for extra in ["doctor", "_references"]:
     ck((SK / extra / "SKILL.md").exists(), f"缺辅助 skill {extra}")
 ck((SK / "_references" / "stage_discipline.md").exists(), "缺通用纪律文件 _references/stage_discipline.md")
-# 2) 模板
-for fam in ["cumcm-latex", "default-latex"]:
-    root = SK / "9Paper-writing" / "templates" / "zh" / fam
-    main = root / "main.tex"
-    ck(main.exists(), f"模板缺失 zh/{fam}/main.tex")
+# 2) 模板：动态发现 `templates/<语言>/<族>/main.tex` —— 新增族自动进体检，
+#    不再维护一份和目录树会漂移的硬编码清单（2026-10-17 删掉失效的 default-latex 时改）。
+_tpl_root = SK / "9Paper-writing" / "templates"
+_tpl_mains = sorted(_tpl_root.glob("*/*/main.tex"))
+ck(bool(_tpl_mains), "模板缺失：templates/<语言>/<族>/main.tex 一个都没有")
+for _main in _tpl_mains:
+    _fam = _main.parent.relative_to(_tpl_root).as_posix()
+    _dir = _main.parent
+    ck((_dir / "sections").is_dir(), f"模板 {_fam} 缺 sections/")
+    ck((_dir / "blocks").is_dir(), f"模板 {_fam} 缺 blocks/")
+    ck((_dir / "roles.json").is_file(), f"模板 {_fam} 缺 roles.json")
+    ck((_dir / "structure.default.json").is_file(), f"模板 {_fam} 缺 structure.default.json")
+    try:
+        _roles = json.loads((_dir / "roles.json").read_text(encoding="utf-8"))
+        ck(isinstance(_roles.get("roles"), dict) and bool(_roles["roles"]),
+           f"模板 {_fam}/roles.json 没有 roles")
+    except Exception as exc:
+        ck(False, f"模板 {_fam}/roles.json 不可读：{exc}")
+    _text = _main.read_text(encoding="utf-8")
+    ck("\\input{paper-structure.tex}" in _text, f"模板 {_fam}/main.tex 未接入 paper-structure.tex")
+    _body = _text.split("\\begin{document}", 1)[-1]
+    ck("\\papertitle" not in _body and "\\abstractcn" not in _body,
+       f"模板 {_fam}/main.tex 仍是旧正文（应只留稳定外壳）")
+ck((_tpl_root / "_base" / "preamble.tex").is_file(), "模板共享层缺 _base/preamble.tex")
 # 3) 引用无残留旧编号
 hits = []
 for p in SK.rglob("SKILL.md"):
@@ -75,6 +94,11 @@ try:
         ck((ROOT / "lib" / "delivery" / f).exists(), f"缺 lib/delivery/{f}")
         py_compile.compile(str(ROOT / "lib" / "delivery" / f), doraise=True)
     ck(True, "lib/delivery/*.py 全部编译通过")
+    # 角色化结构装配器：新包忘了建/写坏时这里直接红。
+    for f in ["__init__.py", "core.py", "__main__.py"]:
+        ck((ROOT / "lib/paper_structure" / f).is_file(), f"缺 lib/paper_structure/{f}")
+        py_compile.compile(str(ROOT / "lib/paper_structure" / f), doraise=True)
+    ck(True, "lib/paper_structure/*.py 全部编译通过")
     sys.path.insert(0, str(ROOT))
     from lib.delivery.core import (OTHER_DIR, STAGES_PARENT, STAGES_POINTER, SUBMISSION_PARENT,
                                SUBMISSION_POINTER, delivery_name)

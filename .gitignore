@@ -13,6 +13,8 @@ runtime/_chk.js
 runtime/quality/
 runtime/.runclock.json
 runtime/.watch_*.json
+runtime/driver.pid
+runtime/effective_profile.json
 
 # 赛题输入：你自己上传的原件与附件，按需保留在本机，不进仓库
 request/

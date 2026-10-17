@@ -53,6 +53,12 @@ class IntakeTests(unittest.TestCase):
                 # 必须 >80 字节：`_artifact_ok('write')` 卡的就是大小。低于这个数时 write 会被
                 #   判失败、整链挂起，而报错只说"阶段未成功完成：failed"。
                 (self.root / "paper/main.pdf").write_bytes(b"%PDF-1.4\n" + b"x" * 200)
+                # P1：角色化模板下还要有结构计划文件，否则 write 也不算完成。
+                (self.root / "paper/structure.json").write_text(
+                    json.dumps({"schema_version": 1, "problem_count": 3,
+                                "enabled": ["title"]}), encoding="utf-8")
+                (self.root / "paper/paper-structure.tex").write_text(
+                    "\\input{blocks/title}\n", encoding="utf-8")
             else:
                 # 报告必须**真写出来**：`_artifact_ok()` 看的就是它，缺了会被判"阶段失败"。
                 #   （注意别写成 `self.s.report(...)` —— 那个方法在测试类上、不在模块上，

@@ -24,7 +24,7 @@
 | 节 | 模板骨架 | 偏离写法 |
 |---|---|---|
 | 二、问题分析 | 问题一/二/三的分析 + **本文主要创新点** | 几何/数据/四问/求解方案，**创新点整节没了** |
-| 三、模型假设 | 3–6 条、**每条不长** | 6 条（条数够）但每条 200–400 字 |
+| 三、模型假设 | 3–5 条（最多 5 条）、**每条不长** | 6 条（条数够）但每条 200–400 字 |
 | 五、模型建立与求解 | **5.1 = 问题一**（具体分析/模型准备/模型建立/模型求解） | 前面插了"四问共用框架/共用方案"两节，问题一被挤到 5.3 |
 | 六、模型检验与分析 | 误差分析 / 灵敏度分析 | 数值误差与收敛性 / 守恒性与解析校核 / 灵敏度分析 / 前提与稳健性 |
 | 七、模型的评价与推广 | 优点 / 缺点 / 改进与推广 | **结论汇总** / 优点 / 缺点与局限 / 改进与推广 |
@@ -54,10 +54,11 @@ except Exception:
 
 TEMPLATES_REL = "skills/9Paper-writing/templates"
 PAPER_SECTIONS_REL = "paper/sections"
+BLOCKS_REL = "paper/blocks"
 # 六种标准标题：section / subsection / subsubsection（含带星号的不编号变体）
 HEADING_RE = re.compile(r"\\(section|subsection|subsubsection)\*?\{")
 LEVELS = {"section": 1, "subsection": 2, "subsubsection": 3}
-# `3_assumptions.tex` 的每一条：模板说「篇幅上限：一页；条数 3--6 条，每条不长」。
+# `3_assumptions.tex` 的每一条：模板说「篇幅上限：一页；条数 3--5 条（最多 5 条），每条不长」。
 ASSUMPTIONS_FILE = "3_assumptions.tex"
 ASSUMPTION_MIN, ASSUMPTION_MAX = 3, 5      # 模型假设最多 5 条
 ASSUMPTION_INTRO = "为了适当地对模型进行合理简化"   # 标题下必须先写这句引入语
@@ -104,7 +105,7 @@ def _strip_comment(line):
 def _prose_len(text):
     """一把尺子：去掉注释与 LaTeX 命令后数**字**（汉字、数字、拉丁词各算一个字符）。
 
-    假设节（每条 ≤200 字）与问题分析节（全节 ≤1320 字）共用它 —— 阈值之所以能写成
+    假设节（每条 ≤200 字）与问题分析节（全节 ≤1480 字）共用它 —— 阈值之所以能写成
     "页"，靠的是一份**页↔字**换算（见 `ANALYSIS_CHARS_PER_PAGE`：989 字/页）。
     """
     text = "\n".join(_strip_comment(l) for l in text.splitlines())
@@ -147,7 +148,7 @@ def headings_of(path):
 
 
 def items_of(path):
-    """`\\item` 的正文（已去注释、去空白），用于「条数 3–6、每条不长」。"""
+    """`\\item` 的正文（已去注释、去空白），用于「条数 3–5（最多 5 条）、每条不长」。"""
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -268,9 +269,105 @@ def _diff(expected, actual, label, problems):
                             f"只能往它里面填内容）")
 
 
+def _content_checks(root):
+    """骨架之外的内容/版式检查（role 模式与 legacy 共用）。"""
+    return (_assumption_problems(root) + _symbols_problems(root)
+            + _table_pairing_problems(root) + _wording_problems(root)
+            + _topic_label_problems(root) + _nested_cell_problems(root)
+            + _question_count_problems(root) + _analysis_length_problems(root)
+            + _roadmap_placement_problems(root)
+            + _figure_pairing_problems(root) + _caption_problems(root))
+
+
+def _load_structure(root):
+    """Return (structure, error). Absent = (None, None); invalid = (None, error)."""
+    p = Path(root) / "paper/structure.json"
+    if not p.is_file():
+        return None, None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, f"结构配置错误：paper/structure.json 不可读（{exc}）"
+    if not isinstance(data, dict):
+        return None, "结构配置错误：paper/structure.json 顶层必须是对象"
+    return data, None
+
+
+def _role_issues(root, data):
+    """P1 role check: structure.json + paper-structure.tex + no orphan files.
+
+    Legacy path is kept when `paper/structure.json` is absent; this function only
+    runs for role-based workspaces.
+    """
+    paper = Path(root) / "paper"
+    problems = []
+    if data.get("schema_version") != 1:
+        problems.append("结构配置错误：structure.json.schema_version 必须是 1")
+    enabled, order, files = data.get("enabled"), data.get("order"), data.get("files")
+    if not isinstance(order, list) or not order:
+        problems.append("结构配置错误：structure.json.order 必须是非空列表")
+    if not isinstance(enabled, list) or not enabled:
+        problems.append("结构配置错误：structure.json.enabled 必须是非空列表")
+    if isinstance(order, list) and isinstance(enabled, list) and set(enabled) - set(order):
+        problems.append("结构配置错误：enabled 里有 order 之外的角色")
+    if isinstance(order, list) and isinstance(enabled, list):
+        expected = [r for r in order if r not in set(data.get("disabled") or [])]
+        if enabled != expected:
+            problems.append("结构配置错误：enabled != order - disabled（顺序必须保留）")
+    if isinstance(files, list):
+        for rel in files:
+            if not (paper / rel).is_file():
+                problems.append(f"缺角色文件：paper/{rel}")
+    tex_path = paper / "paper-structure.tex"
+    if not tex_path.is_file():
+        problems.append("缺 paper/paper-structure.tex（⑨ 步骤 2.5 没生成？）")
+    else:
+        tex = tex_path.read_text(encoding="utf-8", errors="replace")
+        actual_inputs = re.findall(r"\\input\{([^{}]+)\}", tex)
+        if isinstance(data.get("inputs"), list) and actual_inputs != data["inputs"]:
+            problems.append("paper-structure.tex 的 \\input 序列与 structure.json.inputs 不一致")
+        for rel in actual_inputs:
+            child = paper / (rel if rel.endswith(".tex") else rel + ".tex")
+            if not child.is_file():
+                problems.append(f"paper-structure.tex 引用了不存在的文件：{rel}")
+    if isinstance(files, list):
+        referenced = {Path(x).name for x in files}
+        for sub in ("sections", "blocks"):
+            d = paper / sub
+            if d.is_dir():
+                for p in sorted(d.glob("*.tex")):
+                    if p.name not in referenced:
+                        problems.append(f"孤儿文件：paper/{sub}/{p.name} 没有被任何启用角色引用")
+    main_tex = paper / "main.tex"
+    if main_tex.is_file():
+        text = "\n".join(_strip_comment(line) for line in main_tex.read_text(
+            encoding="utf-8", errors="replace").splitlines())
+        for pat, why in ((r"\\papertitle", "title"), (r"\\abstractcn", "abstract"),
+                         (r"\\section\s*\{", "section")):
+            if re.search(pat, text):
+                problems.append(f"paper/main.tex 是稳定外壳，不应再出现 {why}（应放进 blocks/）")
+    pc = data.get("problem_count")
+    if not isinstance(pc, int) or isinstance(pc, bool) or pc < 1:
+        problems.append("结构配置错误：structure.json.problem_count 不是正整数")
+    return problems
+
+
 def skeleton_issues(root):
-    """比对 `paper/sections/*.tex` 与模板骨架。返回问题串列表（空 = 通过）。"""
+    """比对正文结构与模板。返回问题串列表（空 = 通过）。
+
+    双路径：有 `paper/structure.json` 时按角色计划校验；没有时保留旧的
+    “文件集合 + 标题序列等于某一族骨架”逻辑（旧工作区、⑦ 在 ⑨ 之前都能跑）。
+    """
     root = Path(root).resolve()
+    structure, err = _load_structure(root)
+    if err:
+        return [err]
+    if structure is not None:
+        problems = _role_issues(root, structure)
+        if problems:
+            return problems
+        return _content_checks(root)
+
     skels = _skeletons(root)
     if not skels:
         return [f"找不到模板骨架：{TEMPLATES_REL}/<语言>/<族名>/sections/ 下没有 .tex"]
@@ -286,12 +383,7 @@ def skeleton_issues(root):
         if set(skel) == set(actual) and all(_same_headings(skel[k], actual[k]) for k in skel):
             # 骨架对得上 → 只报「骨架之外」的版式问题（假设条数/长度、符号表列数），
             # 不套「与骨架对不上」那句标题（否则读起来像骨架又错了）。
-            return (_assumption_problems(root) + _symbols_problems(root)
-                    + _table_pairing_problems(root) + _wording_problems(root)
-                    + _topic_label_problems(root) + _nested_cell_problems(root)
-                    + _question_count_problems(root) + _analysis_length_problems(root)
-                    + _roadmap_placement_problems(root)
-                    + _figure_pairing_problems(root) + _caption_problems(root))
+            return _content_checks(root)
     # 都不完全一致 → 报**最接近**那一族的差异（差得最少 = 最可能是它）
     def distance(item):
         _, raw = item
@@ -307,17 +399,11 @@ def skeleton_issues(root):
             problems.append(f"  · **多出文件** {name}（骨架里没有）")
         else:
             _diff(skel[name], actual[name], f"  · {name}", problems)
-    problems += (_assumption_problems(root) + _symbols_problems(root)
-                 + _table_pairing_problems(root) + _wording_problems(root)
-                 + _topic_label_problems(root) + _nested_cell_problems(root)
-                 + _question_count_problems(root) + _analysis_length_problems(root)
-                 + _roadmap_placement_problems(root)
-                 + _figure_pairing_problems(root) + _caption_problems(root))
+    problems += _content_checks(root)
     return problems
 
 
 SYMBOLS_FILE_RE = re.compile(r"^\d+_symbols?\.tex$")
-SYMBOLS_HEADER = ("符号", "含义", "单位")
 # 单位列该写什么：纯 ASCII/数学的单位串（`kg/m$^3$`、`J/(kg$\cdot$K)`、`m$^{-2}$`）。
 # 允许「无量纲」这个中文特例。含义列里整段括号只有这种内容 = 单位本该另立一列。
 _UNIT_ONLY_RE = re.compile(r"^(?:无量纲|[A-Za-z0-9/^.\-\\{}$\u00b7,; ]+)$")
@@ -475,8 +561,6 @@ def _symbols_problems(root):
     return problems
 
 
-FLOAT_BEGIN_RE = re.compile(r"\\begin\{table\}")
-FLOAT_END_RE = re.compile(r"\\end\{table\}")
 THREELINE_RE = re.compile(r"\\threelinetable")
 TABLE_NUM_RE = re.compile(r"表\s*\d+")
 SECTION_SPLIT_RE = re.compile(r"\\(?:sub)*section\*?\{")
@@ -681,6 +765,9 @@ def _wording_problems(root):
     main_tex = Path(root) / "paper" / "main.tex"
     if main_tex.is_file():
         files.append(main_tex)
+    blocks = Path(root) / BLOCKS_REL
+    if blocks.is_dir():
+        files.extend(sorted(blocks.glob("*.tex")))
     if not files:
         return []
     problems = []
@@ -721,9 +808,15 @@ def _question_count_problems(root):
         return []
     qs = [int(m.group(1)) for p in d.glob("5_problem*.tex")
           if (m := PROBLEM_FILE_RE.match(p.name))]
-    if not qs:
+    structure, _ = _load_structure(root)
+    if structure and isinstance(structure.get("problem_count"), int) \
+            and not isinstance(structure["problem_count"], bool) \
+            and structure["problem_count"] > 0:
+        want = structure["problem_count"]
+    elif qs:
+        want = max(qs)
+    else:
         return []
-    want = max(qs)
     got = [t for _, t in headings_of(analysis) if QHEAD_RE.match(t)]
     if len(got) == want:
         return []
@@ -776,10 +869,10 @@ def _analysis_detail(cuts):
 
 
 def _analysis_length_problems(root):
-    """`2_analysis.tex` 的篇幅：**全节 ≤ 一页**、**每个问题的分析 ≤ 3 行**。
+    """`2_analysis.tex` 的篇幅：**全节 ≤ 一页半**、**每个问题的分析 ≤ 3 行**。
 
     两个上限都按参考件量出来（见 `ANALYSIS_CHARS_PER_PAGE` 那段注释）。量不了页数就量
-    字数，换算基准是 989 字/页、33 字/行。
+    字数，换算基准是 989 字/页、38 字/行。
 
     超了要报**分节明细**：只说"整节太长"，写手不知道该砍哪一段 —— 而超额的通常正是
     每一问的分析。
@@ -955,6 +1048,9 @@ def _caption_problems(root):
     main_tex = Path(root) / "paper" / "main.tex"
     if main_tex.is_file():
         files.append(main_tex)
+    blocks = Path(root) / BLOCKS_REL
+    if blocks.is_dir():
+        files.extend(sorted(blocks.glob("*.tex")))
     problems = []
     for p in files:
         text = "\n".join(_strip_comment(l) for l in
@@ -1060,7 +1156,7 @@ def _figure_pairing_problems(root):
 
 
 def _assumption_problems(root):
-    """「篇幅上限：一页；条数 3–6 条，**每条不长**」—— 条数与长度都能机械核。"""
+    """「篇幅上限：一页；条数 3–5 条（最多 5 条），**每条不长**」—— 条数与长度都能机械核。"""
     p = Path(root) / PAPER_SECTIONS_REL / ASSUMPTIONS_FILE
     if not p.is_file():
         return []
@@ -1140,7 +1236,8 @@ def main():
     else:
         print(f"骨架对账通过：{root}")
     # 配置类失败（找不到模板/正文目录）与内容类失败分开：前者该去修路径，后者该去改论文
-    missing = any("找不到模板骨架" in p or "找不到正文小节目录" in p for p in problems)
+    missing = any("找不到模板骨架" in p or "找不到正文小节目录" in p
+                  or p.startswith("结构配置错误") for p in problems)
     return 0 if not problems else (2 if missing else 1)
 
 

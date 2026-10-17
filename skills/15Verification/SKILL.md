@@ -58,7 +58,7 @@ Web 裁决侧车（content-quality 启用时）：另写 `reports/VERIFY_REPORT.
 
 由模型先根据当前工作区判断项目布局，再把实际路径传给检查脚本。常见输入包括但不限于：
 
-1. 论文入口文件：`main.tex`。
+1. 论文入口文件：`main.tex`（稳定外壳）；正文由 `paper/paper-structure.tex` 按 `paper/structure.json` 组合，`blocks/` 与 `sections/` 是内容。
 2. 正文章节目录或若干正文文件（`.tex`）。
 3. 参考文献文件（`references.tex`）。
 4. 前序阶段的分析、建模、结果、图示报告。
@@ -105,7 +105,7 @@ Web 裁决侧车（content-quality 启用时）：另写 `reports/VERIFY_REPORT.
 
 ### Step 1: 运行文本质量门禁
 
-优先运行本 skill 的脚本。脚本针对 LaTeX 论文执行检查：`--main` 默认 `<paper-dir>/main.tex`，`--references` 默认 `<paper-dir>/references.tex`，章节按 `.tex` 扫描，编译用 xelatex 跑两遍。
+优先运行本 skill 的脚本。脚本针对 LaTeX 论文执行检查：`--main` 默认 `<paper-dir>/main.tex`，`--references` 默认 `<paper-dir>/references.tex`，章节按 `.tex` 扫描；脚本会递归展开 `main.tex → paper-structure.tex → blocks/sections`，编译用 xelatex 跑两遍。
 
 ```bash
 set -o pipefail
@@ -167,11 +167,11 @@ bash "$SCRIPT_PATH" \
 - 内部代号/版本串残留（对最终 pdf 复扫，防"tex 干净但 pdf 是旧构建"漏检）：把提交/归档用的最终 pdf 用 `pdftotext` 导出纯文本，对照 `../_references/internal_leak_words.md` 的【内部词 deny】复扫——命中阶段/流程代号（9Paper-writing/6Robustness/…）、内部用例标签（C16/A5/H7/N3/…）、内部版本口径串（v1.1.1/M-2 口径/…）、内部路径（code/outputs/…json、RESULTS §x）→ 硬错误（对照【题内合法词 allow】避免误伤 M1/FY1/Q1 等题目自带编号）。对账/校验数据若进正文或附录，必须改语义列名（如"算例/场景"而非 C16），不得带内部标签。若 tex 无而 pdf 有 → 先重编译再判（残留多半来自已删的中间稿）。
 - 算法超参与复杂度（对照提交代码）：元启发/迭代算法（DE/GA/PSO/SA/禁忌/B&B…）是否在正文或附录给出"算法名 + 关键超参（DE 的 mutation(F)/CR/种群/最大迭代/多起点初值/收敛 tol）+ 复杂度一句"；超参须与提交代码一致（从代码抄写，不许写默认值）→ 缺即硬错误。
 - 公式质量（脚本 `writing_check.sh` 已扫，须在 VERIFY_REPORT 记录结论）：① 正文/公式用到的符号必须都在符号表（脚本给 missing 列表）→ 缺即硬错误；② 符号表条目须在正文被用到 → 未用即 WARN；③ 论文多处出现的大数若只差末 1–2 位 → 必须回查是否笔误（脚本给疑似对）→ 确认笔误即硬错误；④ **凡正文给出指标定义式（如 gap=(UB−π)/UB），必须按该式复算表中至少一个数字**并在报告记录复算结果 → 不符即硬错误（2024C 实际发生过：定义式与所报数字口径不一致，评审一算即穿）。
-- 摘要页/关键词/灵敏度可视化：CUMCM 摘要页 ≤1 页（溢出即硬错误）、**且版心填充 ≥0.90**（`python -m lib.publication report` 的 `min_kind_fill`；< 0.80 是硬失败、由机械地板直接判给 ⑨，[0.80,0.90) 只出提示）——摘要写没写满不是本阶段能改的（版式无权动文字），所以发现欠写就如实判，别自己补字；关键词 ≤6；灵敏度章节若整节纯数字表无任何图 → WARN 并尽量补 1 张可视化（对照 norms「摘要写作要点/灵敏度可视化」）。
+- 摘要页/关键词/灵敏度可视化：CUMCM 摘要页 ≤1 页（溢出即硬错误）、**且版心填充 ≥ target**（`min_kind_fill.abstract`：当前 `target 0.90 / hard 0.80`，以 `config/publication.json` 为准；< hard 是硬失败、由机械地板直接判给 ⑨，[hard, target) 只出提示）——摘要写没写满不是本阶段能改的（版式无权动文字），所以发现欠写就如实判，别自己补字；关键词 ≤6；灵敏度章节若整节纯数字表无任何图 → WARN 并尽量补 1 张可视化（对照 norms「摘要写作要点/灵敏度可视化」）。
 
 ### Step 4b: 数学证明措辞-内容一致性扫描（L2，硬错误项）
 
-对 `main.tex` 与 `sections/*.tex` 逐文件扫标签/强声称词：
+对 `main.tex`、`paper-structure.tex`、`blocks/*.tex` 与 `sections/*.tex` 逐文件扫标签/强声称词：
 `定理|命题|引理|推论|性质|证明|证明了|严格相同|严格一致|正交|一阶无偏|无偏|恒成立|已证`
 对每个命中，检查同小节内是否存在等式级推导块（`equation`/`align` 环境或成块 `\[…\]`）来支撑该断言；仅靠"合成谱自检/拟合数值/图表/自然语言叙述"的 → 记为该小节"证明字样无推导块"，列 `数学论证闭环` 检查项并判硬错误（除非该断言已显式自标为"数值观测/经验断言/仅报告量级"，不作证明宣称）。同时在摘要区同样扫一遍：摘要称"证明了…"而正文无推导 → 硬错误。判 FAIL 时在"仍需处理的问题"写明文件/行与缺什么，把结论交回写作修复（本阶段不改论文）。
 

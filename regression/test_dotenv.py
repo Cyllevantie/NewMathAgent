@@ -9,7 +9,6 @@
 """
 import ast
 import os
-import sys
 import re
 import tempfile
 import types

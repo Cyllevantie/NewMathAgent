@@ -310,67 +310,6 @@ def bars(ax, labels, groups, *, low=None, high=None, unit="", ylabel=None,
     return ax
 
 
-def dumbbell(ax, labels, left, right, *, left_label="", right_label="", xlabel="",
-             fmt="{:.1f}", gap_fmt="{:.1f}", style="capsule", gap_unit=""):
-    """哑铃图：每类**两个值 + 它们之间的差** —— 柱状图在这里的替代品。
-
-    为什么不用柱状：这张图要读者看的是**同一类两个口径差多少**，
-    柱状图得让他拿两根柱子的高度自己去减；哑铃把那个"差"
-    直接画成两点之间那条连线，差值写在连线中点上方。
-
-    - `style="capsule"`（默认）：连线画成一条**浅色胶囊带**（粗而浅），端点突出、连接最轻；
-      `style="line"`：细线连接；两种都显式给 `linestyle` —— `style()` 的 prop_cycle 会
-      轮换**颜色与线型**，只给 color 的话第二条会变成虚线。
-    - 端点用调色板的第 1、2 色（与其它图同一套色）；端点值各自着色、标在点下方。
-    - 图例标签**要短**：`constrained_layout` 会把面板压窄去迁就**比它更宽的图例** ——
-      两个长标签（`判据口径（中心含水率）`+`均值口径（整柱平均）`）会把半栏面板挤成细长条。
-      口径说明写进 caption 或正文，别塞进图例。
-    """
-    left, right = numeric(left), numeric(right)
-    if len(left) != len(labels) or len(right) != len(labels):
-        raise ValueError("Dumbbell needs one left and one right value per category")
-    if style not in ("capsule", "line"):
-        raise ValueError("style must be capsule or line")
-    pal = mpl.rcParams["axes.prop_cycle"].by_key().get("color") or ["#1D4ED8", "#93C5FD"]
-    # 两端取色序的**两端**、不取相邻两项：
-    #   新色序是**同族明度阶**（深蓝→浅蓝），相邻两项 dots 大小下几乎分不出来 ——
-    #   而哑铃恰恰靠"两端颜色不同"读两个口径。深蓝 vs 浅蓝（pal[0] vs pal[3]）才分得开。
-    c_left, c_right = pal[0], (pal[3] if len(pal) > 3 else pal[1])
-    y = np.arange(len(labels))
-    for i, (lo, hi) in enumerate(zip(left, right)):
-        a, b = sorted((float(lo), float(hi)))
-        if style == "capsule":
-            ax.plot([a, b], [i, i], color="#E4E4E4", linewidth=11, linestyle="-",
-                    zorder=1, solid_capstyle="round")
-        else:
-            ax.plot([a, b], [i, i], color="#C9C9C9", linewidth=1.7, linestyle="-",
-                    zorder=1, solid_capstyle="round")
-        # 颜色按**序列顺序**分配（第一个参数 = c_left/pal[0]，第二个 = c_right）——
-        #   不许按"数值大的那个"分配（`hi_is_right`）：在红/蓝时代无所谓，换成**同族明度阶**
-        #   之后就反了 —— 主结论往往是较大的那个值，反而拿到最浅的色。
-        #   连接线仍跨 min–max，只是两端颜色跟参数走。
-        ax.plot([float(left[i])], [i], "o", color=c_left, markersize=7.5, zorder=3)
-        ax.plot([float(right[i])], [i], "o", color=c_right, markersize=7.5, zorder=3)
-        ax.annotate(gap_fmt.format(abs(b - a)) + gap_unit, xy=((a + b) / 2, i),
-                    xytext=(0, 10), textcoords="offset points", ha="center",
-                    fontsize=max(mpl.rcParams["font.size"] - 1, 8), color="#333333")
-        # 端点数值用 `ink`（不是各自序列色）：最浅那档蓝对白只有 1.80:1，
-        #   当文字色读起来发虚 —— 颜色映射交给旁边的圆点，文字只管读得清。
-        for v in (float(hi), float(lo)):
-            ax.annotate(fmt.format(v), xy=(v, i), xytext=(0, -14),
-                        textcoords="offset points", ha="center",
-                        fontsize=max(mpl.rcParams["font.size"] - 1, 8),
-                        color=mpl.rcParams["text.color"])
-    ax.set_yticks(y, list(labels))
-    ax.set(xlabel=xlabel or "数值", ylim=(-0.6, len(labels) - 0.4))
-    ax.grid(axis="x")
-    if left_label and right_label:
-        ax.plot([], [], "o", color=c_left, markersize=8, label=left_label)
-        ax.plot([], [], "o", color=c_right, markersize=8, label=right_label)
-        ax.legend(loc="upper center", bbox_to_anchor=(.5, -.28), ncol=2)
-    return ax
-
-
 def contour(ax, x, y, z, *, colorbar_label, quantity=None, cmap=None, levels=14,
             lines=None, line_fmt="%.3g", highlight=None, highlight_color="#E41A1C",
             highlight_label=None, label_lines=True, gamma=None, vmin=None, vmax=None):

@@ -48,7 +48,7 @@
 % 附录 —— 本宏用在两个工程里，两个工程的用法不同：
 %
 %   ① 正文工程（`paper/`）：正文的最后一页，放支撑材料文件清单表。
-%      `\appendixAcn[支撑材料清单]{A1_materials}`，由 format 阶段生成该节。
+%      `\appendixAcn[支撑材料清单]{A1_materials}`，由 9Paper-writing 收尾（「工作流」步骤 7）生成该节。
 %   ② 附录工程（`paper_appendix/`）：整份就是附录 A（补充推导 / 补充图表 / 补充结果），
 %      `\appendixAcn[补充推导与补充图表]{A_appendix}`，独立编译成 附录A.pdf。
 %
@@ -76,7 +76,7 @@
 %   不可断：装不下就连题带表一起推到下一页。这是定点改动，不改字号、列宽与表内行距。
 %
 %   这条补丁必须留在模板里（判据：`grep tableblock skills/` 不为空）——
-%   只留在产物里会永久丢失，下一轮 ⑩ 要重踩同一个事故。
+%   只留在产物里会永久丢失，下一轮 ⑭ 要重踩同一个事故。
 \newenvironment{tableblock}%
   {\begin{center}\begin{minipage}{\textwidth}\centering}%
   {\end{minipage}\end{center}}

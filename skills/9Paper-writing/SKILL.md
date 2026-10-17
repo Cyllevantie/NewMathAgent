@@ -1,6 +1,6 @@
 ---
 name: 9Paper-writing
-description: "数学建模竞赛论文撰写阶段，使用 LaTeX（xelatex）排版。根据 ANALYSIS_MODELING_REPORT.md、RESULTS_REPORT.md 和 figures/*.pdf 选择比赛模板、组织章节，并在论文正文中按章节直接插入图表。"
+description: "数学建模竞赛论文撰写阶段，使用 LaTeX（xelatex）排版。根据 ANALYSIS_MODELING_REPORT.md、RESULTS_REPORT.md 和 figures/*.pdf 选择比赛模板、组织章节，并在论文正文中按章节直接插入图表；收尾产出提交清单（reports/SUBMISSION_MANIFEST.json）与正文末页支撑材料清单表、运行说明.md、AI工具使用详情.pdf（14Layout-and-format 对其对账与版式层修补）。"
 allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebFetch
 ---
 
@@ -25,6 +25,82 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 ## 国赛提交规范
 
 国赛电子版：不要目录、摘要首张连续编号、附录完整代码及支撑清单、论文与支撑包分别限 20MB、身份匿名化。其他赛事依据明确规则另设口径。
+
+## 交付层：提交清单与正文末页清单表（收尾产出）
+
+**这四件在收尾（「工作流」步骤 7）产出**：提交清单、正文末页（P32）的支撑材料清单表、
+`运行说明.md`、`AI工具使用详情.pdf`。2026-10-17 起它们从 `14Layout-and-format` 前移到本阶段 ——
+用户要求「停在 ⑨ 就是完整稿」；⑭ 排版阶段对其**对账与版式层修补**（塞不下/叠印/合并行
+仍是它的活），整套规则以本节为单一出处，那边不再复制。
+
+**① `reports/SUBMISSION_MANIFEST.json` —— 提交清单，也是打包依据。**
+
+```json
+{"schema_version": 1, "stage": "write",
+ "items": [{"path": "正文.pdf", "desc": "本文正文"},
+           {"path": "run_all.py", "desc": "主程序入口，依次完成附件读取、四问求解、收支核对、结果导出与检验。"}],
+ "exclude": [{"path": "request/attachments/附件3/临时表.xlsx", "why": "中间产物，题目要交的是填好的 result*.xlsx"}]}
+```
+
+- `path` 是提交件根下的文件名（平铺、不带任何前缀、不带 `提交作品/` 之类的上层目录名）；
+  `desc` 一句话说清它做什么。
+- **题目附件必须**每件都有交代（`lib/delivery/checks.py` 会逐件核）：
+  `request/attachments/` 与 `data/` 下的每个文件，要么进 `items`、要么在 `exclude` 里
+  声明一句为什么不用交 —— 漏一件都会被 `delivery check` 报出来。
+  - 附件常有子目录（如 `request/attachments/附件3/result1.xlsx`）：`items` 的 `path` 只能是
+    平铺文件名，所以用 `source` 指真实相对路径（`{"path": "附件3_result1.xlsx",
+    "source": "request/attachments/附件3/result1.xlsx"}`）；不写 `source` 时驱动按基名递归找，
+    只在唯一命中时采用，同名两处会报错让你写清楚。
+  - `request/problem.md` / `problem.pdf` 是链的输入、不算附件，不必进清单。
+- 正文 PDF 的 `path` = 论文标题 + `.pdf`（对齐参考稿 `基于变物性耦合传热传质与动域模型的.pdf`）；
+  工作区里那份仍叫 `paper/main.pdf`，只在打包时改名 —— 驱动按 `paper/main.tex` 的
+  `\papertitle{}` 推出这个名字（`lib/delivery/core.py:body_pdf_name()`，取不到回落
+  `正文.pdf`，两种名字都能打包）。
+- 逐项核对：每个 `.py` 读它的文件头注释来写 `desc`，不要凭空编。
+- 这份清单同时是正文末页清单表的来源，两边必须**逐项一致**（名字集合另有机检：`lib/delivery` 的清单表核对，链尾终检必跑；⑮ 预检在启用交付配置（`config/delivery.local.json`）的工作区里跑；`desc` ↔「说明」的文字对应仍需人核）。
+
+**② `paper/sections/A1_materials.tex` —— 正文末页（P32）的清单表**，照清单逐行生成。
+**表内必须重置行距**（模板里已写好）；行距复位与外壳的叠印事故见模板头注释。写法口径：
+
+- 粒度：一行一个提交件；同类可合并成一行 —— 样板里 `附件1.xlsx、附件2.xlsx` 合一行、
+  `q1.py、q2.py、q3.py、q4.py` 合一行，其余各占一行。
+- **`说明` 必须带读者能用的信息，不许只写空话**。样板的写法可直接套：
+  - `resultN.xlsx` ⇒ 行数 / 时间间隔 / 径向位置数 / 列语义。例：
+    「问题二的温度与水分浓度结果，分为两个工作表；每表 10800 个数据行，时间间隔 1 s，包含 21 个径向位置。」
+  - 源程序 ⇒ 它实现什么。例：`core.py`「实现传热传质方程的有限体积离散、隐式时间推进、
+    非线性迭代和达标时刻求根。」；`export_xlsx.py`「按题目模板导出 result1.xlsx 至 result4.xlsx。」
+  - `附录A.pdf` ⇒ 它补充了什么。例：「补充推导、误差与守恒检验、补充图表，以及二维端面效应和灵敏度分析的详细结果。」
+  - `附件*.xlsx` ⇒ 「题目给定的输入数据，分别记录…」。
+  - `AI工具使用详情.pdf` ⇒ 「说明论文研究与写作过程中 AI 工具的使用情况。」。
+- 覆盖要全：**支撑材料**里每一个要提交的文件都要有一行（`.py` 也不许漏）——
+  这张表空着或只剩占位符是最严重的形态问题（只剩模板占位符时这一页只有几十个字符；
+  样板那页 1022 字符）。
+- 登记范围 = 「支撑材料」，不含论文本身：样板没有 `正文.pdf` 那行 —— 论文是论文，不是"支撑材料"
+  （`SUBMISSION_MANIFEST.json` 是打包清单，照样要含正文，两者口径不同，别混）。
+- **生成而不是手抄**：写一个幂等生成脚本（读清单 → 渲染表体 → 落盘），改清单后重跑它；
+  不要让两边各抄一次，更不要手改表体。脚本放 `_tmp/`（⑭ 修补时去那里找它重跑），
+  但**别把 `_tmp/` 路径写进产物文件头** —— ⑮ 的内部词扫描对 `A1_` 文件不过豁免，会误报。
+  表题号 `表 N` 在生成时按正文已有的表数重算（模板里的 `表 10` 只是占位）。
+
+**③ `运行说明.md`（项目根）** —— 四段：文件准备（哪些是输入、哪些由程序生成）/
+安装依赖（从 `requirements.lock.txt` 抄精确版本，不写"最新版"）/ 运行程序（入口命令）/
+补充计算（灵敏度、二维对照这类不进主流程的脚本）。**文件清单必须是平铺后的名字** ——
+提交件里没有 `code/` 前缀，写成 `code/run_all.py` 就与实际对不上。
+
+**④ `paper/ai_tools/AI工具使用详情.pdf`** —— 内容 = 正文八节的展开：用了哪些工具、
+用在哪些环节、怎么核验。源路径已登记在 `lib/delivery/core.py` 的 `FIXED_SOURCES`
+（`paper/ai_tools/AI工具使用详情.pdf`），产出后自动进提交件根。正文 §八 只写一句摘要 +
+「详细使用情况见支撑材料（文件清单见表 N）」；末页表第 1 行就是它 —— 缺了这件就是悬空引用。
+
+**与 ⑭ 的边界**：塞不下 / 表题表头叠印 / 行数太长把表体顶出 P32 —— 版式事故归 ⑭
+（它优先重跑本阶段留下的生成脚本调行粒度）。本阶段只保证**内容与清单逐项一致**。
+
+> 循环依赖：清单表在 `正文.pdf` 里，而 `正文.pdf` 又在产物里。解法是清单是**声明** ——
+> 本阶段先声明、驱动按声明打包、`delivery check` 再逐项对账。
+> 声明的那一刻 `demo.html` 还不存在（⑯ 排在链尾）—— `lib/delivery/checks.py` 的
+> `LATE_ITEMS = {"demo.html"}` 让早期校验先跳过它；驱动在**⑨ 及之后的每个阶段收尾**都会
+> 重打包一次（`_maybe_collect_outputs`），⑯ 跑完那次它已就位，链尾 `final=True` 的
+> `package() + check()` 才逐项对账。
 
 ## 返修只动清单内（被门禁退回时必读）
 
@@ -174,19 +250,17 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 
 ## 模板族与 `_base` 共享层
 
-**本阶段只写 `sections/` 与摘要，不碰 `paper/_base/` 与 `main.tex` 的导言区** ——
-那是 14Layout-and-format 的领地（见 `../14Layout-and-format/SKILL.md` 的「阶段边界」小节）。你要做的只是复制模板、然后按宏写作。
+**本阶段写 `sections/`、`blocks/`（内容）与 `paper/paper-structure.tex`（生成物），不碰 `paper/_base/` 与 `main.tex` 外壳** ——
+后者是 14Layout-and-format 的领地（见 `../14Layout-and-format/SKILL.md` 的「阶段边界」小节）。复制模板后先按步骤 2.5 生成结构计划，再按宏写作。
 
-磁盘上存在的模板族：
+磁盘上现有的模板族（当前只有一族，作为默认）：
 
 ```text
 templates/zh/cumcm-latex/main.tex     # 全国大学生数学建模竞赛（电子版）
-templates/zh/default-latex/main.tex   # 通用中文
 ```
 
-未列出的赛事用 `zh/default-latex`，或在 `templates/zh/` 下新建一族。
-新建一族很便宜：复制 `default-latex/`，只改封面/标题编号/摘要页等赛事差异，
-通用排版规范全在 `_base/` 里，不必重抄。
+当前所有中文赛事先用 `zh/cumcm-latex` 作为默认模板。要新增模板族，在 `templates/zh/`
+下复制 `cumcm-latex/`，只改封面/标题编号/摘要页等赛事差异；通用排版规范全在 `_base/` 里，不必重抄。
 
 所有模板族共享三层基础（复制模板时必须把 `_base/` 一并复制到 `paper/_base/`）：
 
@@ -199,7 +273,7 @@ templates/_base/macros.tex      \papertitle \abstractcn \referencescn \appendixA
 templates/_base/math-style.tex  数学字体与环境
 ```
 
-`main.tex` 里是 `\input{_base/preamble.tex}` + `\input{_base/macros.tex}` + 赛事差异。
+`main.tex` 只保留稳定外壳：`\documentclass` + `_base` 输入 + 结果登记/断行/孤行/附录 labels + `\input{paper-structure.tex}`；标题、摘要、AI 段、参考文献、末页清单在 `blocks/`。模板族还带 `roles.json`（角色 → 文件/block 的实现表）与默认 `paper-structure.tex`；结构由本阶段步骤 2.5 生成，⑭ 只读。
 
 **用宏写作，不要手写环境**（format 阶段会核对）：
 
@@ -310,12 +384,12 @@ templates/_base/math-style.tex  数学字体与环境
 
 除非用户明确要求中文，否则 MCM/ICM/COMAP 一律使用英文。所有中文竞赛名称使用中文。
 
-模板键示例：
+模板键：
 
 ```text
 全国赛/国赛/CUMCM -> zh/cumcm-latex
-通用/其他赛事     -> zh/default-latex
-MCM/ICM/COMAP     -> 暂无英文族（照 default-latex 新建 en/mcm-latex）
+其他中文赛事       -> zh/cumcm-latex（当前唯一的默认族）
+MCM/ICM/COMAP     -> 暂无英文族；需要时在 templates/en/ 下新建（不要直接拿中文族交英文稿）
 ```
 
 ### 步骤 2：准备模板
@@ -323,26 +397,31 @@ MCM/ICM/COMAP     -> 暂无英文族（照 default-latex 新建 en/mcm-latex）
 用以下命令检查捆绑模板是否可访问（`SKILL_DIR` 为本 skill 所在目录）：
 
 ```bash
-ls "$SKILL_DIR/templates/zh/<竞赛>-latex/main.tex" 2>/dev/null && echo "OK" || echo "MISSING"
+ls "$SKILL_DIR/templates/zh/cumcm-latex/main.tex" 2>/dev/null && echo "OK" || echo "MISSING"
 ```
 
 - **文件存在（OK）**：建两个工程（正文一个、附录一个）——
   ```bash
   # ① 正文工程
-  cp -r "$SKILL_DIR/templates/zh/<竞赛>-latex/." paper/
+  cp -r "$SKILL_DIR/templates/zh/cumcm-latex/." paper/
   cp -r "$SKILL_DIR/templates/_base" paper/_base        # 别漏这行，否则 main.tex 编译不了
   rm -rf paper/appendix                                 # 附录工程不属于正文工程
   # ② 附录工程（独立编译成 附录A.pdf）
   mkdir -p paper_appendix
-  cp -r "$SKILL_DIR/templates/zh/<竞赛>-latex/appendix/." paper_appendix/
+  cp -r "$SKILL_DIR/templates/zh/cumcm-latex/appendix/." paper_appendix/
   cp -r "$SKILL_DIR/templates/_base" paper_appendix/_base
   cp paper/references.tex paper_appendix/ 2>/dev/null || true   # 附录里也要引文献时用
   ```
   > 提交件是两个 PDF —— `正文.pdf`（末页是支撑材料清单表）与
   > `附录A.pdf`（补充推导/图表）。`appendix/main.tex` 就是后者的入口，`\input{_base/…}`
   > 的相对路径在 `paper_appendix/` 内自洽，所以 `_base/` 要各复制一份。
-  没列出对应赛事的模板族就用 `zh/default-latex`，不要因为目录名不匹配就走下面的重建分支。
-- **文件不存在（MISSING）**：说明 skill 未完整安装或在沙箱中，此时依照本 SKILL.md 步骤 3 列出的对应节文件结构，从零重建最小可编译 LaTeX 框架，并在 `paper/` 内注明"重建自 default-latex 结构"。
+  当前默认族固定为 `zh/cumcm-latex`；新增族后才按步骤 1 的映射选择，不要因为目录名不匹配就走下面的重建分支。
+- **文件不存在（MISSING）**：说明 skill 未完整安装或在沙箱中，此时依照本 SKILL.md 步骤 3 列出的对应节文件结构，从零重建最小可编译 LaTeX 框架，并在 `paper/` 内注明"重建自 cumcm-latex 结构"。
+
+> **复制语义（P1）**：上面是**首次初始化**的整目录复制。重跑 ⑨ 时
+> `paper/main.tex`（⑭ 的稳定外壳）与 `paper/_base/` 已存在就**不要覆盖**——
+> 只重新生成结构文件并写内容；模板源更新由 ⑭ 显式刷新。要覆盖 `sections/`/`blocks/`
+> 里的旧内容先归档到 `_tmp/`。
 
 复制完先各空跑一次编译（两个工程都要），确认模板层是好的再开始写正文：
 
@@ -351,7 +430,23 @@ cd paper && xelatex -interaction=nonstopmode main.tex && xelatex -interaction=no
 ```
 
 编译不过说明 `_base/` 没复制全或本机缺字体 —— 那是环境问题，别开始写论文。
+自检：`paper/blocks/` 与 `paper/paper-structure.tex` 必须存在（模板族自带）；缺一是复制不完整。
 
+### 步骤 2.5：生成论文结构（角色化，必须在写正文前）
+
+复制模板后、步骤 3/4 之前运行：
+
+```bash
+python -m lib.paper_structure assemble --root . --template zh/cumcm-latex --out paper
+```
+
+- 输入：`templates/zh/cumcm-latex/roles.json`、模板默认 `structure.default.json`、
+  `reports/INTAKE.json`、`reports/ANALYSIS_MODELING_REPORT.md`；
+- 输出：`paper/paper-structure.tex`（角色顺序）与 `paper/structure.json`（启用角色、顺序、N、页标记、交付物）；
+- **题面没有分问时，`problem_count` 以 ② 建模设计在 `ANALYSIS_MODELING_REPORT.md §子问题` 的记录为准**；
+  `INTAKE.json` 的读数是审计字段，不强行决定论文问数；
+- 生成物**不许手改**；`paper/main.tex` 是 ⑭ 的稳定外壳，不要改；
+- 失败（例如 `problem_count` 无法确定，退出码 5）就停下修输入，**不要猜 N**。
 
 ### 步骤 3：构建图表规划
 
@@ -407,7 +502,7 @@ LaTeX 图片路径相对于编译工作目录：在 paper/ 内编译 main.tex �
 > **`templates/<语言>/<族名>/sections/*.tex` 是「骨架」，不是「参考」。**
 > `\section{}` / `\subsection{}` / `\subsubsection{}` 的名称、层级、顺序都是给定的 ——
 > 你只能往它们里面填正文，**不得新增、删除、改名、换顺序**。骨架注释里写的
-> 「每个问题的分析 ≤ 3 行、全节 ≤ 一页」「条数 3--6 条，每条不长」一律是硬约束，不是建议。
+> 「每个问题的分析 ≤ 3 行、全节 ≤ 一页半」「条数 3--5 条（最多 5 条），每条不长」一律是硬约束，不是建议。
 >
 > 骨架给定的结构如下，一律照办：
 >
@@ -463,16 +558,16 @@ LaTeX 图片路径相对于编译工作目录：在 paper/ 内编译 main.tex �
 >    不要自己写 `\vspace`，也不要写成「每条形如独立段落」。
 >    参考件量得：引入句 x0=94.9、条目 x0=102.7、折行 x0=88.9、条目间距 19.8pt（= 正文行距）。
 
-**各模板的章节文件名一律以该模板 `main.tex` 里的 `\input{}` 为准**——复制模板后照它列出的文件名建节即可，不必背清单。两个常用示例：
+**各模板的章节文件名一律以 `roles.json` 的角色映射和 `paper/paper-structure.tex` 为准**——不再从 `main.tex` 反推；复制模板后照角色表建节即可，不必背清单。两个常用示例：
 
 - 国赛（`zh/cumcm-latex`）正文工程：`1_restatement` `2_analysis` `3_assumptions` `4_symbols` `5_problem1…` `6_check` `7_evaluation` `A1_materials`
 - 国赛附录工程（`zh/cumcm-latex/appendix/`）：只有 `A_appendix`，复制到 `paper_appendix/` 后单独编译成 `附录A.pdf`
 
-> 两个工程、两个 PDF。正文末页是「支撑材料清单」表（`A1_materials`，由 `14Layout-and-format` 生成）；
+> 两个工程、两个 PDF。正文末页是「支撑材料清单」表（`A1_materials`，**由本阶段收尾生成** —— 见「交付层」节；⑭ 排版对其对账与版式修补）；
 > 详细的补充推导/图表进附录工程。源码不排进论文（`A_code` 与 `\appendixBcn` 不存在，不许再建）——
 > 代码以散装 `.py` 提交，在清单表里逐项登记。
-- 通用中文（`zh/default-latex`）以自己的 `main.tex` 里的 `\input{}` 为准
-- MCM/ICM：英文模板族尚未提供，需要时照 `default-latex` 新建 `en/mcm-latex`（共享 `_base`，只改封面/摘要页）
+- 其他中文赛事：当前复用 `zh/cumcm-latex`；新增族后以自己的 `roles.json` / `paper-structure.tex` 为准
+- MCM/ICM：英文模板族尚未提供；需要时在 `templates/en/` 下新建（共享 `_base`，只改封面/摘要页）
 
 子问题数不同时按 `ANALYSIS_MODELING_REPORT.md` 的子问题数量增删 `5_problemN` 节（本段第 5 章内，编号 `5.x`）。
 
@@ -540,12 +635,12 @@ grep -n '[「」『』]' paper/sections/*.tex
 **骨架对账（定稿前必做，一条命令）**：
 
 ```bash
-python lib/web/check_skeleton.py      # 标题骨架 + 符号表三列 + **假设条数≤5/有引入语** + **问题分析≤一页/每问≤3行** + 符号说明无开头总述 + 表并排，还是模板给定的那套吗？
+python lib/web/check_skeleton.py      # 标题骨架 + 符号表三列 + **假设条数≤5/有引入语** + **问题分析≤一页半/每问≤3行** + 符号说明无开头总述 + 表并排，还是模板给定的那套吗？
 ```
 
 它逐文件比对 `paper/sections/*.tex` 与模板骨架，报出多了哪个标题、少了哪个、哪个改了名、
 顺序哪里不对，并核「模型假设 **3–5 条（最多 5 条）**、每条不长、条目之间无空距」、
-「**问题分析全节 ≤ 989 字（一页）、每个问题的分析 ≤ 3 行**，并给出分节明细告诉你哪一段最胖」，以及符号表是不是三列（见下）。
+「**问题分析全节 ≤ 1480 字（一页半）、每个问题的分析 ≤ 3 行**，并给出分节明细告诉你哪一段最胖」，以及符号表是不是三列（见下）。
 不过就改回骨架（把自有结构并进已有小节），不要改骨架 —— 骨架是给定的格式口径，
 不是可以商量的默认值。
 
@@ -581,7 +676,7 @@ $Bi_h,\ Bi_m$ & 传热 Biot 数、传质 Biot 数 & 无量纲 \\
 约定只写一次，后文不再逐处重挂括号。表用 `longtable`（不作浮动体，否则会漂到下一节
 标题后面），表标题放在表外（`表 1\quad 符号说明`）—— 模板里都写好了，照抄骨架别自创。
 
-**写作完整性定稿自检（对照 norms）**：①假设节是否只收"建模约定"、判据口径已移正文、**条数 ≤5**、有引入语、条目之间无空距；②用了元启发/迭代算法的，正文或附录是否给了真实超参与复杂度（抄代码，别写默认值）；③CUMCM 摘要 ≤1 页**且版心填充 ≥0.90**（量法见步骤 6）、关键词 ≤6 且末行不是寡行；④灵敏度章节是否有 ≥1 张可视化（非纯数字表）；⑤正文/附录表格有无内部代号/阶段名/版本串（对照 `../_references/internal_leak_words.md`）；⑥符号表闭环：正文每个符号都在符号表、符号表每条都在正文出现；⑦定义式复算：凡给出指标定义式（如 gap=(UB−π)/UB），按该式复算表中至少一个数字，不符就改。⑧公式间距三条净空（文字→公式 / 公式→公式 / 公式→文字）抽查 2–3 页，三者应落在同一条带（≈20pt，跨度 ≤3pt）；超了先查"公式前面有没有空行""多个公式是不是写成了多个 equation"（见上文「公式写法纪律」），而不是去调排版参数。以上都是写作期就应满足的，不等 15Verification 兜底。
+**写作完整性定稿自检（对照 norms）**：①假设节是否只收"建模约定"、判据口径已移正文、**条数 ≤5**、有引入语、条目之间无空距；②用了元启发/迭代算法的，正文或附录是否给了真实超参与复杂度（抄代码，别写默认值）；③CUMCM 摘要 ≤1 页**且版心填充 ≥ target**（`min_kind_fill.abstract`：当前 `target 0.90 / hard 0.80`，以 `config/publication.json` 为准；量法见步骤 6）、关键词 ≤6 且末行不是寡行；④灵敏度章节是否有 ≥1 张可视化（非纯数字表）；⑤正文/附录表格有无内部代号/阶段名/版本串（对照 `../_references/internal_leak_words.md`）；⑥符号表闭环：正文每个符号都在符号表、符号表每条都在正文出现；⑦定义式复算：凡给出指标定义式（如 gap=(UB−π)/UB），按该式复算表中至少一个数字，不符就改。⑧公式间距三条净空（文字→公式 / 公式→公式 / 公式→文字）抽查 2–3 页，三者应落在同一条带（≈20pt，跨度 ≤3pt）；超了先查"公式前面有没有空行""多个公式是不是写成了多个 equation"（见上文「公式写法纪律」），而不是去调排版参数。以上都是写作期就应满足的，不等 15Verification 兜底。
 
 ### 步骤 5：参考文献
 
@@ -609,15 +704,33 @@ $Bi_h,\ Bi_m$ & 传热 Biot 数、传质 Biot 数 & 无量纲 \\
 
 在所有章节完成后撰写中文摘要或英文 Summary Sheet。必须包含每个子问题的方法和精确的数值结果。
 
-摘要写在 `main.tex` 的 `\abstractcn{…}` 里（不在 `sections/` —— 返修轮次只改 `sections/` 时最容易把摘要整个漏掉）。**写完必须量**：`cd paper && xelatex -interaction=nonstopmode main.tex` 两遍 → `python -m lib.publication report` → 读 `min_kind_fill` 的 `fill` 与 `rows`（`rows` = 还差几行），不够就按行数补实质内容再量一遍，直到 ≥0.90 或确认已经写无可写（写无可写时把差值写进 `WRITING_PLAN` 的说明，别默默收工）。
+摘要写在 `paper/blocks/abstract.tex` 的 `\abstractcn{…}` 里（不在 `sections/`，也不在 `main.tex` —— 返修轮次只改 `sections/` 时最容易把摘要整个漏掉）。**写完必须量**：`cd paper && xelatex -interaction=nonstopmode main.tex` 两遍 → `python -m lib.publication report` → 读 `min_kind_fill` 的 `fill` 与 `rows`（`rows` = 还差几行），不够就按行数补实质内容再量一遍，直到 ≥ target（`min_kind_fill.abstract`，当前 `target 0.90 / hard 0.80`）或确认已经写无可写（写无可写时把差值写进 `WRITING_PLAN` 的说明，别默默收工）。
 
 **公式写法纪律 · 第三条**：**多行 display 一律 `gather`，禁止 `equation` 套 `aligned`**：`aligned` 把整块包成一个盒子 ⇒ 公式后的净空被吃到 **−8.4pt**（压下一行正文）；换 `gather` 为 **+13.8pt**，末行再改平（别带 `\frac`）**+19.0pt**。**别按环境名一刀切**（三行的 `aligned` 是 +11.1/+13.3pt 正常）—— 收尾用 `python -m lib.publication check` 量几何净空（判据已机械化为「< 3pt 判失败」）。手改治横向超栏时改成 aligned 的式子，修回 gather 时会被漏下（见 `reports/EDITORIAL_CHANGES.md`）⇒ 别再手改写法，按纪律写。
 
 公式写法纪律（两条硬规矩，成因与量测见 `docs/WRITING_QUALITY.md`「公式的三种间距」）：① 公式紧跟引出它的那句话，中间不留空行 —— 空一行公式就自成一段，`\abovedisplayskip` 完全失效，净空从 13pt 变成 23pt 以上；② 连着写的多个公式合成一个 `gather`（每行一条、`\\` 换行、`\label` 留在自己那行），不要写成多个 `equation`、更不要在它们之间留空行 —— 公式↔公式的净空：三个 equation 加空行 53.5/45.9pt，删空行 26.0/33.5pt，**合成一个 gather 21.6/18.7pt**（与"公式↔文字"的 20pt 同档）。gather 逐行编号，编号与原来逐个 equation 相同，引用不受影响。
 
-摘要与关键词纪律：CUMCM 摘要页**限 1 页、而且必须写满这一页**。**硬指标 = 版心填充率 ≥ 0.90**，用 `python -m lib.publication report` 的 `min_kind_fill` 核（它按本文实际版心量，不靠字数估算）；**< 0.80 会被 ⑪ 判死并回退到本阶段重写**。标尺：参考稿 92.7%，78.4% 即判"少"。按本模板版面 0.90 ≈ 整页 1050 个非空白字符。写满的办法是加实质内容（每问的方法要点 + 结论数字 + 该问的检验/灵敏度），不是放大字号/加行距；「850–950 字内安全」读起来是上限、与本节口径不符，**别再按它写**。关键词 ≤6 个、单独一行，别让最后一行只剩一两个字，且每个都要"本题特有"：题面对象 / 本文模型特征 / 本文真用的关键方法。拒绝"任何论文都能写"的通用词（灵敏度分析、数值模拟、优化分析、数学建模 之类，属凑数）；优选具体短语（`动域与材料坐标` > `材料坐标`、`阈值求根` > `事件定位`）。参照件样例：热风干燥；变物性耦合传热传质；有限体积法；动域与材料坐标；阈值求根。字数/内容规范见 norms「摘要写作要点」。
+摘要与关键词纪律：CUMCM 摘要页**限 1 页、而且必须写满这一页**。**硬指标 = 版心填充率 ≥ target**（`min_kind_fill.abstract`：当前 `target 0.90 / hard 0.80`，以 `config/publication.json` 为准），用 `python -m lib.publication report` 的 `min_kind_fill` 核（它按本文实际版心量，不靠字数估算）；**< hard 会被 ⑮ 的机械地板判死并回退到本阶段重写**。标尺：参考稿 92.7%，78.4% 即判"少"。按本模板版面，target ≈ 整页 1050 个非空白字符。写满的办法是加实质内容（每问的方法要点 + 结论数字 + 该问的检验/灵敏度），不是放大字号/加行距；「850–950 字内安全」读起来是上限、与本节口径不符，**别再按它写**。关键词 ≤6 个、单独一行，别让最后一行只剩一两个字，且每个都要"本题特有"：题面对象 / 本文模型特征 / 本文真用的关键方法。拒绝"任何论文都能写"的通用词（灵敏度分析、数值模拟、优化分析、数学建模 之类，属凑数）；优选具体短语（`动域与材料坐标` > `材料坐标`、`阈值求根` > `事件定位`）。参照件样例：热风干燥；变物性耦合传热传质；有限体积法；动域与材料坐标；阈值求根。字数/内容规范见 norms「摘要写作要点」。
 
 假设节纪律见 norms「假设节编制纪律」——假设只收"建模约定"（题面给定与物理必然不放节），**最多 5 条**，**且每条控制在 1.5–2 行（约 55–80 字）**：一句话"假设什么" + 一句话"为什么可以"，量化影响（"放宽后位移 3 h"这类）挪到正文或附录。**6 条全是 3 行的写法不合格，每条要压到 1.5–2 行。**
+
+### 步骤 7：交付层收尾（提交清单、末页清单表、运行说明、AI 使用详情）
+
+正文与摘要定稿后，按「交付层：提交清单与正文末页清单表」一节的规则收尾。顺序有讲究：
+
+1. 写 `reports/SUBMISSION_MANIFEST.json`（**全量声明**，含要等 ⑯ 才产出的 `demo.html` —— 校验端按 `LATE_ITEMS` 跳过它）；
+2. 写一个幂等生成脚本（读清单 → 渲染表体），落 `paper/sections/A1_materials.tex`；
+3. 产出 `paper/ai_tools/AI工具使用详情.pdf` 与项目根的 `运行说明.md`；
+4. 写标题后运行 `python -m lib.paper_structure sync-title --root . --out paper`，
+   把 `paper/blocks/title.tex` 的 `\papertitle` 回填 `paper/structure.json.title`
+   （交付层据此命名正文 PDF）；然后重编译两个工程（各两遍）→
+   `python -m lib.publication map <页面区段JSON>` 重绑
+   `paper/page-map.json` → `python -m lib.publication report` 复核页数口径
+   （末页清单表要落进正文工程最后一页，别把总页数顶出去）；
+5. 自检三方对账：清单里**除 `demo.html` 外**的每个 `path` 在盘上有源（`demo.html` 要等 ⑯，
+   按 `LATE_ITEMS` 跳过 —— **不许**因为「盘上没有」就删清单里那一行）；末页表逐项能在
+   清单里找到；末页表覆盖全部支撑材料（`.py` 不许漏、`AI工具使用详情.pdf` 在第 1 行、
+   正文 PDF 不入表）。
 
 ## LaTeX 写作要点
 

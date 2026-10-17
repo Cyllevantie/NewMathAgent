@@ -41,7 +41,7 @@
 7. 换题：`request/`、`data/` 里现在是上一道题的题面与附件，开跑前替换；`runtime/periodic_check.py` 里的"串题残留"词表也要跟着题换（否则哨兵每次误报）。
 8. 放在可写目录（别放 `Program Files`、只读共享、或实时同步/被反病毒锁的目录 —— 驱动 import 期就要建目录写文件）。
 9. 双击 `run.bat` —— 起驱动 + 等就绪 + 打开面板。起不来它会列出按概率排的原因。
-10. 自检：`run.ps1 runtime/doctor.py`（依赖逐项实际导入）、`python lib/web/healthcheck.py`（96 项结构检查）。
+10. 自检：`run.ps1 runtime/doctor.py`（依赖逐项实际导入）、`python lib/web/healthcheck.py`（当前 111 项结构检查）。
 
 驱动本身是 Windows 专有的（`taskkill`、`ctypes`/`wintypes`、`winreg`、PowerShell 抓进程表），迁移目标得是 Windows。
 

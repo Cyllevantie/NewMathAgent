@@ -13,7 +13,6 @@
 """
 import shutil
 import subprocess
-import sys
 import unittest
 from pathlib import Path
 
@@ -50,6 +49,15 @@ class FrontendRenderTests(unittest.TestCase):
         """
         rc, out = _run("frontend_id_order_check.js")
         self.assertEqual(rc, 0, "标记与脚本的先后顺序不符：\n" + out[-1500:])
+
+    def test_the_viewer_switches_to_the_report_when_a_report_is_clicked(self):
+        """查看器页签真跑：先开图片/PDF、再点左侧报告，必须跳回「报告查看」（用户 2026-10-16 报的）。
+
+        纯字符串哨兵钉不住这个（`if(curTab!=='md')` 写没写、条件写反没有，只有真跑才看得出）；
+        夹具里两条对照：非 md 页签下 renderFile 仍走原文、`img=true` 的图片路径不受影响。
+        """
+        rc, out = _run("frontend_viewer_check.js")
+        self.assertEqual(rc, 0, "查看器切页签夹具失败：\n" + out[-1500:])
 
     def test_the_github_badge_sits_centered_with_a_closable_card(self):
         """第二排正中的 GitHub 标识 + 赠言浮层。

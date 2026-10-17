@@ -62,7 +62,7 @@ XeLaTeX/LuaLaTeX 下样式使用 TeX Gyre Termes Math，与国赛模板的 Times
 - **禁止用 `\vspace` / `\par\vspace` 补下净空**：正文恰在 30 页上限，再多 1pt 就多出一页
   （14Layout-and-format 的三条沙箱路径都验过）。
 
-配套的排版参数（`_base/preamble.tex`，⑨ 不碰、⑩ 独占）已按上面三条重设：
+配套的排版参数（`_base/preamble.tex`，⑨ 不碰、⑭ 独占）已按上面三条重设：
 `\abovedisplayskip=12pt`、`\belowdisplayskip=14pt`、`\jot=14pt`，并在 `equation/align/gather`
 环境内局部恢复正常行距保护（正文那套 `\lineskiplimit=-20pt` 会让 `align` 首行上方多出
 28.8pt，与这两个参数都无关 —— 病因与判据写在 preamble 的注释里）。

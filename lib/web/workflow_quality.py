@@ -23,7 +23,7 @@ BUILD_SUFFIXES = {".aux", ".toc", ".synctex", ".out", ".log", ".xdv", ".fls",
 
 
 def _is_paper_build_output(p):
-    """paper/ 下由 xelatex 每次编译重写的文件。
+    """paper/ 与 paper_appendix/ 下由 xelatex 每次编译重写的文件。
 
     为什么必须排除：15Verification 的 SKILL **要求**跑 xelatex 编译论文（skills/15Verification/SKILL.md「Step 7:
     编译」，且「tex 无而 pdf 有 → 先重编译再判」），而 main.log 首行带编译时刻、main.pdf 带
@@ -31,6 +31,8 @@ def _is_paper_build_output(p):
     ① verify 会在跑完后被判"输入发生变更" → 整链在最后一关硬挂、交付包永不收集；
     ② write 的回执下一轮必然失配 → 整篇论文被无谓重写。
     main.tex 保留（改 tex 才是真的改论文），figures/ 里的图保留（不是 main 的构建产物）。
+    `paper_appendix/` 同理：它的 main.pdf/.aux/.log 也是编译副产物 —— ⑯ demo 会重编
+    `附录A.pdf`，若这些字节进指纹，重启就会连锁重跑 ⑨/⑭/⑮（2026-10-17 审计实测）。
     """
     if p.name.endswith(".synctex.gz"):
         return True
@@ -82,7 +84,7 @@ def fingerprint(root, rels, exclude=()):
             if _rel in excluded or any(
                     _rel.startswith(e.rstrip("/") + "/") for e in excluded if e):
                 continue
-            if local.parts[0] == "paper" and _is_paper_build_output(p):
+            if local.parts[0] in ("paper", "paper_appendix") and _is_paper_build_output(p):
                 continue
             if not p.resolve().is_relative_to(root):
                 raise ValueError(f"Linked path outside workspace: {local}")

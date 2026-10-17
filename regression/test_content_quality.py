@@ -24,6 +24,22 @@ STAGES = ["intake", "literature", "analysis", "review", "code", "audit", "robust
           #   先后比较（backward/forward 判定），顺序漂了会让路由语义静默失真。
 
 
+class StageTableCopyTest(unittest.TestCase):
+    """本地 STAGES 副本必须与驱动一致（2026-10-17 补）。
+
+    这份副本参与 category→返修阶段的先后比较，顺序漂了会让路由语义**静默**失真；
+    `test_defect_fixtures` 早就有一条 AST 对账，这份一直只有注释、没有判据 —— 补上，
+    加阶段漏改这里会直接红。
+    """
+
+    def test_local_stages_match_driver(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))   # 单跑本模块时 regression/ 不在 sys.path
+        from test_workflow import load_server
+        with tempfile.TemporaryDirectory() as tmp:
+            srv = load_server(Path(tmp))       # 隔离工作区：别拿真仓库当 ROOT 跑模块级自检
+            self.assertEqual(STAGES, [st["id"] for st in srv.STAGES])
+
+
 def make_root():
     root = Path(tempfile.mkdtemp())
     (root / "request").mkdir()

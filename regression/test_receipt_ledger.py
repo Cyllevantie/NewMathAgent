@@ -174,6 +174,19 @@ class ReceiptLedgerTests(unittest.TestCase):
         self.ledger([{"id": i, "disposition": "not_applied", "reason": "x"} for i in RECEIPT_IDS])
         self.assertTrue(any("指错了" in p for p in self.check()))
 
+    def test_an_unrelated_json_in_the_feedback_dir_is_not_a_receipt(self):
+        """`feedback/` 里多出**别的** `.json`（路由档、调试档…）不许被当成一份回执。
+
+        原来是 `base.glob("*/*/*.json")` 无差别收、`receipts[-1]` 取 mtime 最新的那个 ——
+        于是只要那个目录里多一个 `.json`，台账声明的 receipt 就**恒判"指错了"**，
+        ②建模设计收尾当场硬挂（2026-10-15 往那儿加路由档时真踩过，整条链白跑）。
+        这条守的是"多写一个文件不该能废掉整条链"。
+        """
+        (self.tmp / "runtime/quality/feedback/run1/abc123/route.json").write_text(
+            json.dumps({"judge": "audit", "target": "code"}), encoding="utf-8")
+        self.ledger([{"id": i, "disposition": "not_applied", "reason": "x"} for i in RECEIPT_IDS])
+        self.assertEqual(self.check(), [], "一个无关的 json 把台账判成了'receipt 指错了'")
+
     def test_missing_ledger_is_a_problem_when_a_receipt_exists(self):
         """带着回执跑却不交台账 → 必须报（否则等于没交代）。"""
         probs = self.check()

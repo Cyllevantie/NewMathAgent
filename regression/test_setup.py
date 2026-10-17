@@ -15,6 +15,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
@@ -465,6 +466,27 @@ class WipeEverythingTests(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["source_digest"],
                          self.s._source_digest(), "记的不是当前 digest ⇒ 下次 ▶ 会被当成换题")
 
+    def test_the_previous_problem_id_does_not_leak_into_the_next_one(self):
+        """「删除全部内容」要清题目标识 —— 它是**每题**的，面板已不再提供编辑入口。
+
+        2026-10-17 实盘残留：`config/delivery.local.json` 与 `runtime/quality/workspace.json`
+        里都留着上一题的 `seeing-sound-2026-10-15`，`/api/delivery` 原样回给面板；
+        下一题会继承这个名字，而用户没有任何地方能改。模板是本机偏好，必须留下。
+        """
+        _seed_a_run_workspace(self.s)
+        cfg = self.root / "config/delivery.local.json"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text(json.dumps({"output_dir": "", "problem_id": "上一题",
+                                   "template": "zh/cumcm-latex"}, ensure_ascii=False),
+                       encoding="utf-8")
+        self.wipe()
+        self.assertEqual(json.loads(cfg.read_text(encoding="utf-8"))["problem_id"], "",
+                         "config/delivery.local.json 还留着上一题的标识")
+        ws = json.loads((self.root / "runtime/quality/workspace.json").read_text(encoding="utf-8"))
+        self.assertEqual(ws["problem_id"], "", "workspace.json 还留着上一题的标识")
+        self.assertEqual(json.loads(cfg.read_text(encoding="utf-8"))["template"],
+                         "zh/cumcm-latex", "模板是本机偏好，不该被一起清掉")
+
     def test_the_memory_state_types_match_their_writers(self):
         """删完之后的内存态必须能被**后续动作**直接用，而不只是"看着像清了"。
 
@@ -490,6 +512,28 @@ class WipeEverythingTests(unittest.TestCase):
         self.wipe()
         out = self.wipe()
         self.assertTrue(out["ok"])
+
+    def test_a_locked_path_is_reported_instead_of_silently_left(self):
+        """删不掉的项必须回给面板 —— 警告不能只写日志：本函数随后会删掉 `web_run.log`。
+
+        2026-10-17 真事故：服务端 stdout 被重定向到 `_tmp/server_restart.out.log`，
+        Windows 下这个打开的文件句柄让 `shutil.rmtree(_tmp)` 整体失败；`_rm` 只 log 了
+        一条警告，而第 ④ 步紧接着删掉 `runtime/web_run.log`，面板只报「删了 17 项」，
+        `_tmp/` 里 298 个旧文件原封不动。证伪：把 `failed.append` 去掉、只留 `log(...)`，
+        本条的 `assertIn` 立刻红。
+        """
+        _seed_a_run_workspace(self.s)
+        real_rmtree = shutil.rmtree
+
+        def fake(path, *a, **kw):
+            if Path(path).name == "_tmp":
+                raise PermissionError("被别的程序占着")
+            return real_rmtree(path, *a, **kw)
+
+        with mock.patch.object(self.s.shutil, "rmtree", side_effect=fake):
+            out = self.wipe()
+        self.assertIn("_tmp/", out["failed"], "删不掉的项没回给面板")
+        self.assertTrue((self.root / "_tmp").exists(), "对照组：失败的项确实还在盘上")
 
     def test_the_same_disk_under_the_other_scope_keeps_the_problem(self):
         """**对照组**：同一份盘面走「不归档删除本题」⇒ 题面、草稿、往届归档都还在。
@@ -977,6 +1021,21 @@ class SetupPanelFrontendTests(unittest.TestCase):
         self.assertIn("$('brand').onclick", h, "主界面标题没接点击（回不去展示页）")
         self.assertIn("$('splash_brand').onclick", h, "展示页标题没接点击（回不去主界面）")
 
+    def test_the_delivery_panel_uses_a_template_selector_and_time_only_archive_names(self):
+        """产物面板：模板下拉替代题目标识；归档名留空 = 时间。"""
+        h = _html()
+        self.assertIn('id="dv_template"', h)
+        self.assertIn('id="template_btn"', h, "缺少「选择比赛/输出模板」触发按钮")
+        self.assertIn('id="template_pop"', h, "缺少模板下拉浮层")
+        self.assertNotIn('id="dv_pid"', h, "题目标识框已删，不应再长回来")
+        self.assertIn("选择比赛/输出模板", h)
+        self.assertIn("_tplBtn.onclick", h, "模板框没接触发浮层")
+        self.assertIn("tpl-row", h, "模板浮层没有行样式/结构")
+        self.assertIn("归档名（可留空", h)
+        self.assertIn("body:JSON.stringify({output_dir:$('dv_dir').value, name})", h)
+        self.assertIn("$('delivbtn').title=title", h)
+        self.assertIn("下一个归档名", h)
+
     def test_the_config_form_has_the_three_keys_and_the_1m_box(self):
         h = _html()
         for token in ('id="cf_base"', 'id="cf_key"', 'id="cf_model"', 'id="cf_1m"',
@@ -1047,6 +1106,52 @@ class SetupPanelFrontendTests(unittest.TestCase):
             self.assertIn(token, h, f"目录选择器缺少 {token}")
         self.assertIn("/api/browse", h, "没接列目录端点")
 
+    def test_the_upload_panel_folds_away_after_the_intake_confirm(self):
+        """⓪ 读完题、人确认过之后，「上传赛题」那块要**自动收起**（用户 2026-10-15 要求）。
+
+        收起走的是与 `#up_close` 同一条路（`display='none'`）—— **只是收起不是清空**，
+        点「⬆ 上传赛题」随时能再展开（换题时还要用）。
+        对照组：`confirm` 以外的动作**不许**碰它（点「再试一次」时用户很可能要重新选文件夹）。
+        """
+        h = _html()
+        seg = h[h.index("if(r.ok){", h.index("async function decide(")):]
+        seg = seg[:seg.index("}catch")]
+        self.assertIn("action==='confirm'", seg, "没把'收起面板'限定在 ⓪ 确认那一下")
+        self.assertIn("uppanel", seg, "确认之后没把上传面板收起来")
+        self.assertIn("dvPanel(false)", seg, "确认之后没把「产物」面板一起收起来（两块是一起展开的）")
+
+    def test_the_two_setup_panels_open_and_close_together(self):
+        """「上传赛题」与「产物」是**一对**：点上传时两块一起展开、各自有 ✕、⓪ 确认后一起收。
+
+        （用户 2026-10-15 的要求：换题时这两件事总是连着做，分两次点等于把一件活拆成两步；
+        收的时候只收一半也会留一块空占着版面。）
+        走的都是同一个出口 `dvPanel()` —— 三处各写一遍 `display=…` 迟早有一处忘了同步刷新。
+        """
+        h = _html()
+        self.assertIn('id="dv_close"', h, "「产物」面板右上角没有 ✕")
+        self.assertIn("$('dv_close').onclick", h, "那个 ✕ 没接事件")
+        seg = h[h.index("$('upbtn').onclick"):]
+        seg = seg[:seg.index("\n", seg.index("$('upbtn').onclick"))]
+        self.assertIn("dvPanel(true)", seg, "点「上传赛题」时没把「产物」一起展开")
+        # 出口只能有一个：`toggleDelivery` 与 ✕ 都必须走 `dvPanel`
+        self.assertIn("function dvPanel(", h, "没有统一出口")
+        self.assertIn("dvPanel(p.style.display==='none'", h, "开关没走统一出口")
+
+    def test_the_start_button_warns_when_no_model_config_is_found(self):
+        """点 ▶ 之前必须查一次模型配置：三键不齐就弹确认框，而不是闷头起链。
+
+        为什么要它：2026-10-15 的现场是"`.env` 里有端点、没密钥"（跑的其实是环境里那把），
+        而点 ▶ 时**一道校验都没有** —— 用户会等半小时才发现某个阶段在报"密钥无效"。
+        **只提示、不硬拦**：机器上的 Claude Code 自己已登录是合法路径，那种情况下三键本来就是空的。
+        """
+        h = _html()
+        seg = h[h.index("$('start').onclick"):]
+        seg = seg[:seg.index("\n};")]
+        self.assertIn("/api/model_config", seg, "起链前没查模型配置")
+        self.assertIn("configured", seg, "没判'配没配'")
+        self.assertIn("confirm(", seg, "没弹确认框")
+        self.assertIn("splShow('config')", seg, "没给'回开屏页去配'的出口")
+
     def test_the_wipe_button_needs_both_a_confirm_and_the_word(self):
         """删除是**不可逆**的，所以它必须过两道：`confirm` 弹窗 + 手输暗号。"""
         h = _html()
@@ -1070,6 +1175,7 @@ class SetupPanelFrontendTests(unittest.TestCase):
         self.assertIn("prompt(", seg, "删除全部没有要求手输暗号")
         self.assertIn("/api/wipe-all", seg, "面板没打 /api/wipe-all")
         self.assertIn("删除全部", seg, "暗号文案不是「删除全部」")
+        self.assertIn("d.failed", seg, "删不掉的项没显示在面板上")
         self.assertNotIn("删除本题", seg, "两个按钮共用了同一个暗号 —— 手滑点错就拦不住了")
 
     def test_the_back_exit_starts_the_main_ui(self):
@@ -1131,6 +1237,452 @@ class SetupPanelFrontendTests(unittest.TestCase):
         self.assertIn("new EventSource('/api/stream')", start)
         self.assertNotIn("new EventSource('/api/stream')", begin,
                          "EventSource 只能在 startMain 里建 —— 别的地方建就等于绕过了开屏门控")
+
+
+class RecoveredRepairHintTests(unittest.TestCase):
+    """重启后把"这一阶段还欠一次返修"从**盘上**认回来（`_recovered_repair_hint`）。
+
+    事故背景（2026-10-15）：⑤ 判 NEEDS_FIX(6 条) → 托管自动回退 ④编码计算 → ④ 跑到一半
+    **驱动被阶段 agent 误杀**。返修提示是内存态 ⇒ 重启后 ④ 会被当成普通重跑：照样跑、
+    照样被 ⑤ 重判，但不知道上一轮被点名的 6 条是什么 ⇒ 白烧一轮。
+
+    三条硬边界各配一条对照（只认门禁 / 只在该阶段没交付时生效 / 只取最新），
+    外加一条**防泄漏**的硬断言：认回过程一个字节都不许往 `reports/` 写。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for rel in ("CLAUDE.md", "AGENTS.md"):
+            shutil.copy2(PROJECT / rel, self.root / rel)
+        for rel in ("skills", "docs"):
+            shutil.copytree(PROJECT / rel, self.root / rel)
+        self.s = load_server(self.root)
+
+    def _feedback(self, judge, target, uid="aaa111", mtime=None):
+        """造一份门禁回执（`gate_decision.json`）**与它的路由档**，照 `_save_feedback` 的落法。
+
+        路由档刻意**不在** `feedback/` 里 —— 那个目录被 `receipt_ledger` 无差别 glob 着，
+        多放一个 `.json` 就会让②建模设计的台账自检误判"receipt 指错了"（见 `_save_feedback` 的注释）。
+        """
+        folder = self.s.LOG_DIR / "quality" / "feedback" / "run1" / uid
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "gate_decision.json").write_text(json.dumps(
+            {"schema_version": 2, "stage": judge, "status": "NEEDS_FIX",
+             "issues": [{"id": "R1", "fix": "把 §3 的系数重算"}]}, ensure_ascii=False), encoding="utf-8")
+        route = self.s.LOG_DIR / "quality" / "routes" / "run1" / (uid + ".json")
+        route.parent.mkdir(parents=True, exist_ok=True)
+        route.write_text(json.dumps(
+            {"judge": judge, "target": target, "run_id": "run1",
+             "at": "2026-10-15T19:02:52"}, ensure_ascii=False), encoding="utf-8")
+        if mtime:
+            os.utime(route, (mtime, mtime))
+        return folder, route
+
+    def test_the_route_file_stays_out_of_the_feedback_glob(self):
+        """**防误伤**：路由档不许落在 `feedback/` 里 —— 那个目录被返修台账无差别 glob 着，
+        多一个 `.json` 就会让②建模设计的台账自检判「receipt 指错了」并当场硬挂。"""
+        self._feedback("audit", "code")
+        stray = sorted(p.name for p in (self.s.LOG_DIR / "quality" / "feedback").rglob("*.json"))
+        self.assertEqual(stray, ["gate_decision.json"],
+                         f"feedback/ 里多出了 json（{stray}）—— 台账会把最新的那个当成回执")
+
+    def _stage(self, sid):
+        return next(x for x in self.s.STAGES if x["id"] == sid)
+
+    def _deliver(self, sid):
+        """让该阶段**真的交付过一次**：造产物 + 走真写点记回执（digest 由驱动自己算，不手搓）。"""
+        st = self._stage(sid)
+        if sid == "code":
+            (self.root / "code").mkdir(exist_ok=True)
+            (self.root / "code/q1.py").write_text("print(1)\n", encoding="utf-8")
+            (self.root / "reports").mkdir(exist_ok=True)
+            (self.root / "reports/RESULTS_REPORT.md").write_text("结论：PASS\n" + "证据 " * 60, encoding="utf-8")
+        self.s._save_receipt(st)
+
+    def test_it_recovers_the_unsettled_receipt_from_disk(self):
+        folder, _route = self._feedback("audit", "code")
+        hint = self.s._recovered_repair_hint("code")
+        self.assertTrue(hint, "盘上那份未结清的回执没被认回来")
+        self.assertIn(str(folder.relative_to(self.root)).replace("\\", "/"), hint.replace("\\", "/"),
+                      "提示里没给出回执目录 —— 阶段 agent 找不到那份清单")
+        self.assertIn("返修", hint)
+
+    def test_it_never_writes_into_reports(self):
+        """**防泄漏**：认回过程只读 `runtime/quality/feedback/`，一个字节都不许往 `reports/` 写。
+
+        往 `reports/` 放交回单正是"交回单泄漏到下游"那类坑的入口 —— 一个留在盘上的
+        `HANDBACK_REQUEST.md` 会被下游阶段读到、误认成"给我的返修单"。
+        """
+        self._feedback("audit", "code")
+        before = sorted(p.relative_to(self.root).as_posix() for p in (self.root / "reports").rglob("*")) \
+            if (self.root / "reports").is_dir() else []
+        self.s._recovered_repair_hint("code")
+        after = sorted(p.relative_to(self.root).as_posix() for p in (self.root / "reports").rglob("*")) \
+            if (self.root / "reports").is_dir() else []
+        self.assertEqual(after, before, "认回回执时往 reports/ 写了东西 —— 那正是泄漏的入口")
+
+    def test_a_non_gate_judge_is_ignored(self):
+        """边界①：**只认门禁的裁决**。非门禁的"裁决"是空壳，不构成返修要求。"""
+        self._feedback("drawio", "code")          # ⑦技术路线图：gate=None
+        self.assertIsNone(self.s._recovered_repair_hint("code"),
+                          "拿非门禁的裁决当返修单了")
+
+    def test_an_already_delivered_stage_is_not_pressed_again(self):
+        """边界②之一：这一阶段**已经交付过**（手上有回执）⇒ 不许再拿旧回执压它。
+
+        这条同时就是"消费标记"：交付了就不再提示，不需要额外状态。
+        """
+        self._feedback("audit", "code")
+        self._deliver("code")
+        self.assertTrue(self.s._receipt_store().records.get("code"), "夹具没造成'有回执'")
+        self.assertIsNone(self.s._recovered_repair_hint("code"),
+                          "已经交付过还被旧回执压着 ⇒ 会凭空多烧一轮返修")
+
+    def test_a_stage_whose_downstream_took_over_is_not_pressed_again(self):
+        """边界②之二（**这条是复核抓出来的**）：回执与盘面**对不上**、但**回复存在**时，也不认回。
+
+        判据必须是"**根本没有回执**"，不是"回执对不上"—— 因为 `run_stage` 那五条复用近路
+        （豁免/回执复用/stale-instr/taken-over/读题）的**共同前置都是 `not round_hint`**：
+        我这条兜底一给出非空提示，它们**全部失效**。最要命的是 taken-over ——
+        ⑨论文撰写 被 ⑭排版 改过 `paper/` 之后，它的回执 `outputs` 半份**必然**失配
+        （这正是 taken-over 存在的理由），按"对不上"判它欠返修就会把整篇论文重新拉起来跑。
+        """
+        self._feedback("audit", "code")
+        self._deliver("code")
+        # 让下游改掉产物：回执还在，但与盘面对不上了
+        (self.root / "code/q1.py").write_text("print(2)\n", encoding="utf-8")
+        self.assertEqual((self.root / "code/q1.py").read_text(encoding="utf-8"), "print(2)\n",
+                         "夹具没把盘面改掉（'回执与盘面对不上'是这条的前提）")
+        self.assertTrue(self.s._receipt_store().records.get("code"), "夹具把回执弄丢了")
+        self.assertIsNone(self.s._recovered_repair_hint("code"),
+                          "回执对不上（下游接管/输入变了）也被当成欠返修 ⇒ 会推翻下游的成果")
+
+    def test_the_panel_gets_the_judgements_back_after_a_restart(self):
+        """重启后**面板上那个 📝 角标与判词**要从盘上恢复 —— 它原本是内存态，重启即清零。
+
+        与提示词共用 `_unsettled_feedback` 同一份判据：各写一套迟早自相矛盾
+        （"提示词说欠返修、面板说干净"），而人**只看得到面板那一半**。
+        模拟重启的手法照本仓既有做法：在**同一个 root** 上重新 exec 一遍 server.py。
+        """
+        self._feedback("audit", "code")
+        again = load_server(self.root)              # = 重启（state 全新，模块级反推会跑一遍）
+        issues = (again.state.get("issues_by_stage") or {}).get("code") or []
+        self.assertTrue(issues, "重启后面板上的判据没了 —— 人看到的是一排干净的阶段")
+        self.assertIn("把 §3 的系数重算", json.dumps(issues, ensure_ascii=False))
+
+    def test_the_panel_is_not_scared_by_a_settled_receipt(self):
+        """两条对照：非门禁的判官不显示、**已经交付过**的不显示。
+
+        少了它们，一个"只要盘上有回执就往面板上挂 📝"的实现照样能让正题绿 ——
+        而那种实现会让人天天看见一排并不存在的待办。
+        """
+        self._feedback("drawio", "code")            # ⑦ 不是门禁
+        again = load_server(self.root)
+        self.assertFalse((again.state.get("issues_by_stage") or {}).get("code"),
+                         "非门禁的裁决被当成待办了")
+        self._deliver("code")                       # 交付过 ⇒ 不该再挂着
+        again2 = load_server(self.root)
+        self.assertFalse((again2.state.get("issues_by_stage") or {}).get("code"),
+                         "已经交付过的阶段还挂着旧判据")
+
+    def test_a_human_decision_beats_a_stale_receipt(self):
+        """人工放过它的（「接受并披露」/ attest）⇒ 旧回执**不许**再把它拖去返修。
+
+        这是"边界②"的例外，而且是**必须显式写**的一条：非空的 round_hint 恰好会关掉
+        `run_stage` 里的豁免近路（`if _wrec and not round_hint and …`）⇒ 少了这一条，
+        人明明点过「接受并披露」，一次重启之后又会被旧回执拉去重跑一整轮。
+        两条对照：不豁免 → 借（正题）；豁免输入一变自动失效 → 又该借（`_waived` 自己的判据）。
+        """
+        self._feedback("audit", "code")
+        self.assertIsNotNone(self.s._recovered_repair_hint("code"), "前提：不豁免时应当借")
+        # 披露：照 `/api/decision` 那条路**原样**写（`_load_waivers` → 改 → `_save_waivers`）
+        w = self.s._load_waivers()
+        w["code"] = {"digest": self.s._input_digest(self._stage("code")),
+                     "at": "2026-10-15T20:00:00", "note": "接受并披露"}
+        self.s._save_waivers(w)
+        self.assertIsNone(self.s._recovered_repair_hint("code"),
+                          "人已经「接受并披露」过，旧回执又把它拖去返修了")
+
+    def test_an_attested_stage_is_not_pressed_again(self):
+        """人工认证（attest）过的阶段也不被旧回执扣住 —— 靠的是**它一定带回执**这条不变量。
+
+        认证把 `manual` 标记写在**回执**里（`StageReceipts.save(..., manual=True)`），
+        所以它天然落进"有回执 ⇒ 不认回"那条边界，不需要单独判 `is_manual`
+        （那会是一条永远走不到的死代码）。这条用例守的是那个不变量本身：
+        哪天 attest 改成不写回执，它会先红。
+        """
+        self._feedback("audit", "code")
+        self.s._receipt_store().save("code", "art", "out", "run1", manual=True)
+        self.assertTrue(self.s._receipt_store().is_manual("code"), "attest 没在回执里留 manual 标记")
+        self.assertIsNone(self.s._recovered_repair_hint("code"),
+                          "attest 过的阶段又被旧回执扣住了")
+
+    def test_a_route_whose_receipt_is_gone_is_not_borrowed(self):
+        """路由档与回执分居两处 ⇒ 必须确认**回执还在**。
+
+        换题轮转会把 `feedback/` 整份搬进 cache，而 `routes/` 不跟着走 —— 不查这一条，
+        就会拿一份"回执已经不在盘上"的路由，让 agent 去读一个不存在的目录。
+        """
+        folder, _route = self._feedback("audit", "code")
+        self.assertIsNotNone(self.s._recovered_repair_hint("code"), "前提：回执在时应当借")
+        shutil.rmtree(folder)                       # 模拟被轮转搬走 / 被清理删掉
+        self.assertIsNone(self.s._recovered_repair_hint("code"),
+                          "回执已经不在了，还拿这份路由去让 agent 读空气")
+
+    def test_a_receipt_for_another_target_is_not_borrowed(self):
+        """边界③'借错人'：这份回执要的是别人返修，别扣到这个阶段头上。"""
+        self._feedback("audit", "write")
+        self.assertIsNone(self.s._recovered_repair_hint("code"))
+
+    def test_the_newest_receipt_wins(self):
+        """同一个目标有多份未结清回执 ⇒ 取**最新**那份（旧的不许反复应用）。"""
+        _f1, old = self._feedback("audit", "code", uid="old000")
+        _f2, new = self._feedback("audit", "code", uid="new000")
+        os.utime(old, (1_700_000_000, 1_700_000_000))
+        os.utime(new, (1_800_000_000, 1_800_000_000))
+        hint = self.s._recovered_repair_hint("code")
+        self.assertIn("new000", hint.replace("\\", "/"), "取的不是最新那份")
+        self.assertNotIn("old000", hint.replace("\\", "/"))
+
+
+class VerdictArchiveTests(unittest.TestCase):
+    """门禁判词留档：**过没过都留**，📝 里随时看得到"这一关最终判了什么"。
+
+    用户 2026-10-16 的原话：「把所有的门禁环节，每次过了后，即使过了，前端 📝 也显示最终的判词」
+    —— 参考的正是 ⑤⑫ 那种"跑完了还看得到"的形态。
+    与 `issues_by_stage` 的口径**故意不同**（那个过了就撤，防"以为还没修"），所以存储、
+    落盘、清理三件事都必须分开做对 —— 下面每条各配一个对照组。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for rel in ("CLAUDE.md", "AGENTS.md"):
+            shutil.copy2(PROJECT / rel, self.root / rel)
+        for rel in ("skills", "docs"):
+            shutil.copytree(PROJECT / rel, self.root / rel)
+        self.s = load_server(self.root)
+
+    def test_a_passed_verdict_is_kept_and_persisted(self):
+        """通过也留：内存里有、盘上也有（不落盘 ⇒ 重启就没了，那条另行验证）。"""
+        self.s._note_verdict("rubric", {"status": "PASS", "reason": "", "issues": [],
+                                        "passed": True, "at": "2026-10-16 10:00"})
+        entry = self.s.state["verdict_by_stage"]["rubric"]
+        self.assertTrue(entry["passed"])
+        f = self.root / "runtime/quality/verdict_by_stage.json"
+        self.assertTrue(f.is_file(), "判词留档没落盘 —— 重启后面板就没了")
+        self.assertEqual(json.loads(f.read_text(encoding="utf-8"))["rubric"]["status"], "PASS")
+        # 对照组：**未通过**的也记（"过没过都留"的另一半，别只测通过那条）
+        self.s._note_verdict("audit", {"status": "NEEDS_FIX", "reason": "r",
+                                       "issues": [{"id": "a1", "severity": "hard"}],
+                                       "passed": False, "at": "2026-10-16 10:05"})
+        self.assertFalse(self.s.state["verdict_by_stage"]["audit"]["passed"])
+
+    def test_a_restart_reads_the_archive_back(self):
+        """重启存活：重新 exec 一遍 server.py（与其它"重启存活"类测试同一手法），
+        模块级 `_restore_verdicts_by_stage()` 要把盘上那份读回来。"""
+        self.s._note_verdict("verify", {"status": "PASS", "reason": "", "issues": [],
+                                        "passed": True, "at": "2026-10-16 11:00"})
+        s2 = load_server(self.root)                       # 模拟驱动重启（同一工作区）
+        self.assertIn("verify", s2.state["verdict_by_stage"],
+                      "重启后判词留档没了 —— 📝 里的最终判词不该因为重启消失")
+        self.assertEqual(s2.state["verdict_by_stage"]["verify"]["status"], "PASS")
+
+    def test_redo_clears_the_archive_from_that_stage_onward(self):
+        """被作废的阶段即将重判：旧判词不能继续挂在面板上冒充现任。
+        对照组：**上游**那一关的留档必须还在（别把整份留档一起掀了）。"""
+        self.s._note_verdict("audit", {"status": "NEEDS_FIX", "issues": [], "passed": False, "at": "t"})
+        self.s._note_verdict("rubric", {"status": "PASS", "issues": [], "passed": True, "at": "t"})
+        self.s._redo_from("rubric")
+        self.assertNotIn("rubric", self.s.state["verdict_by_stage"], "被重跑的阶段还挂着旧判词")
+        self.assertIn("audit", self.s.state["verdict_by_stage"], "对照组：上游留档被误删了")
+        self.s._redo_from("audit")
+        self.assertNotIn("audit", self.s.state["verdict_by_stage"])
+
+    def test_the_api_and_the_panel_carry_it(self):
+        """接线（纯字符串 —— 行为由上面三条和前端夹具各管一段，这条防改名/漏接）。"""
+        srv = (PROJECT / "lib/web/server.py").read_text(encoding="utf-8-sig")
+        for token in ('"verdict_by_stage": {}', "def _note_verdict(", "_note_verdict(stage[\"id\"], {",
+                      "def _restore_verdicts_by_stage(", "_restore_verdicts_by_stage()  #",
+                      '"verdicts": {k: v for k, v in (state.get("verdict_by_stage")',
+                      'state["verdict_by_stage"] = {}'):
+            self.assertIn(token, srv, f"server.py 缺 {token!r}")
+        h = _html()
+        for token in ("st.verdicts?st.verdicts[id]", "这一关的最终判词", "已结清，留档",
+                      "advvd", "lastSt.verdicts?lastSt.verdicts[sid]"):
+            self.assertIn(token, h, f"index.html 缺 {token!r}")
+
+
+class DriverPidTests(unittest.TestCase):
+    """驱动把自己的 pid 写在盘上（`runtime/driver.pid`）—— 2026-10-15 那起事故的产物。
+
+    那天 ④编码计算的 agent 为了清"残留的 stray python"，`tasklist | grep python` 数出两个
+    python.exe，`taskkill /F` 两个一起杀 —— 其中一个**就是驱动本体**（也是个 python.exe）。
+    现场：控制台窗口当场消失、日志断在半句、那一轮从 ④ 白跑；`taskkill /F` 不给对方
+    写日志的机会，事后只能翻会话转录才查得出是谁干的。
+
+    这份档案管两件事：① 阶段纪律点名"这个 pid 永远不许碰"；② 下一任驱动启动时能说出
+    "上一任没有正常退出"，而不是只留一句泛泛的"被外部强杀"。下面每条都配了对照组。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for rel in ("CLAUDE.md", "AGENTS.md"):
+            shutil.copy2(PROJECT / rel, self.root / rel)
+        for rel in ("skills", "docs"):
+            shutil.copytree(PROJECT / rel, self.root / rel)
+        self.s = load_server(self.root)
+
+    def test_it_writes_and_reads_its_own_record(self):
+        self.s._write_driver_pid(8901)
+        rec = self.s._driver_pid_record()
+        self.assertEqual(int(rec["pid"]), os.getpid(), "写的不是当前进程的 pid")
+        self.assertEqual(rec["port"], 8901)
+        self.assertTrue(rec.get("started_at"), "没记启动时刻 ⇒ 启动横幅说不出'起于何时'")
+
+    def test_a_stale_record_is_how_we_learn_the_previous_driver_died(self):
+        """判据的分母：档案还在、而那个 pid 已经不在了 ⇒ 上一任**没正常退出**。
+
+        （`_clear_driver_pid` 只在正常退出时删档案，所以"档案还在"本身就是一个信号。）
+        """
+        alive = self.s._snapshot_pids()
+        free = max(alive) + 1 if alive else 999999
+        while free in alive:
+            free += 1
+        self.s.DRIVER_PID.write_text(
+            json.dumps({"pid": free, "port": 8901, "started_at": "2026-10-15T19:00:00"}),
+            encoding="utf-8")
+        rec = self.s._driver_pid_record()
+        self.assertTrue(rec, "陈旧档案读不回来 ⇒ 启动横幅报不出'上一任没正常退出'")
+        self.assertFalse(self.s._pid_alive(rec["pid"]), "不存在的 pid 被判成活着")
+        # 对照组：活着的 pid 必须判活（`_pid_alive` 恒假的实现同样会让上面那条通过）
+        self.assertTrue(self.s._pid_alive(os.getpid()))
+
+    def test_only_its_own_record_is_cleared(self):
+        """正常退出只撤**自己**那份档案 —— 别人（例如刚重启的下一任）写的那份不许动。
+
+        没有这条对照，一个无脑 `unlink()` 的实现也能让"自己那份被清掉"通过。
+        """
+        alive = self.s._snapshot_pids()
+        other = max(alive) + 1 if alive else 999999
+        while other in alive:
+            other += 1
+        self.s.DRIVER_PID.write_text(json.dumps({"pid": other}), encoding="utf-8")
+        self.s._clear_driver_pid()
+        self.assertTrue(self.s.DRIVER_PID.is_file(), "把**别人**的 pid 档案删了")
+        self.s._write_driver_pid(8901)
+        self.s._clear_driver_pid()
+        self.assertFalse(self.s.DRIVER_PID.is_file(), "自己正常退出时没撤档")
+
+    def test_a_closed_console_window_counts_as_a_manual_stop(self):
+        """**关窗口**与**被强杀**必须区分得开（用户 2026-10-15 要求）。
+
+        机制：Windows 关窗口会给进程发 `CTRL_CLOSE_EVENT`，而 `taskkill /F` **什么都不发** ——
+        所以收到事件就说明是人手动关的 ⇒ 撤掉 pid 档案（当作正常退出）⇒ 下一任启动时
+        不必再报那句吓人的话；而**没收到事件**的那一档（档案还在、pid 已死）才真的该被人看见。
+
+        对照组：`CTRL_C`（事件 0）**不许**撤档 —— 那条路走的是 Ctrl+C ⇒ KeyboardInterrupt ⇒
+        atexit 撤档，处理器不该抢它的活（抢了的话"Ctrl+C 也算关窗"就没人分得清了）。
+        """
+        self.s._write_driver_pid(8901)
+        self.s.log.reset_mock()
+        self.s._console_ctrl(0)                                  # CTRL_C
+        self.assertTrue(self.s.DRIVER_PID.is_file(), "把 Ctrl+C 也当成关窗口了")
+        self.s._console_ctrl(2)                                  # CTRL_CLOSE_EVENT = 关窗口
+        self.assertFalse(self.s.DRIVER_PID.is_file(), "关窗口之后 pid 档案没撤掉")
+        self.assertTrue(self.s.log.called, "关窗口没留痕 —— 下一任就分不出它和'被强杀'")
+
+    def test_the_startup_warning_only_fires_for_a_real_kill(self):
+        """那句话只在**真被强杀**时才该出现，且要把区分方法说清（否则用户没法判断）。
+
+        源级哨兵：`__main__` 里要装处理器、警告文案里要点出"既不是 Ctrl+C、也不是关窗口"。
+        """
+        src = (PROJECT / "lib/web/server.py").read_text(encoding="utf-8")
+        self.assertIn("SetConsoleCtrlHandler(_console_ctrl", src, "没装控制台事件处理器")
+        seg = src[src.index("上一任驱动（pid"):]
+        seg = seg[:seg.index("紧接着那条「收掉孤儿」")]
+        self.assertIn("关窗口", seg, "文案没说清'关窗口'这条已被排除")
+        self.assertIn("taskkill", seg, "文案没点出最可能的真凶")
+
+    def test_a_broken_or_missing_record_never_breaks_startup(self):
+        """档案只是线索，坏掉/缺失都不许把启动带崩（与 `_restore_stale_instr` 同一条纪律）。"""
+        self.assertIsNone(self.s._driver_pid_record(), "文件不存在时应当返回 None")
+        for bad in ("{不是 json", "[]", "{}", '{"pid": null}'):
+            self.s.DRIVER_PID.write_text(bad, encoding="utf-8")
+            self.assertIsNone(self.s._driver_pid_record(), f"坏档案没被挡住：{bad!r}")
+
+    def test_the_next_driver_can_see_the_pid_without_reading_a_file(self):
+        """驱动 pid 必须**直接写在阶段提示里**，不能只躺在一个 agent 得自己去翻的文件里。
+
+        2026-10-15 之后补的一条：`driver.pid` 是可写文件，agent 删掉/改掉它就等于把保护关掉；
+        而提示是**驱动亲口喂进上下文**的，改不掉。顺带也让"我到底该跳过哪个 pid"从"去读个文件"
+        变成"眼前就有"。
+        """
+        stage = next(s for s in self.s.STAGES if s["id"] == "code")
+        text = self.s.prompt_for(stage, first=True)
+        self.assertIn(str(os.getpid()), text, "阶段提示里没有驱动 pid")
+        self.assertIn("driver.pid", text, "没告诉 agent 那份档案在哪")
+        self.assertIn("TaskStop", text, "没给正确做法")
+        # 断言**口径**而不是某个固定措辞 —— 写死一句话，改一次措辞它就假红一次
+        #   （2026-10-15 就这么红过一次：'任何情况下都不许杀进程' 改成
+        #   '永不许按进程名杀进程' 之后，仍断言前者）。
+        self.assertIn("按进程名", text, "没写清'永不许按进程名杀'")
+
+    def test_the_reaper_skips_agents_owned_by_a_still_living_driver(self):
+        """登记表**跨实例共享** ⇒ 收容前必须先看"spawn 它的那个驱动还在不在"。
+
+        没有这一条时：手动再起一个驱动（`--port 8902`）就会把第一个实例正在跑的阶段 agent
+        当成孤儿杀掉 —— 与"自己人杀自己人"是同一族事故。
+        对照组：owner 已经死了 ⇒ 照收（不然这条就变成"永远不收"了）。
+        """
+        # "另一个还活着的驱动"就用本测试进程的父进程 —— 它一定活着、且不是我自己（不另起进程，
+        #   免得为一条用例引入 subprocess）。
+        owner = os.getppid()
+        self.assertTrue(self.s._pid_alive(owner), "前提不成立：父进程应当活着")
+        self.s._register_stage_pid(4242)
+        path = self.s.STAGE_PIDS
+        data = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(data[0].get("driver"), os.getpid(), "登记时没记下是哪个驱动 spawn 的")
+        data[0]["driver"] = owner                         # 假装是"另一个还活着的驱动"起的
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.s._claude_processes = lambda: [(4242, str(self.root))]
+        killed = []
+        self.s._reap_orphan_agents(kill=lambda pid: killed.append(pid))
+        self.assertEqual(killed, [], "把另一个活着的驱动正在用的阶段 agent 当孤儿杀了")
+
+        # 对照组：owner 不在了 ⇒ 该收就得收
+        data[0]["driver"] = 999999
+        path.write_text(json.dumps(data), encoding="utf-8")
+        killed = []
+        self.s._reap_orphan_agents(kill=lambda pid: killed.append(pid))
+        self.assertEqual(killed, [4242], "owner 已死却不收 —— 那孤儿就永远没人管了")
+
+    def test_an_old_style_registry_entry_is_still_reaped(self):
+        """兼容：老格式（纯 int，不知道谁 spawn 的）按孤儿处理，不许因为读不出字段就放弃收容。"""
+        self.s.STAGE_PIDS.parent.mkdir(parents=True, exist_ok=True)
+        self.s.STAGE_PIDS.write_text(json.dumps([4243]), encoding="utf-8")
+        self.s._claude_processes = lambda: [(4243, str(self.root))]
+        killed = []
+        self.s._reap_orphan_agents(kill=lambda pid: killed.append(pid))
+        self.assertEqual(killed, [4243])
+
+    def test_the_rule_is_written_where_the_agents_will_read_it(self):
+        """硬红线必须落在**阶段 agent 真会读到的**那几份文件里，且点名 driver.pid。
+
+        只写一句"不要杀进程"不够 —— 触发那次事故的推断是"python 只可能是我自己的"，
+        所以规矩里必须出现「驱动本身就是个 python.exe」与 `runtime/driver.pid`。
+        """
+        for rel in ("CLAUDE.md", "AGENTS.md", "skills/_references/stage_discipline.md"):
+            text = (PROJECT / rel).read_text(encoding="utf-8")
+            self.assertIn("绝不许杀进程", text, f"{rel} 里没有这条硬红线")
+            self.assertIn("taskkill", text, f"{rel} 没点名具体的命令")
+            self.assertIn("driver.pid", text, f"{rel} 没说'驱动的 pid 在哪、不许碰'")
+            self.assertIn("TaskStop", text, f"{rel} 没给正确做法（停自己后台任务用 TaskStop）")
 
 
 if __name__ == "__main__":

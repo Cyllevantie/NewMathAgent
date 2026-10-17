@@ -14,7 +14,6 @@ Python 包与 xelatex/pandoc 这些外部工具。于是新机器上会出现"do
 """
 import os
 import shutil
-import sys
 from pathlib import Path
 
 # 支持 claude 的四个编辑器；顺序只为可读，真正的择优是"按 mtime 取最新"

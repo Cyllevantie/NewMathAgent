@@ -47,9 +47,19 @@ APPENDIX_PDF = "附录A.pdf"
 DEMO_HTML = "demo.html"
 MANUAL = "运行说明.md"
 # 论文研究与写作过程中 AI 工具使用情况的说明（独立一件，平铺在提交件根）。
-#   由 14Layout-and-format 在交付层产出（`skills/14Layout-and-format/SKILL.md`「交付包」节，依参考样板补）
-#   —— 正文 §八 那句「详细使用情况见支撑材料」与末页清单表都指向它，缺了就是悬空引用。
+#   由 9Paper-writing 在交付层产出（`skills/9Paper-writing/SKILL.md`「交付层」节，依参考样板补）——
+#   2026-10-17 起与提交清单/末页清单表一起从 ⑭ 前移到 ⑨（用户要求：停在 ⑨ 就是完整稿）；
+#   排版阶段 14Layout-and-format 保有修补权。正文 §八 那句「详细使用情况见支撑材料」与
+#   末页清单表都指向它，缺了就是悬空引用。
 AI_TOOLS_PDF = "AI工具使用详情.pdf"
+
+
+def _clean_title(raw):
+    """清理标题里的 Windows 保留字符与空白；占位符返回空串。"""
+    title = re.sub(r"[\s\u3000]+", " ", "".join(ch for ch in str(raw) if ch not in _ILLEGAL)).strip()
+    if not title or title.startswith("<") or "论文标题" in title:
+        return ""
+    return title
 
 
 def body_pdf_name(root):
@@ -57,21 +67,36 @@ def body_pdf_name(root):
 
     依据：赛题条文对文件名**没有规定**，而参考稿用的是论文标题
     （`基于变物性耦合传热传质与动域模型的.pdf`）⇒ 对齐它。
-    来源 = `paper/main.tex` 的 `\\papertitle{...}`（排版阶段保证它在）。取不到就回落 `BODY_PDF`。
 
-    回落**不会**让老清单打不了包：打包名以**清单声明的 `path`** 为准，这里只回答
-    "那个名字该从工作区的哪里取"，而 `resolve_source()` 对**两种名字都认**。
-    标题里的 Windows 保留字符与首尾空白一律清掉（赛题标题出现过冒号/问号）。
+    P1 之后标题不再住在 `main.tex` 里，所以按四级回退：
+      ① `paper/structure.json` 的 `title`（角色化工作区的权威）
+      ② `paper/blocks/title.tex` 的 `\\papertitle`
+      ③ `paper/main.tex` 的 `\\papertitle`（legacy）
+      ④ `BODY_PDF`
+    结构文件存在但非法时**不在这里炸**：这里只回答“名字”，结构合法性由
+    `lib.paper_structure.check` / delivery precheck 报。回落**不会**让老清单打不了包：
+    打包名以清单声明的 `path` 为准，`resolve_source()` 对两种名字都认。
     """
+    root = Path(root)
     try:
-        tex = (Path(root) / "paper" / "main.tex").read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return BODY_PDF
-    m = re.search(r"\\papertitle\s*\{([^}]*)\}", tex)
-    if not m:
-        return BODY_PDF
-    title = re.sub(r"[\s\u3000]+", " ", "".join(ch for ch in m.group(1) if ch not in _ILLEGAL)).strip()
-    return (title + ".pdf") if title else BODY_PDF
+        structure = json.loads((root / "paper/structure.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        structure = {}
+    title = _clean_title(structure.get("title") or "")
+    if title:
+        return title + ".pdf"
+
+    for rel in ("paper/blocks/title.tex", "paper/main.tex"):
+        try:
+            tex = (root / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = re.search(r"\\papertitle\s*\{([^}]*)\}", tex)
+        if m:
+            title = _clean_title(m.group(1))
+            if title:
+                return title + ".pdf"
+    return BODY_PDF
 # 工作区里的构建产物仍叫 `main.pdf`（`publication` / `15Verification` / `14Layout-and-format` 全都按这个名字
 # 找它），**只在打包时改名**。少改一处就少一处漂移。
 # 正文 PDF 的名字**不在这张表里**（= **论文标题**，见 `body_pdf_name()`）——
@@ -247,15 +272,15 @@ def rotate_pointer(pointer, dest_root, name):
 
 
 def load_manifest(root):
-    """读 `14Layout-and-format` 写的提交清单。**缺失即报错** —— 不猜、不静默兜底。"""
+    """读 `9Paper-writing` 写的提交清单。**缺失即报错** —— 不猜、不静默兜底。"""
     path = Path(root).resolve() / MANIFEST_REL
     try:
         spec = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, ValueError) as exc:
         raise ValueError(
             f"提交清单缺失或不可读：{MANIFEST_REL}（{exc}）。"
-            "打包前必须由 14Layout-and-format 写出它 —— 它同时是论文末页清单表的来源，"
-            "两边必须一致。") from exc
+            "打包前必须由 9Paper-writing 写出它（14Layout-and-format 保有对账与修补权）——"
+            "它同时是论文末页清单表的来源，两边必须一致。") from exc
     if not isinstance(spec, dict) or spec.get("schema_version") != 1:
         raise ValueError(f"{MANIFEST_REL} 结构错误：schema_version 必须为 1")
     items = spec.get("items")
@@ -350,18 +375,18 @@ def resolve_source(root, rel):
 
 
 def provisional_items(root):
-    """⑭ 还没写出 `reports/SUBMISSION_MANIFEST.json` 之前，**先按能认出来的提交件**收一批。
+    """清单还没写出 `reports/SUBMISSION_MANIFEST.json` 之前，**先按能认出来的提交件**收一批。
 
-    为什么要有它：清单由 **⑭** 写，而 ⑭ 排在 ⑨ 之后 ⇒ 链一旦在 ⑨~⑬ 之间停下，
-    `最新作品/` 里**什么都没有**，尽管正文 PDF、附录、`result*.xlsx` 早就做好了 ——
-    翻那个文件夹时看到的是"白干了一天"。所以 ⑨ 收尾时先把已经做好的移入，
-    剩下的做好再移。
+    为什么还要留着它：清单由 **⑨ 收尾**时写（2026-10-17 从 ⑭ 前移），正常情况下每个
+    收件点（≥⑨）盘上都有清单；但**旧工作区 / 清单写坏或被人工删掉 / 刚被回退暂存走**
+    这些情形仍会碰上"盘上没有清单"⇒ 先收一批，总比那个文件夹一片空白强 ——
+    翻那个文件夹时看到的是"白干了一天"。收完会记一行日志说明"这是临时的"。
 
     与 `load_manifest` 的分工**不重叠**：那份清单是**完整口径**（含每一件的说明文字、
-    同时是论文末页清单表的来源），⑭ 跑完由它**整份重建**；本函数只是 ⑭ 之前的
-    **临时占位**，收完会记一行日志说明"这是临时的"。
+    同时是论文末页清单表的来源），出现后由它**整份重建**；本函数只是清单出现之前的
+    **临时占位**。
     名字的权威仍在本模块：正文用 `body_pdf_name()`、其余用 `FIXED_SOURCES` 的键 ⇒
-    与 ⑭ 那份清单**不可能起名不一致**（不会出现"先叫 result1.xlsx、后改叫结果1.xlsx"）。
+    与**正式清单**不可能起名不一致（不会出现"先叫 result1.xlsx、后改叫结果1.xlsx"）。
     只收**盘上真的有**的项，缺的不编 —— 编一个不存在的名字会让 `check()` 判不合规。
     """
     root = Path(root).resolve()
@@ -491,9 +516,9 @@ def package(root, output_dir, items, *, clean_other_submitted=True, allow_missin
     `allow_missing=True`（**阶段性打包**用）：清单里**还没产出**的项
     跳过不报错，返回跳过的名字列表。
 
-    为什么必须有它：⑨ 结束要先把已做好的移入，剩下的做好再移。而 ⑭ 写的
-    清单**声明了 `demo.html`**，可那要等 ⑯ 才产出 ⇒ 中途打包必然撞上"清单里有、
-    工作区还没有" ⇒ 直接抛错、**一个文件都收不进去**（⑭ 跑完后
+    为什么必须有它：⑨ 结束要先把已做好的移入，剩下的做好再移。而清单（⑨ 收尾首产）
+    **声明了 `demo.html`**，可那要等 ⑯ 才产出 ⇒ 中途打包必然撞上"清单里有、
+    工作区还没有" ⇒ 直接抛错、**一个文件都收不进去**（⑨ 跑完后
     `提交作品/最新作品/` 仍然是空的）。
     "缺项即报错"对**链尾那次**是对的（那是正式交付，缺一件都不行），对**中途**是错的。
     """
@@ -512,21 +537,22 @@ def package(root, output_dir, items, *, clean_other_submitted=True, allow_missin
         raise ValueError("清单里这些提交项在工作区找不到：" + "、".join(sorted(missing)))
     # 允许缺项时**不要把"子集"整体顶掉已经交付的那一份**：
     # 口径是"已做好的先移入、后续阶段改动了就把旧的替代" —— **只增不减**。
-    # 而 `_redo_from` 回退时会把 `demo/`、`运行说明.md`、`SUBMISSION_MANIFEST.json` 搬进
+    # 而 `_redo_from` 回退时会把 `demo/`（第一声明者 ⑯）、`运行说明.md` 与
+    # `reports/SUBMISSION_MANIFEST.json`（第一声明者 ⑨，2026-10-17 从 ⑭ 前移）搬进
     # cache ⇒ 工作区一时没有它们 ⇒ 若照旧整体替换，**刚交付的 `demo.html` / 运行说明.md
     # 会从 `最新作品/` 里消失**，而链若停在 ⑯ 之前就一直缺着、
     # 与论文末页的清单表对不上。处置：被跳过的项**从旧包里原样搬进 staging**（保留上一版），
     # 等它真产出时自然被新版替换。
     # 判据是「**旧包顶层已有 − 本轮已产出**」，不是"本轮 items 里源缺失的那些"：
-    # 后者的漏洞在 **provisional 那条路**上 —— 回退会把
-    # `reports/SUBMISSION_MANIFEST.json` 与 `运行说明.md` 一起搬进 cache（`ARTIFACTS["format"]`），
+    # 后者的漏洞在 **provisional 那条路**上 —— 回退到 ≤⑨（或整链清空）时清单会被
+    # 一起搬进 cache（`ARTIFACTS["write"]`），
     # 于是中途收走的是"临时清单 = 盘上现在有的东西"，而 `demo.html` / 运行说明.md
     # **连名字都没进清单** ⇒ 整体替换直接把它们从 `最新作品/` 抹掉。
     # 换成"旧包里有、这轮没产出"就两条路都覆盖：真产出了新版的按名字被替换，
     # 这轮没产出的从旧包原样搬过来。
     # 按**文件名**搬运；旧清单用的是老名字（如 `正文.pdf`）而 `body_pdf_name()` 给的是
-    # 论文标题时，包里会同时出现两份 —— 那是历史清单才会有的情形，且 ⑭ 会用清单整份重建
-    # 收回来。刻意**不**去"钉名字"：钉了反而会在上面那种情况下造出重复。
+    # 论文标题时，包里会同时出现两份 —— 那是历史清单才会有的情形，且清单一旦写回
+    # 就会被**整份重建**收回来。刻意**不**去"钉名字"：钉了反而会在上面那种情况下造出重复。
     # 两条都要，**取并集**（只取第二条会把"清单列了但源缺失"那条覆盖掉，
     # 被 `test_a_partial_rebuild_does_not_delete_already_delivered_files` 逮住）：
     # · 本轮 items 里**源缺失**的项（名字在清单里，但工作区那份被搬走了）；
