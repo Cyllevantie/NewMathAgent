@@ -1,0 +1,824 @@
+{
+  "schema_version": 1,
+  "_note": "recipe id 是 FigureBrief.panels[].recipe 的枚举来源。implemented 指向 skills/figure-studio/scripts/studio.py 的函数；external 表示需要按 references/catalog.md 适配外部模板，不能假装已内置。",
+  "recipes": [
+    {
+      "id": "field_heatmap",
+      "family": "field",
+      "data_shape": "grid: x × y -> z",
+      "required_fields": [
+        "x",
+        "y",
+        "z"
+      ],
+      "when": "二维场的逐格读数；行列是离散网格或需要锚定具体格点",
+      "avoid": "场里有明确阈值/前沿、需要读等值线形状时",
+      "fallback": "field_contour",
+      "implemented": "studio.field_panel(kind='heatmap')",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "field_contour",
+      "family": "field",
+      "data_shape": "grid: x × y -> z",
+      "required_fields": [
+        "x",
+        "y",
+        "z",
+        "level"
+      ],
+      "when": "场里有阈值、干前沿、相界或分区；要突出某一层",
+      "avoid": "数据是稀疏散点、没有规则网格时",
+      "fallback": "field_heatmap",
+      "implemented": "studio.field_panel(kind='contour')",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "profiles",
+      "family": "profile",
+      "data_shape": "series: t × r -> C",
+      "required_fields": [
+        "x",
+        "series",
+        "series_labels"
+      ],
+      "when": "沿一个空间/时间切片比较多个时刻或位置",
+      "avoid": "超过 8 条同图序列、或读者只需要两条时",
+      "fallback": "small_multiples",
+      "implemented": "studio.profile_panel",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "small_multiples",
+      "family": "profile",
+      "data_shape": "facet: group × x -> y",
+      "required_fields": [
+        "x",
+        "series",
+        "facet"
+      ],
+      "when": "序列多、共享坐标比较形状；比一张拥挤的折线图清楚",
+      "avoid": "只有 2–3 条序列时",
+      "fallback": "profiles",
+      "implemented": "studio.small_multiples",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "paired_raincloud",
+      "family": "distribution",
+      "data_shape": "paired: subject × before/after",
+      "required_fields": [
+        "before",
+        "after",
+        "subject_id"
+      ],
+      "when": "同一对象前后测、有可靠配对 ID；要同时看原始点、分布和效应",
+      "avoid": "只有汇总均值、没有个体观测时",
+      "fallback": "paired_dumbbell",
+      "implemented": "studio.paired_raincloud",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "paired_dumbbell",
+      "family": "distribution",
+      "data_shape": "paired: subject × before/after",
+      "required_fields": [
+        "before",
+        "after",
+        "subject_id"
+      ],
+      "when": "配对样本量小、每对都要看见；雨云图太密时",
+      "avoid": "样本量很大且分布形状是主要信息时",
+      "fallback": "paired_raincloud",
+      "implemented": "studio.paired_dumbbell",
+      "category": "publication-contract"
+    },
+    {
+      "id": "distribution_box",
+      "family": "distribution",
+      "data_shape": "groups × observations",
+      "required_fields": [
+        "groups"
+      ],
+      "when": "多组分布比较、离群点和四分位是重点",
+      "avoid": "样本量 <5、或需要看双峰时",
+      "fallback": "distribution_strip",
+      "implemented": "studio.distribution_box",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "distribution_violin",
+      "family": "distribution",
+      "data_shape": "groups × observations",
+      "required_fields": [
+        "groups"
+      ],
+      "when": "组间分布形状差异明显、样本量足够估密度",
+      "avoid": "小样本（密度估计不稳）",
+      "fallback": "distribution_box",
+      "implemented": "external",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "distribution_strip",
+      "family": "distribution",
+      "data_shape": "groups × observations",
+      "required_fields": [
+        "groups"
+      ],
+      "when": "小样本；每个点都要保留",
+      "avoid": "样本量太大、点会糊成一片",
+      "fallback": "distribution_box",
+      "implemented": "studio.distribution_box",
+      "category": "publication-contract"
+    },
+    {
+      "id": "dot_interval",
+      "family": "estimate",
+      "data_shape": "category × estimate + interval",
+      "required_fields": [
+        "labels",
+        "values",
+        "low",
+        "high"
+      ],
+      "when": "十几个分类的点估计与不确定性；排序/比较主效应",
+      "avoid": "没有真实区间、只有一列均值时",
+      "fallback": "grouped_bars",
+      "implemented": "studio.dot_interval",
+      "category": "publication-contract"
+    },
+    {
+      "id": "forest_plot",
+      "family": "estimate",
+      "data_shape": "category × estimate + interval + reference",
+      "required_fields": [
+        "labels",
+        "values",
+        "low",
+        "high",
+        "reference"
+      ],
+      "when": "效应量、比值、差值；有一条零效应/基准线",
+      "avoid": "区间不是从数据算出来的",
+      "fallback": "dot_interval",
+      "implemented": "studio.dot_interval",
+      "category": "publication-contract"
+    },
+    {
+      "id": "grouped_bars",
+      "family": "comparison",
+      "data_shape": "category × series -> value",
+      "required_fields": [
+        "categories",
+        "series"
+      ],
+      "when": "2–12 个类别、2–5 个序列，读者要直接读数",
+      "avoid": "类别 >8、或要看分布/不确定性时",
+      "fallback": "dot_interval",
+      "implemented": "studio.grouped_bars",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "ablation_bars",
+      "family": "comparison",
+      "data_shape": "configuration × metric -> value",
+      "required_fields": [
+        "labels",
+        "values"
+      ],
+      "when": "消融/参数影响；按影响排序的横条",
+      "avoid": "配置之间不独立、不能单独解释时",
+      "fallback": "dot_interval",
+      "implemented": "studio.grouped_bars(horizontal=True)",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "stacked_composition",
+      "family": "composition",
+      "data_shape": "category × component -> value (sum meaningful)",
+      "required_fields": [
+        "categories",
+        "components"
+      ],
+      "when": "组成/占比，且各类别总和有明确意义",
+      "avoid": "总和没有意义、或组件 >6 时",
+      "fallback": "grouped_bars",
+      "implemented": "studio.stacked_composition",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "composition_heatmap",
+      "family": "composition",
+      "data_shape": "category × component -> value",
+      "required_fields": [
+        "rows",
+        "columns",
+        "matrix"
+      ],
+      "when": "类别 × 组件的矩阵；比堆叠条更容易逐格比较",
+      "avoid": "矩阵过大（>24×12）而不做分面时",
+      "fallback": "stacked_composition",
+      "implemented": "studio.heatmap_panel",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "correlation_matrix",
+      "family": "relationship",
+      "data_shape": "variables × variables -> correlation",
+      "required_fields": [
+        "variables",
+        "matrix"
+      ],
+      "when": "多变量两两相关；相关矩阵/下三角",
+      "avoid": "样本量小、相关不稳定；或变量 >12 时",
+      "fallback": "scatter_matrix",
+      "implemented": "studio.correlation_matrix",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "scatter_matrix",
+      "family": "relationship",
+      "data_shape": "observations × variables",
+      "required_fields": [
+        "variables",
+        "observations"
+      ],
+      "when": "4–8 个连续变量的联合结构；要看非线性/离群",
+      "avoid": "变量 >8 或样本量巨大（用 hexbin/密度）",
+      "fallback": "correlation_matrix",
+      "implemented": "studio.scatter_matrix",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "prediction_marginal",
+      "family": "diagnostic",
+      "data_shape": "observation × prediction",
+      "required_fields": [
+        "observed",
+        "predicted"
+      ],
+      "when": "预测-观测一致性；主散点 + 边缘分布",
+      "avoid": "没有真实观测、只有模型输出时",
+      "fallback": "residual_panel",
+      "implemented": "studio.prediction_marginal",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "residual_panel",
+      "family": "diagnostic",
+      "data_shape": "observation × prediction -> residual",
+      "required_fields": [
+        "observed",
+        "predicted"
+      ],
+      "when": "要看误差随观测值/预测值的变化",
+      "avoid": "观测与预测不是一一对应时",
+      "fallback": "prediction_marginal",
+      "implemented": "external",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "roc_curve",
+      "family": "diagnostic",
+      "data_shape": "binary label × score",
+      "required_fields": [
+        "y_true",
+        "y_score"
+      ],
+      "when": "真实二分类标签 + 连续分数；比较分类器",
+      "avoid": "任务几乎完美可分（AUC≈1）时，ROC 没有信息量",
+      "fallback": "prediction_marginal",
+      "implemented": "studio.roc_panel",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "taylor_diagram",
+      "family": "model_evaluation",
+      "data_shape": "models × (correlation, std ratio)",
+      "required_fields": [
+        "models",
+        "correlation",
+        "std_ratio"
+      ],
+      "when": "多模型/多重建与参考场的形状和幅度同时比较",
+      "avoid": "只有两个模型、或相关/标准差不可比时",
+      "fallback": "dot_interval",
+      "implemented": "studio.taylor_panel",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "radar",
+      "family": "comparison",
+      "data_shape": "category × metric -> normalized value",
+      "required_fields": [
+        "categories",
+        "series",
+        "metrics"
+      ],
+      "when": "3–8 个维度的指纹/画像；类别数少",
+      "avoid": "维度 >8、或量纲不可比时",
+      "fallback": "grouped_bars",
+      "implemented": "studio.radar_panel",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "surface3d",
+      "family": "3d",
+      "data_shape": "grid: x × y -> z",
+      "required_fields": [
+        "x",
+        "y",
+        "z"
+      ],
+      "when": "第三维真有变量含义（响应面、参数地形、流形）",
+      "avoid": "只是把二维场硬抬成三维；或视角遮挡严重",
+      "fallback": "field_contour",
+      "implemented": "studio.surface3d_panel",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "surface3d_projection",
+      "family": "3d",
+      "data_shape": "grid: x × y -> z",
+      "required_fields": [
+        "x",
+        "y",
+        "z"
+      ],
+      "when": "3D 曲面 + 二维投影/切片配套，避免投影歧义",
+      "avoid": "没有二维投影、读者无法读值时",
+      "fallback": "surface3d",
+      "implemented": "studio.surface3d_panel(projection_ax=...)",
+      "category": "publication-contract"
+    },
+    {
+      "id": "trajectory",
+      "family": "3d",
+      "data_shape": "path: t -> (x, y) or (x, y, z)",
+      "required_fields": [
+        "x",
+        "y",
+        "path_order"
+      ],
+      "when": "状态随时间的轨迹、相图、优化路径",
+      "avoid": "路径没有顺序、或点云本身是重点时",
+      "fallback": "profiles",
+      "implemented": "studio.trajectory_panel",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "streamfield",
+      "family": "field",
+      "data_shape": "grid: x × y -> (u, v)",
+      "required_fields": [
+        "x",
+        "y",
+        "u",
+        "v"
+      ],
+      "when": "向量场/流场；要看方向和强度",
+      "avoid": "采样太稀、箭头会误导时",
+      "fallback": "field_heatmap",
+      "implemented": "external",
+      "category": "publication-contract"
+    },
+    {
+      "id": "feature_importance",
+      "family": "model_explanation",
+      "data_shape": "feature × importance",
+      "required_fields": [
+        "features",
+        "importance"
+      ],
+      "when": "特征重要性排序；比 SHAP 蜂群更简单",
+      "avoid": "重要性没有不确定性、却要声称显著时",
+      "fallback": "ablation_bars",
+      "implemented": "studio.grouped_bars(horizontal=True)",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "sensitivity_dot",
+      "family": "sensitivity",
+      "data_shape": "configuration × t_dry",
+      "required_fields": [
+        "labels",
+        "values",
+        "reference"
+      ],
+      "when": "多口径/多参数的敏感性；按偏离参考排序",
+      "avoid": "口径之间不独立、或没有参考值时",
+      "fallback": "dot_interval",
+      "implemented": "studio.dot_interval",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "convergence",
+      "family": "convergence",
+      "data_shape": "resolution × metric",
+      "required_fields": [
+        "resolution",
+        "values",
+        "reference"
+      ],
+      "when": "网格/步长/迭代收敛；要看是否进入平台",
+      "avoid": "只有两个分辨率、无法判断趋势时",
+      "fallback": "dot_interval",
+      "implemented": "studio.convergence_panel",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "timeline",
+      "family": "context",
+      "data_shape": "event × time",
+      "required_fields": [
+        "events",
+        "times"
+      ],
+      "when": "机理事件、阶段推进、关键转折",
+      "avoid": "事件没有明确时间/顺序时",
+      "fallback": "profiles",
+      "implemented": "studio.timeline_panel",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "schematic_cylinder",
+      "family": "schematic",
+      "data_shape": "geometry + field + annotations",
+      "required_fields": [
+        "geometry",
+        "field",
+        "labels"
+      ],
+      "when": "圆柱/圆盘/多层介质的机理示意；要把几何和场放在一起",
+      "avoid": "纯数据题、没有几何对象时",
+      "fallback": "schematic_generic",
+      "implemented": "studio.cylinder_schematic",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "schematic_generic",
+      "family": "schematic",
+      "data_shape": "entities + relations",
+      "required_fields": [
+        "entities",
+        "relations"
+      ],
+      "when": "流程、结构、边界条件、变量关系",
+      "avoid": "能用一张数据图说清时",
+      "fallback": "cylinder_schematic",
+      "implemented": "external",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "hero_evidence",
+      "family": "composition",
+      "data_shape": "one hero panel + 2–4 evidence panels",
+      "required_fields": [
+        "panels"
+      ],
+      "when": "一张图要同时给主结果和支撑证据；Nature/竞赛主图",
+      "avoid": "每个面板只是重复同一证据时",
+      "fallback": "quantitative_grid",
+      "implemented": "studio.hero_layout",
+      "category": "publication-contract"
+    },
+    {
+      "id": "quantitative_grid",
+      "family": "composition",
+      "data_shape": "equal-weight panels",
+      "required_fields": [
+        "panels"
+      ],
+      "when": "多个同等重要的指标/条件；规则网格",
+      "avoid": "有一个明显的主结果时（用 hero_evidence）",
+      "fallback": "hero_evidence",
+      "implemented": "studio.grid_layout",
+      "category": "publication-contract"
+    },
+    {
+      "id": "plate",
+      "family": "composition",
+      "data_shape": "mechanism + results + context",
+      "required_fields": [
+        "panels"
+      ],
+      "when": "竞赛论文的'一张大图讲完整故事'；机理/流形/结果总览",
+      "avoid": "面板之间没有叙事关系、只是拼贴时",
+      "fallback": "hero_evidence",
+      "implemented": "studio.plate_layout",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "diagnostic_strip",
+      "family": "composition",
+      "data_shape": "one main panel + residual/error strip",
+      "required_fields": [
+        "main",
+        "diagnostics"
+      ],
+      "when": "预测/拟合图要同时交代误差和偏差",
+      "avoid": "没有独立残差/误差数据时",
+      "fallback": "prediction_marginal",
+      "implemented": "external",
+      "category": "publication-contract"
+    },
+    {
+      "id": "table_heatmap",
+      "family": "table",
+      "data_shape": "row × column -> value",
+      "required_fields": [
+        "rows",
+        "columns",
+        "values"
+      ],
+      "when": "高密度表格要用颜色辅助读数；比纯表格快",
+      "avoid": "单元格文字比颜色更重要、或行列 >24 时",
+      "fallback": "composition_heatmap",
+      "implemented": "studio.heatmap_panel",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "decomposition-stl",
+      "family": "time-series",
+      "data_shape": "time × observed × trend × seasonal × residual",
+      "required_fields": [
+        "time",
+        "observed",
+        "trend",
+        "seasonal",
+        "residual"
+      ],
+      "when": "趋势/周期/残差分解；各分量已由求解阶段算好",
+      "avoid": "序列短于两个周期；方法未说明",
+      "fallback": "trend-line / wavelet-scalogram",
+      "implemented": "external",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "ecdf",
+      "family": "distribution",
+      "data_shape": "group × observation",
+      "required_fields": [
+        "groups"
+      ],
+      "when": "直接读“小于某值的比例”；多组同图",
+      "avoid": "只需均值/中位数",
+      "fallback": "distribution_box",
+      "implemented": "external",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "ridgeline",
+      "family": "distribution",
+      "data_shape": "ordered group × observation",
+      "required_fields": [
+        "groups",
+        "order"
+      ],
+      "when": "多组分布沿有序维度堆叠",
+      "avoid": "组序无意义；组 >8",
+      "fallback": "distribution_box",
+      "implemented": "external",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "dotplot-matrix",
+      "family": "matrix-field",
+      "data_shape": "row × column × size × color",
+      "required_fields": [
+        "rows",
+        "columns",
+        "size",
+        "color"
+      ],
+      "when": "两个编码维度（比例+强度）",
+      "avoid": "两个编码语义重复",
+      "fallback": "field_heatmap",
+      "implemented": "external",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "volcano-plot",
+      "family": "classification",
+      "data_shape": "feature × effect_size × adjusted_p",
+      "required_fields": [
+        "features",
+        "effect_size",
+        "adjusted_p"
+      ],
+      "when": "高维差异特征；有校正后 p",
+      "avoid": "未做多重比较校正",
+      "fallback": "dot_interval",
+      "implemented": "external",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "cylinder_schematic",
+      "family": "schematic",
+      "data_shape": "geometry + radial field + labels",
+      "required_fields": [
+        "geometry",
+        "field",
+        "labels"
+      ],
+      "when": "圆柱/圆盘/多层介质机理示意",
+      "avoid": "纯数据题",
+      "fallback": "schematic_generic",
+      "implemented": "studio.cylinder_schematic",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "histogram-distribution",
+      "family": "distribution",
+      "data_shape": "group × observation",
+      "required_fields": [
+        "groups"
+      ],
+      "when": "看分布形状（双峰/偏尾/离群）；1–3 组",
+      "avoid": "组 >3；n<20；只关心中位数",
+      "fallback": "distribution_box",
+      "implemented": "external",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "waterfall-contribution",
+      "family": "composition",
+      "data_shape": "step × delta",
+      "required_fields": [
+        "steps",
+        "deltas"
+      ],
+      "when": "从基线到最终值的增量分解",
+      "avoid": ">12 步；delta 不可加",
+      "fallback": "stacked_composition",
+      "implemented": "external",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "sensitivity-tornado",
+      "family": "sensitivity",
+      "data_shape": "parameter × low_case × high_case × baseline",
+      "required_fields": [
+        "parameters",
+        "low",
+        "high",
+        "baseline"
+      ],
+      "when": "单因素敏感性排序",
+      "avoid": "参数强相关；阈值/非单调",
+      "fallback": "dot_interval",
+      "implemented": "external",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "roc-curve-ci",
+      "family": "classification",
+      "data_shape": "fpr × tpr × model × fold",
+      "required_fields": [
+        "fpr",
+        "tpr",
+        "model",
+        "fold"
+      ],
+      "when": "真实二分类；各折插值后均值+波动带",
+      "avoid": "任务几乎完美可分；没有真实标签",
+      "fallback": "roc_curve",
+      "implemented": "studio.roc_curve_ci",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "shap-combo",
+      "family": "model_explanation",
+      "data_shape": "observation × feature -> contribution",
+      "required_fields": [
+        "features",
+        "contributions",
+        "feature_values"
+      ],
+      "when": "有真实加性解释（SHAP 或明确的线性分解）",
+      "avoid": "把回归系数冒充 SHAP；或类别不平衡未处理时",
+      "fallback": "ablation_bars",
+      "implemented": "studio.shap_combo",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "chord-diagram",
+      "family": "relationship",
+      "data_shape": "source × target -> weight",
+      "required_fields": [
+        "links"
+      ],
+      "when": "来源-去向流量/连接；关系结构是主信息",
+      "avoid": "连接稀疏、用邻接矩阵更清楚时",
+      "fallback": "correlation_matrix",
+      "implemented": "studio.chord_diagram",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "circular-heatmap",
+      "family": "composition",
+      "data_shape": "category × metric -> value (circular layout)",
+      "required_fields": [
+        "categories",
+        "metrics",
+        "values"
+      ],
+      "when": "分组条目 × 多指标的环形布局；类别有周期/分组含义",
+      "avoid": "类别是普通无序列表时（用矩形热图）",
+      "fallback": "composition_heatmap",
+      "implemented": "studio.circular_heatmap",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "split-violin-corr-matrix",
+      "family": "composition",
+      "data_shape": "generic composite",
+      "required_fields": [
+        "features",
+        "groups",
+        "corr_matrix"
+      ],
+      "when": "下三角相关矩阵 + 对角线半边小提琴；比较两组分布并看变量相关",
+      "avoid": "组别 >3、样本太小、相关不稳定",
+      "fallback": "correlation-heatmap",
+      "implemented": "studio.split_violin_corr_matrix",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "distribution-composite",
+      "family": "composition",
+      "data_shape": "generic composite",
+      "required_fields": [
+        "categories",
+        "components",
+        "observations"
+      ],
+      "when": "堆叠组成 + 云雨 + 箱线的总装；适合一组图讲清构成与分布",
+      "avoid": "组件总和无意义、组别太多",
+      "fallback": "stacked-composition",
+      "implemented": "studio.distribution_composite",
+      "category": "comparison-and-composition"
+    }
+  ],
+  "aliases": {
+    "trend-line": "profiles",
+    "parameter-sweep": "profiles",
+    "optimization-convergence": "convergence",
+    "wavelet-scalogram": "field_heatmap",
+    "trajectory-2d": "trajectory",
+    "multi-metric-bar-panel": "grouped_bars",
+    "log-scale-bars": "grouped_bars",
+    "matrix-heatmap": "table_heatmap",
+    "correlation-heatmap": "correlation_matrix",
+    "signed-error-heatmap": "table_heatmap",
+    "faceted-heatmap": "field_heatmap",
+    "correlation-pairgrid": "scatter_matrix",
+    "split-violin-corr-matrix": "correlation_matrix",
+    "contour-field": "field_contour",
+    "response-surface-2d": "field_contour",
+    "surface3d-response": "surface3d",
+    "tuning-surface-3d": "surface3d",
+    "prediction-diagnostics": "prediction_marginal",
+    "marginal-joint-scatter": "prediction_marginal",
+    "taylor-diagram": "taylor_diagram",
+    "multipanel-grid": "hero_evidence",
+    "horizontal-dot-interval": "dot_interval",
+    "stacked-composition": "stacked_composition",
+    "grouped-bars": "grouped_bars",
+    "ablation-bars": "ablation_bars",
+    "paired-raincloud": "paired_raincloud",
+    "paired-dumbbell": "paired_dumbbell",
+    "boxplot": "distribution_box",
+    "hero-evidence": "hero_evidence",
+    "quantitative-grid": "quantitative_grid",
+    "diagnostic-strip": "diagnostic_strip",
+    "schematic-generic": "schematic_generic",
+    "cylinder-schematic": "cylinder_schematic",
+    "distribution-strip": "distribution_strip",
+    "small-multiples": "small_multiples",
+    "forest-plot": "forest_plot",
+    "shap_contrib": "shap-combo",
+    "chord": "chord-diagram",
+    "circular_heatmap": "circular-heatmap",
+    "distribution_composite": "distribution-composite"
+  },
+  "categories": {
+    "data-recipe-library": {
+      "label": "数据图型库",
+      "responsibility": "分布、关系、归因、模型诊断等通用数据图型"
+    },
+    "comparison-and-composition": {
+      "label": "比较与拼版",
+      "responsibility": "分组比较、消融、组成、拼版与总装"
+    },
+    "publication-contract": {
+      "label": "投稿契约与质控",
+      "responsibility": "FigureBrief、多面板证据、统计与 source data、导出 QA"
+    },
+    "field-and-3d-core": {
+      "label": "场图与3D内核",
+      "responsibility": "场图/等高线/3D 曲面、语义色阶、导出台账与目检"
+    }
+  }
+}

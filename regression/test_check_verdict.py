@@ -74,6 +74,27 @@ class CheckVerdictTests(unittest.TestCase):
         self.assertIn("✓", out)
         self.assertIn("PASS", out)
 
+    def test_default_root_is_project_root_and_finds_reports(self):
+        """不带 --root 时必须去 `<项目根>/reports` 找 —— 旧默认 HERE.parent 落在 lib/。
+
+        文档里的命令都不带 --root；默认错一级时，每一份合格侧车都会被报成 rc=2
+        「reports/ 下没有侧车」。这里把模块的 HERE 指到一个假的 `<root>/lib/web`，
+        在真正的项目根（假 root）下放侧车，验证默认值解析到上两级。
+        """
+        self._mk("cross", self._passing_checks("cross"))
+        fake_here = self.root / "lib" / "web"
+        fake_here.mkdir(parents=True)
+        self.assertFalse((fake_here.parent / "reports").exists(),
+                         "反向对照：旧的 HERE.parent 默认值应找不到 reports/")
+        old = CV.HERE
+        CV.HERE = fake_here
+        try:
+            rc, out = _run(["--stage", "cross"])
+        finally:
+            CV.HERE = old
+        self.assertEqual(rc, 0, f"默认 root 必须指向项目根，实际 {rc}\n{out}")
+        self.assertIn("✓", out)
+
     def test_missing_required_check_exits_one_and_says_which(self):
         checks = [c for c in self._passing_checks("cross") if c["id"] != "narrative_consistency"]
         self._mk("cross", checks)

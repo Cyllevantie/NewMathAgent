@@ -8,19 +8,44 @@
 重跑 `check()`，所以**交付层**不受「旧回执」影响；受影响的只有 ⑮ 门禁早查的结论 ——
 改这里的判据后，显式「从 ⑮ 重跑」一次即可。
 """
+import hashlib
+import json
 import re
 from pathlib import Path
 
 from .core import DEMO_HTML, OTHER_DIR, OTHER_SUBDIRS, load_manifest, walk_files
 
 # 会去**加载资源**的标签。`<a href>` 不算 —— 那是跳转，不加载，离线也不影响渲染。
+# 值允许三种写法：双引号 / 单引号 / **无引号**（`src=app.js` 是合法 HTML，旧判据漏掉了它）。
+# `(?<![-\w])` 防 `data-src=` 这类前缀撞上 `src`。
 _RESOURCE_REF = re.compile(
-    r"""<(script|link|img|iframe|source|embed|object)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"']*)["']""",
+    r"""<(script|link|img|iframe|source|embed|object)\b[^>]*?(?<![-\w])(?:src|href)\s*=\s*"""
+    r"""(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))""",
     re.I)
+# CSS 里的 `url(...)` 同样会加载本地文件（`style="background:url(app.png)"` / `<style>` 块）——
+# 旧判据只认标签属性，样式里引的图会一路绿到交付、打开才白屏。
+_CSS_URL = re.compile(r"""url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"']*?))\s*\)""", re.I)
+# HTML 注释里的内容**不会加载**：先剥掉再判，否则注释掉的外链会假报，
+# 而注释里的 `<script>引擎原文</script>` 又会被三维判据误当成"真的内联了"。
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_SCRIPT_BLOCK = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.I | re.S)
 _ABS_URL = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
 
 
-def demo_html_issues(root):
+def _without_html_comments(html):
+    return _HTML_COMMENT.sub("", html)
+
+
+def _resource_refs(html):
+    """(标签/位置, 引用的 URL)：标签属性（含无引号）与 CSS `url(...)` 两处都收。"""
+    html = _without_html_comments(html)
+    for tag, dq, sq, bare in _RESOURCE_REF.findall(html):
+        yield f"<{tag.lower()}>", (dq or sq or bare).strip()
+    for dq, sq, bare in _CSS_URL.findall(html):
+        yield "CSS url()", (dq or sq or bare).strip()
+
+
+def demo_html_issues(root, html_path=None):
     """`demo/demo.html` 必须**自包含**：双击即用、离线可用。
 
     为什么是机器判据而不是散文：这条规矩一旦破，产物里的 `demo.html` 打开就是**白屏**，
@@ -29,9 +54,12 @@ def demo_html_issues(root):
 
     判据：文件里不得出现指向**本地文件**的资源引用；也不得引 `http(s)://` 资源
     （离线环境加载不到，且比赛现场可能没网）。`data:` 内联与 `#` 锚点放行。
+
+    `html_path` 给定时直接读它 —— 交付层的 `check` 传**提交包**里的 `demo.html`：
+    工作区那份是好的、打包进去的是旧版/残缺版时，只查工作区的旧写法会放行。
     """
     root = Path(root).resolve()
-    path = root / "demo/demo.html"
+    path = Path(html_path) if html_path is not None else root / "demo/demo.html"
     if not path.is_file():
         return []                                   # 没有 demo 的题不判（有的题不做 demo）
     try:
@@ -39,14 +67,13 @@ def demo_html_issues(root):
     except OSError as exc:
         return [f"{DEMO_HTML} 读不出来：{exc}"]
     bad = []
-    for tag, url in _RESOURCE_REF.findall(html):
-        url = url.strip()
+    for label, url in _resource_refs(html):
         if not url or url.startswith("#") or url.startswith("data:"):
             continue
         if _ABS_URL.match(url):
-            bad.append(f"<{tag.lower()}> 引了联网资源 {url!r} —— 离线打不开，把库内联进去")
+            bad.append(f"{label} 引了联网资源 {url!r} —— 离线打不开，把库内联进去")
         else:
-            bad.append(f"<{tag.lower()}> 引了本地文件 {url!r} —— 提交件里没有它，页面会白屏")
+            bad.append(f"{label} 引了本地文件 {url!r} —— 提交件里没有它，页面会白屏")
     if bad:
         return [f"{DEMO_HTML} 不是自包含的单文件（必须双击即用、离线可用）：" + "；".join(sorted(set(bad)))]
     return []
@@ -55,6 +82,9 @@ def demo_html_issues(root):
 # 三维豁免的固定前缀：SKILL 教产物写这一行、这里认这一行 —— 同一个 token 只此一处定义，
 # 防"文档说 A、代码 grep B"的漂移（回归哨兵按这个常量对 SKILL 文本）。
 DEMO_3D_EXEMPT_TOKEN = "三维豁免："
+# 理由至少这么多个字符：`三维豁免：.` / `三维豁免：无` 这种一字符理由是**空壳**，
+# SKILL 要的是"一句理由"；不设下限时它和"什么都没写"在机器眼里一样。
+DEMO_3D_EXEMPT_MIN_CHARS = 8
 DEMO_3D_ENGINE = "skills/16Web-demo/assets/scene3d.js"
 # 引擎是**框架**（住在仓库里、和判据同一个包），按 __file__ 定位而不是按 root ——
 # 否则对着一份没有 skills/ 的导出工作区跑 check 会假报"找不到引擎源文件"。
@@ -71,47 +101,172 @@ def _fold_eol(text):
                      for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
 
 
-def demo_3d_issues(root):
+def demo_3d_issues(root, html_path=None):
     """`demo/demo.html` 必须**逐字内联**三维内核（或显式声明豁免）。
 
     为什么是机器判据：⑯ 的主视图形态是"数据驱动的动态三维模型"，这条纪律如果只写在
     SKILL 里，agent 装作没看见、继续出二维曲线图时**没有任何东西会报错** —— 一路绿到
     交付，打开才发现主视图还是折线。仓库惯例是每条纪律带一个机械抓手，抓手就是：
-    引擎（`skills/16Web-demo/assets/scene3d.js`）的**整段原文**必须出现在 demo.html 里；
-    否则必须有一行 `三维豁免：<理由>`。判据不猜"这题能不能三维"，只要求
+    引擎（`skills/16Web-demo/assets/scene3d.js`）的**整段原文**必须出现在 demo.html 的
+    **`<script>` 块内**；否则必须有一行 `三维豁免：<理由>`（理由至少
+    `DEMO_3D_EXEMPT_MIN_CHARS` 个字符）。判据不猜"这题能不能三维"，只要求
     "内联了"或"说清了为什么没有"——纯判定卡/纯表格题合法豁免。
+
+    **必须限定在 script 块内**：旧判据只做整份文件的子串包含，把引擎原文贴进 HTML
+    注释、页面文字甚至 `<style>` 里都能过 —— 页面根本不执行它，主视图照样是二维。
 
     逐字比对还有第二个作用：引擎原文从此是事实上的接口 —— 改引擎要在**源文件**里改，
     源文件一动，盘上所有 demo.html 都"对不上原文"直到 ⑯ 重跑（与指令指纹把 ⑯ 标成
     stale-instr 是同一时刻，口径一致）。
+
+    `html_path` 给定时直接读它 —— 交付层的 `check` 传**提交包**里的 `demo.html`。
     """
     root = Path(root).resolve()
-    path = root / "demo/demo.html"
+    path = Path(html_path) if html_path is not None else root / "demo/demo.html"
     if not path.is_file():
         return []                                  # 没有 demo 的题不判（有的题不做 demo）
     engine_path = _DEMO_ENGINE_FILE
     if not engine_path.is_file():
         return [f"找不到三维引擎源文件 {DEMO_3D_ENGINE} —— 这条判据拿它做逐字比对，缺了它判不了"]
     try:
-        html = _fold_eol(path.read_text(encoding="utf-8", errors="replace"))
+        html = path.read_text(encoding="utf-8", errors="replace")
         engine = _fold_eol(engine_path.read_text(encoding="utf-8", errors="replace"))
     except OSError as exc:
         return [f"{DEMO_HTML} 或引擎源文件读不出来：{exc}"]
-    if engine and engine in html:
+    scripts = "\n".join(m.group(1) for m in _SCRIPT_BLOCK.finditer(_without_html_comments(html)))
+    if engine and engine in _fold_eol(scripts):
         return []
     try:
         report = (root / "reports/DEMO_REPORT.md").read_text(encoding="utf-8-sig", errors="replace")
     except OSError:
         report = ""
     for line in report.splitlines():
-        if DEMO_3D_EXEMPT_TOKEN in line:
-            if line.split(DEMO_3D_EXEMPT_TOKEN, 1)[1].strip():
-                return []                          # 豁免要带理由，光一个前缀不算
-    return [f"{DEMO_HTML} 里没有内联三维内核（{DEMO_3D_ENGINE} 的整段原文，逐字、只折叠行尾），"
-            f"reports/DEMO_REPORT.md 里也没有「{DEMO_3D_EXEMPT_TOKEN}理由」这样一行。"
+        stripped = line.strip()
+        # The token must **start** the line: a prose sentence such as
+        # "没有使用任何「三维豁免」" mentions it but is not an exemption.
+        if stripped.startswith(DEMO_3D_EXEMPT_TOKEN):
+            reason = stripped[len(DEMO_3D_EXEMPT_TOKEN):].strip()
+            if len(reason) >= DEMO_3D_EXEMPT_MIN_CHARS:
+                return []                      # 豁免要带**一句**理由，光一个前缀/一个字不算
+    return [f"{DEMO_HTML} 里没有在 **script 块内**逐字内联三维内核（{DEMO_3D_ENGINE} 的整段原文，"
+            f"逐字、只折叠行尾），reports/DEMO_REPORT.md 里也没有"
+            f"「{DEMO_3D_EXEMPT_TOKEN}理由（至少 {DEMO_3D_EXEMPT_MIN_CHARS} 个字符）」这样一行。"
             f"两条出路：① 重跑 ⑯，按 skills/16Web-demo/SKILL.md「动态三维模型」一节把引擎"
-            f"原文整段内联进 script 块；② 这题确实没有可三维化的维度（纯判定卡/纯表格）⇒ "
-            f"在报告里写一行「{DEMO_3D_EXEMPT_TOKEN}……」，把理由写出来。"]
+            f"原文整段内联进 script 块（贴进注释/页面文字不算）；② 这题确实没有可三维化的"
+            f"维度（纯判定卡/纯表格）⇒ 在报告里写一行「{DEMO_3D_EXEMPT_TOKEN}……」，把理由写出来。"]
+
+
+# 论文工程里的图是**副本**：`\paperfigure`/`\appfigure` 写的是 `figures/<stem>.pdf`
+# （见 `skills/9Paper-writing/templates/_base/macros.tex`），而编译目录是 `paper/` 与
+# `paper_appendix/` ⇒ LaTeX 实际读的是 `paper/figures/`、`paper_appendix/figures/`。
+# 根 `figures/` 才是登记簿与 `visualization.evidence.audit` 的对象；副本没同步时，
+# 论文编译进去的是**旧图**，而审计只看根目录 —— 一路绿到交付。示例工作区靠
+# `_tmp/` 脚本手工同步（`EDITORIAL_CHANGES.md` 里那笔 40 份对账），没有机械抓手。
+FIGURE_COPY_DIRS = ("paper/figures", "paper_appendix/figures")
+# 附录工程专有件：⑯ 的 headless 截图（`lib/web/appendix_demo_figure.py` 生成），
+# 不是数据图、不进根 `figures/manifest.json` ⇒ 不在"副本同源"的比对范围里。
+FIGURE_COPY_EXEMPT = {"demo_shot.pdf"}
+
+
+def paper_figure_copy_issues(root):
+    """`paper/figures/`、`paper_appendix/figures/` 的 PDF 必须与根 `figures/` 的同名 PDF 同源。
+
+    判据是逐张 `sha256`：同名但字节不同 ⇒ 论文编译用的是旧图；根目录没有同名源 ⇒
+    副本来源不明（改名/残留）。`demo_shot.pdf` 是附录专有件，跳过。
+
+    为什么不能只靠 `visualization.evidence.audit`：它扫的是根 `figures/`（登记簿那一层），
+    而**编译真正读的是工程副本**。两者不一致时，登记、复核、审计全绿，PDF 里却是旧图。
+    """
+    root = Path(root).resolve()
+    base = root / "figures"
+    issues = []
+    for rel in FIGURE_COPY_DIRS:
+        d = root / rel
+        if not d.is_dir():
+            continue
+        for p in sorted(d.iterdir()):
+            if not p.is_file() or p.suffix.lower() != ".pdf":
+                continue
+            if p.name.casefold() in FIGURE_COPY_EXEMPT:
+                continue
+            src = base / p.name
+            if not src.is_file():
+                issues.append(f"{rel}/{p.name} 在根 figures/ 下没有同名源文件 —— "
+                              f"副本来源不明（图已改名/删除？），论文编译会读到它")
+                continue
+            try:
+                same = (hashlib.sha256(p.read_bytes()).digest()
+                        == hashlib.sha256(src.read_bytes()).digest())
+            except OSError as exc:
+                issues.append(f"{rel}/{p.name} 读不出来：{exc}")
+                continue
+            if not same:
+                issues.append(f"{rel}/{p.name} 与根 figures/{p.name} 的 sha256 不一致 —— "
+                              f"论文编译用的是**旧图**；把根 figures/ 的这份重新同步进 "
+                              f"{rel}/ 后重编译")
+    return issues
+
+
+def _appendix_pdf_issues(root):
+    """接线：附录 PDF 的纸面/大小判据住在 `lib.publication.checks`（与主 PDF 的体检同处）。"""
+    from lib.publication.checks import appendix_pdf_issues
+    return appendix_pdf_issues(root)
+
+
+PHYSICAL3D_QA_REPORT = "reports/FIG_GEOMETRY_3D_QA.json"
+
+
+def physical3d_issues(root):
+    """第五类物理立体图（Route A/B）的 QA 报告必须落盘、通过，且不能早于图。
+
+    这只消费 ⑦ 自己 SKILL 规定要写的 `reports/FIG_GEOMETRY_3D_QA.json`，不重跑
+    `qa_physical3d.py`（驱动跑它需要 manifest 里没有的 width/font 参数）。判据分三层：
+      ① 一旦出现 `figures/*.scene.json` 或 `figures/fig_geometry_3d.pdf`，报告必须存在；
+      ② 报告 `ok` 必须为 true，且各 part 的 `errors` 为空；
+      ③ 报告不能早于 PDF（改图后没重跑 QA 的陈旧报告不算数）。
+    另外把 `warnings` 也当问题：字体/宽度/压实体在 QA 脚本里只出 warning、退出码仍 0，
+    若这里不读，3D 图仍可"一路绿"到交付。
+    """
+    root = Path(root).resolve()
+    figures = root / "figures"
+    has_3d = (any(figures.glob("*.scene.json"))
+              or (figures / "fig_geometry_3d.pdf").is_file())
+    if not has_3d:
+        return []
+    report_path = root / PHYSICAL3D_QA_REPORT
+    if not report_path.is_file():
+        return [f"存在物理立体图，但缺 {PHYSICAL3D_QA_REPORT} —— ⑦ 必须跑 "
+                f"`qa_physical3d.py --report {PHYSICAL3D_QA_REPORT}`，不能只目检"]
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as exc:
+        return [f"{PHYSICAL3D_QA_REPORT} 不可读：{exc}"]
+    if not isinstance(report, dict):
+        return [f"{PHYSICAL3D_QA_REPORT} 根节点必须是对象"]
+    issues = []
+    if report.get("ok") is not True:
+        issues.append(f"{PHYSICAL3D_QA_REPORT} 的 ok 不是 true（QA 未通过）")
+    parts = report.get("parts")
+    if not isinstance(parts, dict):
+        issues.append(f"{PHYSICAL3D_QA_REPORT} 缺 parts 对象")
+        parts = {}
+    for name, part in sorted(parts.items()):
+        if not isinstance(part, dict):
+            issues.append(f"{PHYSICAL3D_QA_REPORT}.parts.{name} 必须是对象")
+            continue
+        for err in part.get("errors") or []:
+            issues.append(f"物理立体图 QA [{name}] 错误：{err}")
+        for warn in part.get("warnings") or []:
+            issues.append(f"物理立体图 QA [{name}] 警告：{warn}")
+    pdf = figures / "fig_geometry_3d.pdf"
+    if pdf.is_file():
+        try:
+            if report_path.stat().st_mtime < pdf.stat().st_mtime:
+                issues.append(f"{PHYSICAL3D_QA_REPORT} 早于 figures/fig_geometry_3d.pdf —— "
+                              f"图改过但没重跑 QA，报告已过期")
+        except OSError:
+            pass
+    return issues
 
 
 def _suggest(name):
@@ -203,12 +358,25 @@ def check(root, output_dir, items=None):
     elif OTHER_DIR in actual:
         issues.append(f"{OTHER_DIR} 是文件，应该是目录")
 
-    # ④ demo 必须自包含（白屏是"一路绿到交付、打开才发现"的那类故障）
-    issues.extend(demo_html_issues(root))
+    # ④ demo 必须自包含（白屏是"一路绿到交付、打开才发现"的那类故障）。
+    #    判据对着**提交包里的** `out/demo.html`，不是工作区那份 —— 打包进去的是
+    #    旧版/残缺版时，只查工作区会放行（而交付出去的就是那份坏的）。
+    issues.extend(demo_html_issues(root, out / DEMO_HTML))
 
-    # ④·2 demo 主视图必须是数据驱动的三维（引擎逐字内联）或显式豁免 —— 与④同一个故障族：
-    #     主视图悄悄退回二维曲线，打包/清单/页数检查全都不会报错。
-    issues.extend(demo_3d_issues(root))
+    # ④·2 demo 主视图必须是数据驱动的三维（引擎逐字内联在 script 块内）或显式豁免 ——
+    #     与④同一个故障族：主视图悄悄退回二维曲线，打包/清单/页数检查全都不会报错。
+    issues.extend(demo_3d_issues(root, out / DEMO_HTML))
+
+    # ④·3 论文工程里的图件副本必须与根 figures/ 同源（编译读 paper/figures/，审计只看根目录）
+    issues.extend(paper_figure_copy_issues(root))
+
+    # ④·4 附录 PDF 的纸面与大小（主 PDF 的体检在 publication.inspect，只量 paper/main.pdf；
+    #     附录是另一个工程、另一个 PDF，此前没有任何机械判据）
+    issues.extend(_appendix_pdf_issues(root))
+
+    # ④·4b 第五类物理立体图的 QA 报告（⑦ 自写的报告不能被当成"自证"直接放行：
+    #     驱动在这里读它的 ok/errors/warnings，并要求报告不早于图）
+    issues.extend(physical3d_issues(root))
 
     # ④·5 题目附件**一个都不能漏**
     #   为什么值得单列：`provisional_items` 只看顶层，所以 `request/attachments/附件3/`
@@ -282,6 +450,13 @@ def precheck(root, items=None):
             issues.append(f"提交清单声明了 {name!r}，但工作区里没有对应的 {src!r}")
     issues.extend(required_items_issues(root, items))
     issues.extend(checklist_consistency_issues(root))
+    # 图件副本同源：verify 时两个 LaTeX 工程都已编过，副本是否同步此刻就查得出来 ——
+    # 别等到收口打包才发现论文里的图是旧的（那时要连带重编译两个 PDF）。
+    issues.extend(paper_figure_copy_issues(root))
+    # 附录 PDF 的 A4/大小：与 check() 同一条判据，提前到 verify 那一关。
+    issues.extend(_appendix_pdf_issues(root))
+    # 物理立体图的 QA 报告：与 check() 同一条判据，别等到收口才发现 ⑦ 没跑 QA。
+    issues.extend(physical3d_issues(root))
     return issues
 
 

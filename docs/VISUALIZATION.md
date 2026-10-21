@@ -2,9 +2,40 @@
 
 本协议用于生成数据图、非数据图登记、写作选图和最终验收。公共 `lib/visualization/` 与 `config/visualization.json` 位于生成目录之外，换题保留，并随交付包分发。依赖见 `lib/visualization/requirements.txt`。从项目根目录运行 Python；子目录脚本须把项目根目录加入 sys.path，避免硬编码本机路径。
 
+> **选型与统一画风先读 `skills/figure-studio/SKILL.md`。** 它把数据图型库、比较与拼版、投稿契约与质控、场图与 3D 内核合成一个入口；
+> 数据图用 `skills/figure-studio/scripts/studio.py` 的 recipe，语言/宽度由
+> `resolve_context.py` 从论文模板解析（CUMCM → 中文、160 mm、微软雅黑）。本文件的
+> `charts` 函数仍是底层渲染与登记协议，二者不冲突。
+>
+> **④/⑦ 已解耦**：④ 只写 `figures/data/<id>.npz` + `figures/spec/<id>.json` +
+> `figures/<id>.lock.json`（`studio.save_bundle`）；⑦ 是唯一渲染者，写
+> `figures/make_figures.py` / PDF/SVG/PNG / source data / meta（`studio.save_figure`）。
+> 数据层契约与 `[lock:data]` / `[lock:contract]` 路由见
+> `skills/figure-studio/references/decoupling.md`。
+
 ## 先规划，再画图
 
-在 `reports/FIGURE_PLAN.md` 中记录每张候选图的稳定语义 ID、它回答的问题、来源文件和字段/单位、图型、区间定义、正文/附录用途、最终宽度。按论证需求选图，不规定每问数量。没有实际计算支持的统计区间、最优点和权衡曲线不进入计划。流程图根据实际子问题生成，节点每行约十字、最多两行，长公式留正文。
+在 `reports/FIGURE_PLAN.md` 中记录每张候选图的稳定语义 ID、它回答的问题、来源文件和字段/单位、图型、区间定义、正文/附录用途、最终宽度。按论证需求选图；数据图以 `config/visualization.json` 的 `chart_mix` 为下限（每问 ≥2 张，且至少一张不是折线），下限之上按论证需求增补，不设固定张数；非数据图不规定每问数量。没有实际计算支持的统计区间、最优点和权衡曲线不进入计划。流程图根据实际子问题生成，节点每行约十字、最多两行，长公式留正文。
+
+## 数据图契约（④ → ⑦）
+
+```text
+figures/data/<id>.npz        # ④：只读数据包
+figures/spec/<id>.json       # ④：recipe + fields/field_mapping + claim/stats + layout
+figures/<id>.lock.json       # ④：bundle/spec 语义/source/claim 的 sha256
+figures/make_figures.py      # ⑦：渲染器（唯一写者）
+figures/<id>.pdf/.svg/.png   # ⑦：成品
+figures/source_data/<id>__<panel>.csv   # ⑦
+figures/<id>.meta.json       # ⑦
+```
+
+- ④ 用 `studio.save_bundle(...)`；**不写画布、不写 PDF/PNG、不写 `make_figures.py`**。
+- ⑦ 读 bundle + spec；可以换 recipe/layout/配色/标题/caption，**不能改** fields、
+  field_mapping、statistics、claim、bundle、lock。
+- 渲染前 `studio.save_figure` 会跑 `figure_lock.verify_one`；锁不过直接拒绝。
+- `python skills/figure-studio/scripts/figure_lock.py verify --root .` 是 ⑦/⑧ 的必跑项；
+  `audit_studio.py` 已内置它。
+- 旧图没有三件套时只给 `[lock:advisory]`，下次 ④ 重跑补齐；不要求批量迁移。
 
 ## 数据图实现
 
@@ -39,6 +70,9 @@
 「低值区占一大片、后段压平」。另：`export()` 会跑 `quality.near_monochrome` —— 非白像素里
 同色占比 ≥75% 时打印一条提醒（不进 `auto_issues`），提示这张图可能该改成剖面/折线。
 
+> 下面的 `export` 是**底层**登记协议，⑦ 或未接 `save_bundle` 的旧脚本仍可直接用；
+> ④ 新写的图请走 `studio.save_bundle`，不要用这段直接出成品。
+
 ```python
 from lib.visualization.charts import style, canvas, trend
 from lib.visualization.export import export
@@ -51,11 +85,13 @@ with style() as settings:
     ax.set(xlabel="年份", ylabel="收益（万元）")
     ax.legend()
     export(fig, project_root, "q1_revenue", sources=["code/outputs/revenue.csv"],
-           script="code/plot_results.py", claim="填写数据支持的结论",
+           script="figures/make_figures.py", claim="填写数据支持的结论",
            caption="填写变量、单位及必要的统计定义", settings=settings)
 ```
 
-`export` 输出 PDF、可编辑文字 SVG 和 PNG 预览，保留指定物理尺寸，自动登记 `figures/manifest.json`。默认宽 160 mm、字号 9 pt、最低 8 pt；这是本项目初始样式，不是比赛强制标准。使用半栏应按实际半栏宽重新排版，不能把复杂图直接缩小。不同方案跨图保持同色，并用线型/标记补充区分。自定义尺寸通过 `canvas(settings, width_mm=..., height_mm=...)`。
+`export` 输出 PDF、可编辑文字 SVG 和 PNG 预览，保留指定物理尺寸，自动登记 `figures/manifest.json`。
+画图脚本由 ⑦ 拥有，必须住 `figures/`（例如 `figures/make_figures.py`）；写进 `code/` 会让
+改一行配色连锁触发 ⑤⑥⑦⑧ 重跑。默认宽 160 mm、字号 9 pt、最低 8 pt；这是本项目初始样式，不是比赛强制标准。使用半栏应按实际半栏宽重新排版，不能把复杂图直接缩小。不同方案跨图保持同色，并用线型/标记补充区分。自定义尺寸通过 `canvas(settings, width_mm=..., height_mm=...)`。
 
 ## 自定义图和 DrawIO
 
@@ -91,9 +127,9 @@ sources 列出所有实际依赖（不能仅列第一份数据），script 是�
      （`docs/KNOWN_GAPS.md` 附录里的「待办 8」）；所以这条目前**必须靠生成期自检 + 目检**，不许默认"应该没事"。捕获部分缺字、超出画布和过小字号，不能确认所有重叠或科学正确性。
 2. 修复后重新导出。实际目检后另行运行 `python -m lib.visualization review q1_revenue --reviewer "当前审阅者" --note "记录实际看到的布局、文字、图例及仍存在的限制"`。生成脚本不得自动调用 review。
 3. 运行 `python -m lib.visualization audit`。它只读检查所有已登记入选图的当前来源、脚本、配置、公共模块、图片哈希和复核签名；未登记的 PDF/PNG/SVG 会报错。零图场景由报告说明不适用依据。
-4. 8Figure-gate（绘图门禁，紧跟 7Route-diagram）：⑦ 一跑完，全文的图就都在盘上了 —— 这是最早能对图全集做检查的位置。驱动在此直接跑 `python -m lib.visualization audit`（机械地板：过期资产/登记缺失/复核签名/位图质量/图例压数据/drawio 版式体检），再加一轮机器看不见的核对（选型是否合适、读起来清不清楚、与 claim 是否一致）。**只判不改**：FAIL 回 7Route-diagram 重画，⑦ 若查明根子在数据图再交回 4Coding-and-computation。判据与逐张清单见 `skills/8Figure-gate/SKILL.md`。
+4. 8Figure-gate（绘图门禁，紧跟 7Route-diagram）：⑦ 一跑完，全文的图就都在盘上了 —— 这是最早能对图全集做检查的位置。驱动在此直接跑 `python -m lib.visualization audit` + `figure_lock.py verify`（机械地板：过期资产/登记缺失/复核签名/位图质量/图例压数据/drawio 版式体检/数据锁），再加一轮机器看不见的核对（选型是否合适、读起来清不清楚、与 claim 是否一致）。**只判不改**：画法/契约 FAIL 回 7Route-diagram 重画；`[lock:data]` 是数据层问题，直接回 4Coding-and-computation。每条 issue 必须带 `figure_id`，⑦ 只重渲被点名的图。判据与逐张清单见 `skills/8Figure-gate/SKILL.md`。
 5. 14Layout-and-format 核对正文选图、图注、引用与 included 标记，按最终纸面尺寸查看编译 PDF（编译与逐页视觉验收归它；9Paper-writing 只决定图放哪一节）；如需改图，重绘、重新登记、目检。图像内容改变后旧复核失效，caption/宽度/用途改变后签名也失效。
-6. 15Verification 只读执行 audit，并独立查看论文中所有入选图，记录页码和具体发现到 VERIFY_REPORT。发现问题给前序返修（图缺失/画错 → 7Route-diagram，category=diagram；版式/嵌入尺寸 → 14Layout-and-format，category=presentation）；不要在审查中改图或登记通过。Web 终验不能以总报告 PASS 绕过图表证据失败。
+6. 15Verification 只读执行 `python -m lib.visualization audit` 与 `figure_lock.py verify`，并独立查看论文中所有入选图，记录页码和具体发现到 VERIFY_REPORT。发现问题给前序返修（图缺失/画错 → 7Route-diagram，category=diagram；版式/嵌入尺寸 → 14Layout-and-format，category=presentation）；不要在审查中改图或登记通过。Web 终验不能以总报告 PASS 绕过图表证据失败。
    > 8Figure-gate 与 15Verification 两条图闸门都在，分工是时间：前者管"图刚做出来"的早场，后者管"成稿之后图又被动过"（14Layout-and-format 会重渲染）的晚场。别互相替代。
 
 ### 「哪些文件算这张图的依赖」—— 只算产像素的
@@ -101,6 +137,9 @@ sources 列出所有实际依赖（不能仅列第一份数据），script 是�
 `snapshot()` 哈希的是：该图的 `sources` / `artifacts` / `script`、`config/visualization.json`，
 以及 `lib/visualization/PIXEL_PRODUCERS`（`charts.py`、`schematic.py`、`geometry.py`、`dense.py`、
 `export.py`）。**检查器 `quality.py` 与登记簿 `evidence.py` 不在里面** —— 它们不产像素。
+④/⑦ 解耦后，`save_figure` 会把 `figures/data/<id>.npz`、`figures/spec/<id>.json`、
+`figures/<id>.lock.json` 自动加进 `sources` —— 数据层一变，图就被判过期；这也是
+`figure_lock` 之外的第二道保险。
 
 若按 `lib/visualization/*.py` 整目录哈希：只往 `quality.py` 加一条 warning 判据，
 19 张图全部会被判「数据、脚本、配置或图片已改变，需重新生成和复核」⇒ 逼着 ⑦/⑧ 把整套图

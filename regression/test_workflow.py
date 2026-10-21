@@ -321,6 +321,47 @@ class WorkflowTests(unittest.TestCase):
         # ④ 也被如实留灰：③ 的报告是它输入指纹的一半（上游报告变了 ⇒ 它的产物可能过期）
         self.assertEqual(self.s.state["stages"]["code"], "idle")
 
+    def test_late_start_is_rejected_when_input_changed(self):
+        """输入变了就不能从 ⑨/⑯ 起跑：返回 409 让前端显示，不静默改回 ①。
+
+        反向对照：输入摘要与 workspace.json 一致时，同样的 from_stage 允许。
+        正常“只改代码/报告”的 ⑨→⑯ 正是这一支，不能被误拦。
+        """
+        qdir = self.root / "runtime" / "quality"
+        qdir.mkdir(parents=True, exist_ok=True)
+        (qdir / "workspace.json").write_text(
+            json.dumps({"source_digest": "old-digest", "run_id": "old"}),
+            encoding="utf-8")
+        with self.assertRaises(self.s.HTTPException) as cm:
+            asyncio.run(self.s.start(self.s.StartReq(from_stage="demo")))
+        self.assertEqual(cm.exception.status_code, 409)
+        self.assertIn("输入已变更", cm.exception.detail)
+        self.assertIn("从 ⓪", cm.exception.detail)
+
+        # 前端「从所选阶段重跑」在**清空之前**调这个预检：同一判据、不落盘。
+        pre = asyncio.run(self.s.start_preflight(from_stage="demo"))
+        self.assertFalse(pre["ok"])
+        self.assertIn("输入已变更", pre["detail"])
+        self.assertIn("从 ⓪", pre["detail"])
+        routes = {(getattr(r, "path", None), tuple(sorted(getattr(r, "methods", ()) or ())))
+                  for r in self.s.app.routes}
+        self.assertIn(("/api/start/preflight", ("GET",)), routes,
+                      "前端按这个路径取预检；路由没注册就会 404")
+        self.assertTrue(asyncio.run(self.s.start_preflight(from_stage="intake"))["ok"],
+                        "⓪ 读题 自己永远可以从头起跑")
+        with self.assertRaises(self.s.HTTPException) as cm2:
+            asyncio.run(self.s.start_preflight(from_stage="no-such-stage"))
+        self.assertEqual(cm2.exception.status_code, 400)
+
+        (qdir / "workspace.json").write_text(
+            json.dumps({"source_digest": self.s._source_digest(), "run_id": "new"}),
+            encoding="utf-8")
+        self.assertIsNone(self.s._late_start_block_reason("demo"),
+                          "输入没变却把正常的 ⑨→⑯ 拦了")
+        pre = asyncio.run(self.s.start_preflight(from_stage="demo"))
+        self.assertTrue(pre["ok"])
+        self.assertEqual(pre["detail"], "")
+
     def test_start_from_stage_drops_only_the_earlier_yellow_lights(self):
         """起点**之前**的黄灯作废（链不会走到它）；起点及之后的照留（链真会走到）。"""
         self.s.state["pending"] = {"stage": "audit", "kind": "paused", "actions": ["retry"]}
@@ -4315,6 +4356,9 @@ class ExtendIsAdditiveTests(unittest.TestCase):
 
     def _extend(self, seconds=600):
         s = self.s
+        # 超时黄灯的语义是"链**还在跑**、只是超了限时"（`_apply_decision` 用 running 区分
+        #   链已死的残留黄灯，见 `test_extend_is_refused_when_the_chain_is_gone`）。
+        s.state["running"] = True
         s.state["stages"]["code"] = "awaiting_user"
         s.state["pending"] = self._overtime_pending()
         return asyncio.run(s._apply_decision(
@@ -4395,6 +4439,390 @@ class ExtendIsAdditiveTests(unittest.TestCase):
         self.assertNotIn("code", s.state["retry_cap"], "执行结束后临时上限必须被清掉")
         # 「退回默认」= 退回**该阶段自己的**默认（④ 有自己单独标定的值，见 STAGE_CAP_DEFAULT）
         self.assertEqual(s._effective_limits("code")[0], s._default_cap("code"))
+
+
+class ExtendOnDeadChainTests(unittest.TestCase):
+    """链已经没了（`kind=overtime`、`running=False`）时，「延长」必须被拒。
+
+    现场：超时黄灯期间按了「停止」——`run_all` 走 stopping 出口 break，既不走 `_halt`
+      也不清 pending，盘上留下一个没有链的 overtime 黄灯。旧行为：extend 照样
+      `_set_pending(None)` + `state["stages"][sid] = "running"`，于是阶段永久停在"正在跑"、
+      链却不存在，用户连重试入口都被清掉了。retry/rollback 早就有 `overtime` 判据，
+      唯独 extend 漏了。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.s = load_server(self.root)
+
+    def test_extend_is_refused_when_the_chain_is_gone(self):
+        s = self.s
+        s.state["running"] = False
+        s.state["stages"]["code"] = "awaiting_user"
+        s.state["pending"] = {"stage": "code", "kind": "overtime", "status": "overtime",
+                              "reason": "x", "actions": ["retry", "extend"],
+                              "recommended": None, "candidates": [], "issues": [],
+                              "retry_cap_default": s.RETRY_CAP_DEFAULT, "attest_default": None}
+        s.state["retry_cap"] = {}
+        with self.assertRaises(s.HTTPException) as cm:
+            asyncio.run(s._apply_decision(
+                s.DecisionReq(action="extend", stage="code", extra_seconds=600)))
+        self.assertEqual(cm.exception.status_code, 409)
+        self.assertEqual(s.state["pending"]["kind"], "overtime", "被拒时黄灯必须原样留着")
+        self.assertEqual(s.state["stages"]["code"], "awaiting_user",
+                         "不许把不存在的链置成 running（那会让阶段永不回绿）")
+        self.assertNotIn("code", s.state["retry_cap"], "被拒时不许写临时上限")
+
+    def test_extend_still_works_while_the_chain_is_alive(self):
+        """反向对照：链在跑时不能误伤 —— 那正是「延长」唯一的合法场景。"""
+        s = self.s
+        s.state["running"] = True
+        s.state["stages"]["code"] = "awaiting_user"
+        s.state["pending"] = {"stage": "code", "kind": "overtime", "status": "overtime",
+                              "reason": "x", "actions": ["retry", "extend"],
+                              "recommended": None, "candidates": [], "issues": [],
+                              "retry_cap_default": s.RETRY_CAP_DEFAULT, "attest_default": None}
+        s.state["retry_cap"] = {}
+        r = asyncio.run(s._apply_decision(
+            s.DecisionReq(action="extend", stage="code", extra_seconds=600)))
+        self.assertTrue(r["ok"])
+        self.assertIsNone(s.state["pending"], "合法延长后黄灯应当收起")
+        self.assertEqual(s.state["stages"]["code"], "running")
+
+
+class ReadEndpointGuardTests(unittest.TestCase):
+    """/api/read：Host 白名单 + 路径白名单。
+
+    为什么两者都要：`is_relative_to(ROOT)` 只保证没出工作区，而 `.env`/`runtime/`/
+      `lib/` 都在工作区里 —— 一条 `GET /api/read?path=.env` 就能把密钥读回浏览器；
+      而 DNS rebinding 让 `evil.example` 解析到 127.0.0.1 后，浏览器发的是
+      `Host: evil.example`，只查 Origin 的中间件对 GET 根本不管。
+    对照组（allowed 文件 200）必须留着：否则"全拒"也能让下面这些 403 断言变绿。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.s = load_server(self.root)
+        files = {
+            ".env": "ANTHROPIC_AUTH_TOKEN=supersecret\n",
+            ".git/config": "[core]\n",
+            ".claude/settings.json": "{}\n",
+            "config/delivery.local.json": "{}\n",
+            "runtime/effective_profile.json": "{}\n",
+            "lib/secret.py": "SECRET = 1\n",
+            "skills/x/SKILL.md": "# x\n",
+            "regression/x.py": "# x\n",
+            "reports/.hidden": "hidden\n",
+            "reports/ok.md": "# 报告\n正文\n",
+            "reports/pic.png": "\x89PNG\r\n\x1a\nfixture",
+            "reports/big.txt": "a" * (self.s.READ_TEXT_MAX + 1),
+            "figures/ok.png": "\x89PNG\r\n\x1a\nfixture",
+            "paper/main.pdf": "%PDF-1.4 fixture",
+            "request/problem.md": "题面\n",
+            "data/x.csv": "a,b\n",
+            "results/r.txt": "r\n",
+            "code/c.py": "print(1)\n",
+            "demo/d.html": "<html></html>",
+            "产物/x.md": "# 产物\n",
+            "运行说明.md": "# 说明\n",
+        }
+        for rel, body in files.items():
+            p = self.root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(body.encode("utf-8") if not rel.endswith((".png", ".pdf")) else body.encode("latin-1"))
+        self.client = self._client()
+
+    def _client(self):
+        from fastapi.testclient import TestClient
+        return TestClient(self.s.app)
+
+    def _get(self, path, **headers):
+        return self.client.get("/api/read", params={"path": path}, headers=headers or None)
+
+    def test_sensitive_paths_inside_the_workspace_are_refused(self):
+        for rel in (".env", ".git/config", ".claude/settings.json",
+                    "config/delivery.local.json", "runtime/effective_profile.json",
+                    "lib/secret.py", "skills/x/SKILL.md", "regression/x.py",
+                    "reports/.hidden"):
+            with self.subTest(rel=rel):
+                r = self._get(rel)
+                self.assertEqual(r.status_code, 403, f"{rel} 不该可读")
+        r = self._get(".env")
+        self.assertNotIn("supersecret", r.text, "拒绝时也不能把内容带回来")
+
+    def test_whitelisted_preview_paths_still_work(self):
+        """反向对照：白名单里的东西必须照常可读（别把面板读报告/看图一起挡死）。"""
+        for rel, want in (("reports/ok.md", "正文".encode()), ("figures/ok.png", b"\x89PNG"),
+                          ("paper/main.pdf", b"%PDF"), ("request/problem.md", "题面".encode()),
+                          ("data/x.csv", b"a,b"), ("results/r.txt", b"r"),
+                          ("code/c.py", b"print"), ("demo/d.html", b"<html>"),
+                          ("产物/x.md", "产物".encode()), ("运行说明.md", "说明".encode())):
+            with self.subTest(rel=rel):
+                r = self._get(rel)
+                self.assertEqual(r.status_code, 200, f"{rel} 应当可读：{r.text[:120]}")
+                self.assertIn(want, r.content)
+
+    def test_foreign_host_is_refused_but_loopback_names_are_ok(self):
+        for host in ("evil.example", "127.0.0.1:80@evil.com", "[::1]:notaport"):
+            with self.subTest(host=host):
+                r = self._get("reports/ok.md", Host=host)
+                self.assertEqual(r.status_code, 403, f"DNS rebinding/畸形 Host {host} 不该被受理")
+        for host in ("127.0.0.1", "127.0.0.1:8901", "localhost:8901",
+                     "[::1]:8901", "::1", "testserver"):
+            with self.subTest(host=host):
+                self.assertEqual(self._get("reports/ok.md", Host=host).status_code, 200,
+                                 f"本机写法 {host} 必须放行")
+
+    def test_path_traversal_still_refused(self):
+        outside = self.root.parent / f"outside_{self.root.name}.txt"
+        outside.write_text("outside-secret", encoding="utf-8")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        r = self._get("../" + outside.name)
+        self.assertEqual(r.status_code, 403)
+        self.assertNotIn("outside-secret", r.text)
+
+
+class ReadCacheAndTextLimitTests(unittest.TestCase):
+    """`no_store` 不能把图片/PDF 的 ETag 一起废掉；文本预览不能无上限地同步读。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.s = load_server(self.root)
+        for rel, body in (("reports/pic.png", b"\x89PNG\r\n\x1a\nfixture"),
+                          ("reports/doc.pdf", b"%PDF-1.4 fixture"),
+                          ("reports/note.md", "hello".encode()),
+                          ("reports/small.txt", b"hello")):
+            p = self.root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(body)
+        from fastapi.testclient import TestClient
+        self.client = TestClient(self.s.app)
+
+    def test_images_and_pdfs_keep_a_short_private_cache(self):
+        for rel in ("reports/pic.png", "reports/doc.pdf"):
+            with self.subTest(rel=rel):
+                r = self.client.get("/api/read", params={"path": rel})
+                self.assertEqual(r.status_code, 200)
+                self.assertEqual(r.headers.get("cache-control"), "private, max-age=60")
+                self.assertTrue(r.headers.get("etag"), "有 ETag 才谈得上条件请求")
+        # 反向对照：文本仍是 no-store（面板不缓存旧报告）
+        r = self.client.get("/api/read", params={"path": "reports/note.md"})
+        self.assertEqual(r.headers.get("cache-control"), "no-store")
+
+    def test_oversized_text_is_refused(self):
+        big = self.root / "reports/big.txt"
+        big.write_bytes(b"a" * (self.s.READ_TEXT_MAX + 1))
+        r = self.client.get("/api/read", params={"path": "reports/big.txt"})
+        self.assertEqual(r.status_code, 413)
+        self.assertIn("2 MiB", r.json()["detail"])
+        # 对照组：刚好在上限之内仍要正常返回
+        ok = self.root / "reports/near.txt"
+        ok.write_bytes(b"a" * (self.s.READ_TEXT_MAX - 16))
+        r = self.client.get("/api/read", params={"path": "reports/near.txt"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.json()["text"]), self.s.READ_TEXT_MAX - 16)
+
+
+class PendingPersistenceTests(unittest.TestCase):
+    """`_set_pending` 必须原子写、失败必须留痕（原来 `write_text` + 静默吞异常）。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.s = load_server(self.root)
+
+    def test_write_and_clear_roundtrip(self):
+        s = self.s
+        s._set_pending({"stage": "code", "kind": "failure", "actions": ["retry"], "issues": []})
+        self.assertTrue(s.PENDING_FILE.is_file())
+        self.assertEqual(json.loads(s.PENDING_FILE.read_text(encoding="utf-8"))["stage"], "code")
+        s._set_pending(None)
+        self.assertFalse(s.PENDING_FILE.exists(), "清黄灯要把盘上那份也删掉")
+
+    def test_write_goes_through_atomic_json(self):
+        """反向护栏：直接 `write_text` 就抓不到这次调用（半份 JSON 的根源）。"""
+        s = self.s
+        calls = []
+        real = s.atomic_json
+
+        def spy(path, data):
+            calls.append(Path(path))
+            real(path, data)
+
+        s.atomic_json = spy
+        try:
+            s._set_pending({"stage": "code"})
+        finally:
+            s.atomic_json = real
+        self.assertEqual(calls, [s.PENDING_FILE])
+
+    def test_write_failure_is_recorded(self):
+        s = self.s
+        blocker = self.root / "blocker"
+        blocker.write_text("x", encoding="utf-8")
+        s.PENDING_FILE = blocker / "pending.json"      # 父路径是文件 ⇒ mkdir 必失败
+        s.state.pop("log_write_errors", None)
+        s._set_pending({"stage": "code", "kind": "failure"})
+        self.assertEqual(s.state["pending"]["stage"], "code", "内存态仍要更新")
+        self.assertTrue(s.state.get("log_write_errors"), "落盘失败不能静默")
+        s.log.assert_called()
+
+    def test_unlink_failure_is_recorded(self):
+        s = self.s
+        d = self.root / "pending_dir"
+        d.mkdir()
+        s.PENDING_FILE = d                            # 目录 unlink 必失败
+        s.state.pop("log_write_errors", None)
+        s._set_pending(None)
+        self.assertIsNone(s.state["pending"])
+        self.assertTrue(s.state.get("log_write_errors"), "unlink 失败不能静默")
+        # 对照组：正常路径上没有文件时（missing_ok）不许记一条假错误
+        s.PENDING_FILE = self.root / "runtime/quality/pending_decision.json"
+        before = len(s.state.get("log_write_errors") or [])
+        s._set_pending(None)
+        self.assertEqual(len(s.state.get("log_write_errors") or []), before)
+
+
+class LegacyUploadLimitTests(unittest.TestCase):
+    """老三条（problem/attachment/data）上传必须与 folder 同一组体量/件数上限。
+
+    原来这三条直接 `await f.read()` 整份进内存、无任何上限 —— 误选一个大文件夹就能把
+      进程撑爆，而且半个文件还会留在 request/ 里冒充"已收好"。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.s = load_server(self.root)
+        from fastapi.testclient import TestClient
+        self.client = TestClient(self.s.app)
+        self._orig = (self.s.upload_guard.MAX_FILE_BYTES,
+                      self.s.upload_guard.MAX_TOTAL_BYTES,
+                      self.s.upload_guard.MAX_FILES)
+        self.addCleanup(self._restore_limits)
+
+    def _restore_limits(self):
+        (self.s.upload_guard.MAX_FILE_BYTES, self.s.upload_guard.MAX_TOTAL_BYTES,
+         self.s.upload_guard.MAX_FILES) = self._orig
+
+    def _limits(self, file=None, total=None, count=None):
+        g = self.s.upload_guard
+        if file is not None: g.MAX_FILE_BYTES = file
+        if total is not None: g.MAX_TOTAL_BYTES = total
+        if count is not None: g.MAX_FILES = count
+
+    def test_single_file_limit_applies_to_attachments(self):
+        self._limits(file=4)
+        old = self.root / "request/attachments/big.bin"
+        old.parent.mkdir(parents=True, exist_ok=True)
+        old.write_bytes(b"old")
+        r = self.client.post("/api/upload", data={"kind": "attachment"},
+                             files=[("files", ("big.bin", b"x" * 100))])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("单个文件超过", r.json()["detail"])
+        self.assertEqual(old.read_bytes(), b"old",
+                         "被拒的上传不能毁掉目标位置上已有的旧文件（流式写临时文件再换）")
+        self.assertFalse(list(old.parent.glob("*.uploading.*")), "临时文件必须清掉")
+        # 反向对照：上限之内照常收
+        r = self.client.post("/api/upload", data={"kind": "attachment"},
+                             files=[("files", ("ok.bin", b"xx"))])
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue((self.root / "request/attachments/ok.bin").exists())
+
+    def test_batch_total_limit_applies_to_data(self):
+        self._limits(file=1000, total=100)
+        r = self.client.post("/api/upload", data={"kind": "data"},
+                             files=[("files", ("a.bin", b"x" * 60)),
+                                    ("files", ("b.bin", b"y" * 60))])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("整批超过", r.json()["detail"])
+        # 反向对照：加起来没超就收
+        r = self.client.post("/api/upload", data={"kind": "data"},
+                             files=[("files", ("c.bin", b"x" * 40)),
+                                    ("files", ("d.bin", b"y" * 40))])
+        self.assertEqual(r.status_code, 200)
+
+    def test_file_count_limit_applies_to_all_legacy_kinds(self):
+        self._limits(file=1000, total=10000, count=1)
+        r = self.client.post("/api/upload", data={"kind": "data"},
+                             files=[("files", ("a.bin", b"x")),
+                                    ("files", ("b.bin", b"y"))])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("文件太多", r.json()["detail"])
+        # 反向对照：一件就收
+        r = self.client.post("/api/upload", data={"kind": "data"},
+                             files=[("files", ("solo.bin", b"x"))])
+        self.assertEqual(r.status_code, 200)
+
+    def test_streaming_cap_catches_uploads_without_a_declared_size(self):
+        """分块传输（`size is None`）绕不过上限：流式那一层必须自己数。"""
+        s = self.s
+        self._limits(file=4, total=1000)
+
+        class Fake:
+            filename = "blob.bin"
+            size = None
+
+            def __init__(self, chunks):
+                self.chunks = list(chunks)
+
+            async def read(self, n=-1):
+                return self.chunks.pop(0) if self.chunks else b""
+
+        dst = self.root / "stream_big.bin"
+        with self.assertRaises(s.HTTPException) as cm:
+            asyncio.run(s._stream_upload_to(Fake([b"x" * 10]), dst, 1000))
+        self.assertEqual(cm.exception.status_code, 400)
+        self.assertIn("单个文件超过", str(cm.exception.detail))
+        self.assertFalse(dst.exists(), "流式超限时要把半份文件删掉")
+        # 反向对照：同一条流式路径在上限之内要老实写盘
+        dst2 = self.root / "stream_ok.bin"
+        n, _ = asyncio.run(s._stream_upload_to(Fake([b"xx"]), dst2, 1000))
+        self.assertEqual((n, dst2.read_bytes()), (2, b"xx"))
+
+    def test_problem_pdf_is_rejected_by_declared_size_before_reading(self):
+        self._limits(file=8)
+        r = self.client.post("/api/upload", data={"kind": "problem"},
+                             files=[("files", ("problem.pdf", b"%PDF-1.4" + b"0" * 100))])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("单个文件超过", r.json()["detail"])
+        self.assertFalse((self.root / "request/problem.pdf").exists(),
+                         "应当在写盘/交给 PyMuPDF 之前就拒掉")
+
+    def test_empty_problem_pdf_stays_a_400_not_a_page_error(self):
+        """流式改写不能把"空 PDF"从 400 变成 fitz 抛的 500。"""
+        old = self.root / "request/problem.pdf"
+        old.parent.mkdir(parents=True, exist_ok=True)
+        old.write_bytes(b"%PDF-old")
+        r = self.client.post("/api/upload", data={"kind": "problem"},
+                             files=[("files", ("problem.pdf", b""))])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("空的", r.json()["detail"])
+        self.assertEqual(old.read_bytes(), b"%PDF-old", "空上传不能删掉上一份 PDF")
+
+    def test_problem_text_keeps_the_empty_check(self):
+        old = self.root / "request/problem.md"
+        old.parent.mkdir(parents=True, exist_ok=True)
+        old.write_text("旧题面\n", encoding="utf-8")
+        r = self.client.post("/api/upload", data={"kind": "problem"},
+                             files=[("files", ("problem.txt", b"   \n\t "))])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("空的", r.json()["detail"])
+        self.assertEqual(old.read_text(encoding="utf-8"), "旧题面\n",
+                         "空上传不能清空上一份题面（原先先读后写，失败不落地）")
+        # 反向对照：正常题面照常落盘
+        r = self.client.post("/api/upload", data={"kind": "problem"},
+                             files=[("files", ("problem.txt", "真题目\n".encode("utf-8")))])
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(old.read_text(encoding="utf-8"), "真题目\n")
 
 
 class LogFileShadowTests(unittest.TestCase):
@@ -4780,6 +5208,44 @@ class RevivedPendingActionsTests(unittest.TestCase):
         p = self.s.state.get("pending") or {}
         self.assertEqual(p.get("recommended"), "code")
         self.assertEqual(p.get("recommended_source"), "handback")
+
+
+class FigureGateDataLockRoutingTests(unittest.TestCase):
+    """⑧ 的机械地板：数据层问题直接回 ④，画法/契约问题回 ⑦。
+
+    ④/⑦ 解耦后，`[lock:data]` 意味着 bundle/source 在锁之后变了 —— ⑦ 只读数据，
+    重画多少次都是错的。驱动必须把这一类路由到 `code`（category=data_integrity），
+    不能让它跟“图丑”一样回 ⑦ 白跑一轮。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / "config").mkdir(parents=True)
+        (self.root / "config/visualization.json").write_text("{}", encoding="utf-8")
+        self.s = load_server(self.root)
+
+    def _decide(self, problem, *, visual=None):
+        self.s.audit_figures = lambda root: list(visual or [])
+        self.s._audit_studio_issues = lambda: [problem]
+        stage = next(x for x in self.s.STAGES if x["id"] == "figreview")
+        return self.s._gate_decision(stage)
+
+    def test_lock_data_goes_back_to_coding(self):
+        out = self._decide("[lock:data] q3: bundle 的 sha256 与锁不一致")
+        self.assertEqual(out["target"], "code")
+        self.assertEqual(out["issues"][0]["category"], "data_integrity")
+
+    def test_lock_contract_and_visual_issues_go_back_to_drawio(self):
+        out = self._decide("[lock:contract] q3: spec.fields 被改")
+        self.assertEqual(out["target"], "drawio")
+        self.assertEqual(out["issues"][0]["category"], "diagram")
+
+    def test_mixed_data_and_visual_prefers_data(self):
+        out = self._decide("[lock:data] q3: source 变了", visual=["q3: 图例压数据"])
+        self.assertEqual(out["target"], "code",
+                         "混在一起时必须先修数据；重画不会修好数据")
 
 
 class FigureOnlyRollbackTests(unittest.TestCase):
@@ -5206,6 +5672,193 @@ class TemplateSelectionTests(unittest.TestCase):
     def test_unknown_template_is_rejected(self):
         with self.assertRaises(Exception):
             asyncio.run(self.s.set_delivery(self.s.DeliveryReq(template="no/such")))
+
+
+class MechanicalFloorWiringTests(unittest.TestCase):
+    """纳入门禁机械地板的三条新判据：创新台账 / 角色化结构 / 正文骨架。
+
+    共同约束：**只在工作区显式具备开关或文件时生效**。没有 `config/innovation.json`、
+    没有 `paper/structure.json`、没有 `paper/sections/` 时一律跳过 —— 这一条由每个用例里的
+    反向对照钉住：否则 1000+ 条不碰这些产物的全链用例会被新判据成片打红。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.s = load_server(self.root)
+
+    def stage(self, sid):
+        return next(x for x in self.s.STAGES if x["id"] == sid)
+
+    def test_innovation_ledger_is_wired_only_when_config_exists(self):
+        # 反向对照：没开关、也没台账 ⇒ 门禁行为与改动前一致（返回 None = 地板通过）
+        for sid in ("review", "audit", "verify"):
+            self.assertIsNone(self.s._mechanical_floor(self.stage(sid)),
+                              f"{sid}: 没有 config/innovation.json 却跑了台账核对")
+        (self.root / "config").mkdir()
+        (self.root / "config/innovation.json").write_text('{"enabled": true}', encoding="utf-8")
+        expected = {"review": ("analysis", "NEEDS_FIX"),
+                    "audit": ("code", "NEEDS_FIX"),
+                    "verify": ("write", "FAIL")}
+        for sid, (target, status) in expected.items():
+            out = self.s._mechanical_floor(self.stage(sid))
+            self.assertIsNotNone(out, f"{sid}: 开了开关却没跑台账核对（接线漏了）")
+            self.assertEqual(out["target"], target, f"{sid}: 回退目标判错")
+            self.assertEqual(out["status"], status)
+            issue = out["issues"][0]
+            self.assertEqual(issue["severity"], "hard")
+            self.assertIn(issue["category"], {"data_integrity", "validation"})
+            self.assertIn("INNOVATION_LEDGER", issue["evidence"],
+                          "拒绝原因必须写清缺的是哪份台账")
+
+    def test_innovation_switch_is_in_the_instruction_fingerprint(self):
+        """开关也是判据：加/删它必须让 ③⑤⑮ 的 instructions 半份失配。"""
+        before = {sid: self.s._input_split(self.stage(sid))[1]
+                  for sid in ("review", "audit", "verify", "code")}
+        (self.root / "config").mkdir()
+        (self.root / "config/innovation.json").write_text('{"enabled": true}', encoding="utf-8")
+        after = {sid: self.s._input_split(self.stage(sid))[1]
+                 for sid in ("review", "audit", "verify", "code")}
+        for sid in ("review", "audit", "verify"):
+            self.assertNotEqual(before[sid], after[sid],
+                                f"{sid}: 开关不在指令指纹里，旧裁决会被原样复用")
+        self.assertEqual(before["code"], after["code"], "开关不该让 ④ 失配")
+
+    def test_driver_run_checkers_are_in_the_verify_instruction_fingerprint(self):
+        """⑮ 自动跑的 check_innovation / check_skeleton 也是它的判据：改它们必须失配。"""
+        web = self.root / "lib/web"
+        web.mkdir(parents=True, exist_ok=True)      # load_server 已建了 lib/web/static
+        (web / "check_innovation.py").write_text("v1", encoding="utf-8")
+        (web / "check_skeleton.py").write_text("v1", encoding="utf-8")
+        before = self.s._input_split(self.stage("verify"))[1]
+        lit_before = self.s._input_split(self.stage("literature"))[1]
+        (web / "check_innovation.py").write_text("v2", encoding="utf-8")
+        after_innovation = self.s._input_split(self.stage("verify"))[1]
+        self.assertNotEqual(before, after_innovation,
+                            "⑮ 用 check_innovation 判台账，改判据却没让它失配")
+        (web / "check_skeleton.py").write_text("v2", encoding="utf-8")
+        after_skeleton = self.s._input_split(self.stage("verify"))[1]
+        self.assertNotEqual(after_innovation, after_skeleton,
+                            "⑮ 用 check_skeleton 判骨架，改判据却没让它失配")
+        self.assertEqual(lit_before, self.s._input_split(self.stage("literature"))[1],
+                         "⑮ 的自动检查器不该让无关阶段失配")
+
+    def test_paper_structure_check_runs_when_structure_and_sections_exist(self):
+        (self.root / "paper/sections").mkdir(parents=True)
+        (self.root / "paper/structure.json").write_text("{}", encoding="utf-8")
+        out = self.s._mechanical_floor(self.stage("verify"))
+        self.assertIsNotNone(out, "结构文件与 sections 都在，却没跑 paper_structure.check")
+        self.assertEqual(out["status"], "FAIL")
+        self.assertIn(out["target"], {"format", "write"})
+        self.assertIn("paper-structure.tex", out["issues"][0]["evidence"],
+                      "拒绝原因必须指出结构文件缺/未绑定")
+
+    def test_paper_structure_check_is_skipped_without_structure_json(self):
+        (self.root / "paper/sections").mkdir(parents=True)
+        real = self.s.check_skeleton.skeleton_issues
+        # 只观察结构那一条：把骨架判据隔离掉（否则它会先报“找不到模板骨架”）
+        self.s.check_skeleton.skeleton_issues = lambda root: []
+        self.addCleanup(setattr, self.s.check_skeleton, "skeleton_issues", real)
+        self.assertIsNone(self.s._mechanical_floor(self.stage("verify")),
+                          "没有 paper/structure.json 却拿结构判据拦门禁")
+
+    def _write_template_family(self):
+        tpl = self.root / "skills/9Paper-writing/templates/zh/cumcm-latex"
+        (tpl / "sections").mkdir(parents=True)
+        (tpl / "main.tex").write_text("", encoding="utf-8")
+        (tpl / "sections/1_restatement.tex").write_text(
+            "\\section{问题重述}\n", encoding="utf-8")
+
+    def test_skeleton_check_runs_when_sections_exist(self):
+        self._write_template_family()
+        sections = self.root / "paper/sections"
+        sections.mkdir(parents=True)
+        (sections / "1_restatement.tex").write_text(
+            "\\section{标题被改过了}\n", encoding="utf-8")
+        out = self.s._mechanical_floor(self.stage("verify"))
+        self.assertIsNotNone(out, "有 paper/sections 却没跑骨架核对")
+        self.assertEqual(out["status"], "FAIL")
+        self.assertEqual(out["target"], "write", "骨架/文字问题归 ⑨ 论文撰写")
+        self.assertIn("骨架", out["issues"][0]["evidence"])
+
+    def test_skeleton_check_is_skipped_without_sections(self):
+        self.assertIsNone(self.s._mechanical_floor(self.stage("verify")),
+                          "没有 paper/sections 却拿骨架判据拦门禁")
+
+    def test_skeleton_check_skips_an_environment_gap_instead_of_failing_the_paper(self):
+        """模板树不在盘上 = 检查器跑不了，不是论文骨架错 —— 只记日志，不拦链。"""
+        (self.root / "paper/sections").mkdir(parents=True)
+        (self.root / "paper/sections/1_restatement.tex").write_text(
+            "\\section{问题重述}\n", encoding="utf-8")
+        self.assertIsNone(self.s._mechanical_floor(self.stage("verify")),
+                          "缺模板树时把环境缺件判成了论文不合格（会把只拷 paper/ 的工作区锁死）")
+        text = " ".join(str(c.args[0]) for c in self.s.log.call_args_list if c.args)
+        self.assertIn("骨架检查未能运行", text, "少跑一条判据必须在日志里看得见")
+
+
+class InnovationSidecarReceiptTest(unittest.TestCase):
+    """④⑥⑨ 各写自己的 sidecar，不许改 ② design 的产物指纹。
+
+    旧实现把 measurement/robustness/paper 都塞进 `INNOVATION_LEDGER.json`：
+    下游一写，`_output_digest("analysis")` 必变 ⇒ ② 每轮重跑并级联 ③④。
+    这里钉住拆分后的边界：sidecar 变化不改 analysis，但确实改对应阶段的产物。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.s = load_server(self.root)
+        rep = self.root / "reports"
+        rep.mkdir(parents=True, exist_ok=True)
+        for name in ("ANALYSIS_MODELING_REPORT.md", "TASK_CONTRACT.json",
+                     "RECEIPT_LEDGER.json", "INNOVATION_LEDGER.json"):
+            (rep / name).write_text("{}", encoding="utf-8")
+
+    def stage(self, sid):
+        return next(x for x in self.s.STAGES if x["id"] == sid)
+
+    def test_sidecars_do_not_invalidate_analysis_receipt(self):
+        before = self.s._output_digest(self.stage("analysis"))
+        code_before = self.s._output_digest(self.stage("code"))
+        for name in ("INNOVATION_MEASUREMENT.json", "INNOVATION_ROBUSTNESS.json",
+                     "INNOVATION_PAPER.json"):
+            (self.root / "reports" / name).write_text('{"schema_version":1,"items":{}}',
+                                                      encoding="utf-8")
+        self.assertEqual(before, self.s._output_digest(self.stage("analysis")),
+                         "下游 sidecar 改变了 ② 的产物指纹 —— ② 会每轮重跑")
+        self.assertNotEqual(code_before, self.s._output_digest(self.stage("code")),
+                            "④ 的 measurement sidecar 必须进入 ④ 自己的产物指纹")
+
+
+class AuditStudioLoggingTests(unittest.TestCase):
+    """⑧ 的 audit_studio 静态检查失败时必须留日志 —— 不许静默少跑一条判据。"""
+
+    def test_a_crashing_studio_audit_is_logged(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            script = root / "skills/figure-studio/scripts/audit_studio.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("", encoding="utf-8")
+            s = load_server(root)
+
+            def boom(*args, **kwargs):
+                raise RuntimeError("studio exploded")
+            s.subprocess = types.SimpleNamespace(run=boom)
+            self.assertEqual(s._audit_studio_issues(), [])
+            self.assertTrue(s.log.called, "检查器崩了却没有任何日志 —— ⑧ 会静默少跑一条判据")
+            text = " ".join(str(c.args[0]) for c in s.log.call_args_list if c.args)
+            self.assertIn("audit_studio", text)
+            self.assertIn("RuntimeError", text, "日志要写出异常类型，人才知道为什么少跑了")
+
+    def test_a_missing_studio_script_is_logged(self):
+        with tempfile.TemporaryDirectory() as td:
+            s = load_server(Path(td))
+            self.assertEqual(s._audit_studio_issues(), [])
+            text = " ".join(str(c.args[0]) for c in s.log.call_args_list if c.args)
+            self.assertIn("audit_studio", text,
+                          "脚本缺件同样会让 ⑧ 少跑一条判据，不能静默")
 
 
 if __name__ == "__main__":

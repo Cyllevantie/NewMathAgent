@@ -300,7 +300,8 @@ class RubricRoutingTest(unittest.TestCase):
         `min(..., key=stage_order.index)` 于是吐出一个**后序** target ⇒ 驱动 `_target_index`
         拒绝（只认前序）、黄灯上连推荐目标都没有，链就卡在 ⑫ 上。
         正确处置与通用分支的 `advisories_deferred` 同款：**放行 + 留痕**，由驱动投递给 ⑭。
-        （`rubric_redline` 被反推表钉成 presentation —— 见 RESULT_CHECK_CATEGORY。）
+        （普通 `rubric_redline` 的 category 由审查者按证据给，不再被反推表固定；
+        fatal 形态另由 FATAL_CHECK_CATEGORY 钉回 code —— 见下面两条用例。）
         """
         root = make_root()
         out = enforce(root, "rubric", rubric_decision(
@@ -312,6 +313,35 @@ class RubricRoutingTest(unittest.TestCase):
         self.assertEqual(out["reason"], "advisories_deferred")
         self.assertEqual([a["id"] for a in out.get("advisories") or []], ["r1"],
                          "延后项必须留在 advisories 里（驱动据此投递给 ⑭）")
+
+    def test_fatal_redline_tagged_presentation_still_blocks_to_code(self):
+        """fatal 红线不许借 `presentation` 变成"⑭ 再修"的延后项。
+
+        修复前：`rubric_redline` 被 `RESULT_CHECK_CATEGORY` 固定映射成 presentation ⇒
+        `_rubric_route` 把它归为 downstream ⇒ 返回 PASS/advisories_deferred，一票否决被
+        洗成一条版式建议。fatal 必须反推成 validation→code，走 backward。
+        """
+        root = make_root()
+        out = enforce(root, "rubric", rubric_decision(
+            root, ["rubric_redline"],
+            [rubric_issue("r1", "presentation", ["rubric_redline"], "fatal")]), STAGES)
+        self.assertEqual(out["status"], "NEEDS_FIX")
+        self.assertEqual(out["target"], "code")
+        self.assertEqual([i["id"] for i in out["issues"]], ["r1"])
+
+    def test_plain_redline_tagged_presentation_can_still_defer(self):
+        """反向对照：普通（must）红线仍由审查者分类；presentation 可放行并延后给 ⑭。
+
+        别为了堵 fatal 把整条 redline 都钉成生产类 —— 版式类红线在 ⑫ 此刻确实修不了。
+        """
+        root = make_root()
+        out = enforce(root, "rubric", rubric_decision(
+            root, ["rubric_redline"],
+            [rubric_issue("r1", "presentation", ["rubric_redline"], "must")]), STAGES)
+        self.assertEqual(out["status"], "PASS")
+        self.assertEqual(out["reason"], "advisories_deferred")
+        self.assertNotIn("target", out)
+        self.assertEqual([a["id"] for a in out.get("advisories") or []], ["r1"])
 
     def test_a_claim_plus_a_layout_item_hands_only_the_claim_to_fix(self):
         """claim + 版式混在一起：只把 claim 交给 ⑬，版式项进 advisories（⑬ 无权改版式）。"""

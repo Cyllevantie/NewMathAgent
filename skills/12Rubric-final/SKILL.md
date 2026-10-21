@@ -1,6 +1,6 @@
 ---
 name: 12Rubric-final
-description: "评分标终审（成稿之后、13Repair-by-rubric-verdict 之前）。用四份评委视角评分标——模型适配性 15 维、AI 痕迹 10 维、2026 国赛 AI 合规红线 26 条、官方四大评分标准 16 维——对最终成稿逐项打分，产出「严重 / 中等 / 轻微」三级判词与获奖预测。只审不改；每条判词必须先证伪再报；轻微项只给成本估计不返修。"
+description: "评分标终审（成稿之后、13Repair-by-rubric-verdict 之前）。用四份评委视角评分标——模型适配性 15 维、AI 痕迹 10 维、2026 国赛 AI 合规红线 25 条、官方四大评分标准 16 维——对最终成稿逐项打分，产出「严重 / 中等 / 轻微」三级判词与获奖预测。只审不改；每条判词必须先证伪再报；轻微项只给成本估计不返修。"
 allowed-tools: PowerShell, Read, Write, Grep, Glob, Agent
 ---
 
@@ -33,7 +33,7 @@ allowed-tools: PowerShell, Read, Write, Grep, Glob, Agent
 | `references/rubric_official.md` | 全维度自查与获奖预测 V1.3 | 16 维，官方四大评分标准 15/25/25/35 |
 | `references/rubric_adaptation.md` | 模型适配性检查 V2.3 | 15 维，评委视角适配性 |
 | `references/rubric_trace.md` | AI 痕迹检测 V5.0 | 10 维，AI 生成痕迹 |
-| `references/rubric_redline.md` | 2026 国赛 AI 全自动自查表 | 6 维 26 条合规红线 |
+| `references/rubric_redline.md` | 2026 国赛 AI 全自动自查表 | 6 维 25 条合规红线 |
 
 **读它们之前先读 `references/precedence.md`** —— 那里写了优先级仲裁（用户要求 > 仓库
 `config/`+`docs/`+模板的现行口径 > 评分标原文）和一份已核实的冲突清单。
@@ -71,8 +71,8 @@ allowed-tools: PowerShell, Read, Write, Grep, Glob, Agent
 | 检验是否真的做了（误差/灵敏度/稳健性） | `6Robustness` 的报告 |
 | 题意契约、模型与实现一致 | `3analysis` / `5Result-credibility-audit` |
 
-本阶段实查的无主面：AI 使用痕迹与 AI 声明真实性、第一人称用词、匿名合规、
-摘要字数与关键词数、假设条数、图表标题是否有洞察、引用模式、数据小数位与误差范围、
+本阶段实查的无主面：AI 使用痕迹、第一人称用词、匿名合规、
+摘要字数与关键词数、假设条数、图表标题是否点明对象/对比（不是泛泛的「结果」）、引用模式、数据小数位与误差范围、
 创新真伪、网红模型、可解释性、多基线对比、推广性、优缺点诚实性、获奖预测、致命问题。
 
 ## 执行方式（拆维度，别堆在一个上下文里）
@@ -90,7 +90,7 @@ allowed-tools: PowerShell, Read, Write, Grep, Glob, Agent
 |---|---|---|
 | `rubric-model` | `rubric_adaptation` + `rubric_official` 的维度四/五/六/七/八/九/十/十四 | 假设的合理性 15 + 建模的创造性 25 |
 | `rubric-wording` | `rubric_trace` + `rubric_official` 的维度一/二/三/十一/十二/十三/十五 | 文字表述的清晰性 35 |
-| `rubric-redline` | `rubric_redline`（26 条） | 合规红线：合格 / 存在问题 / 待核实 |
+| `rubric-redline` | `rubric_redline`（25 条） | 合规红线：合格 / 存在问题 / 待核实 |
 
 3 个而不是 4 个：适配性与官方 16 维的检查点重合度高，硬拆成两个只会重复读一遍全稿。
 结果的正确性 25 分由 `rubric-model` 与 `rubric-wording` 的实证部分共同支撑。

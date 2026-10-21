@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "name": "figure-studio-default",
+  "_note": "分类色/字体/字号/画布/3D 边线的唯一来源。连续量色阶仍由 config/visualization.json 的 quantity_cmap 提供。数据图、拼版图、示意图都读这里；不要在各脚本里另写一套 rcParams。颜色按角色命名，不按审美命名。",
+  "palette": {
+    "series": [
+      "#1D4ED8",
+      "#0F766E",
+      "#6D28D9",
+      "#B45309",
+      "#4D7C0F",
+      "#475569",
+      "#60A5FA",
+      "#BE123C"
+    ],
+    "_series_note": "第 1 色沿用本项目主蓝。后 7 色是低饱和的蓝绿紫赭橄榄灰玫，和主蓝同属'出版级克制'观感。灰度下相邻色可能接近，所以 >=3 条序列必须同时用线型或标记区分；颜色不是唯一编码。",
+    "semantic": {
+      "ink": "#1F2937",
+      "line": "#475569",
+      "grid": "#E2E8F0",
+      "box": "#CBD5E1",
+      "warn": "#EF4444",
+      "positive": "#15803D",
+      "highlight": "#D97706",
+      "muted": "#94A3B8",
+      "paper": "#FFFFFF",
+      "wet": "#0F4D92",
+      "dry": "#B45309"
+    },
+    "quantity": {
+      "temperature": "inferno",
+      "moisture": "viridis",
+      "concentration": "viridis",
+      "diffusivity": "viridis",
+      "residual": "Reds",
+      "participation": "Blues",
+      "axis_ratio": "YlOrRd"
+    },
+    "_quantity_note": "连续量按物理量取色阶，不按审美取。温度=大热亮、水分/浓度=大湿亮、扩散=大快亮、残差=大误差深红。跨图同量同色；未登记的量先去 config/visualization.json 的 quantity_cmap 加一行。"
+  },
+  "typography": {
+    "zh": {
+      "font": "Microsoft YaHei",
+      "fallback": [
+        "Microsoft YaHei",
+        "SimHei",
+        "Noto Sans CJK SC",
+        "DejaVu Sans"
+      ],
+      "body_pt": 9.0,
+      "axis_pt": 9.0,
+      "tick_pt": 8.0,
+      "legend_pt": 8.0,
+      "panel_letter_pt": 9.5,
+      "panel_title_pt": 9.0,
+      "small_pt": 7.5,
+      "min_pt": 7.5,
+      "line_width": 1.2,
+      "marker_size": 4.5,
+      "tick_width": 0.8,
+      "spine_width": 0.8
+    },
+    "en": {
+      "font": "Arial",
+      "fallback": [
+        "Arial",
+        "Helvetica",
+        "Liberation Sans",
+        "DejaVu Sans"
+      ],
+      "body_pt": 7.0,
+      "axis_pt": 7.2,
+      "tick_pt": 6.5,
+      "legend_pt": 6.5,
+      "panel_letter_pt": 8.5,
+      "panel_title_pt": 7.5,
+      "small_pt": 6.0,
+      "min_pt": 6.0,
+      "line_width": 1.0,
+      "marker_size": 4.0,
+      "tick_width": 0.6,
+      "spine_width": 0.7
+    },
+    "zh_half": {
+      "font": "Microsoft YaHei",
+      "fallback": [
+        "Microsoft YaHei",
+        "SimHei",
+        "Noto Sans CJK SC",
+        "DejaVu Sans"
+      ],
+      "body_pt": 8.0,
+      "axis_pt": 8.0,
+      "tick_pt": 7.0,
+      "legend_pt": 7.0,
+      "panel_letter_pt": 9.0,
+      "panel_title_pt": 8.0,
+      "small_pt": 7.0,
+      "min_pt": 7.0,
+      "line_width": 1.0,
+      "marker_size": 4.0,
+      "tick_width": 0.7,
+      "spine_width": 0.7,
+      "_note": "80 mm 半栏；任何渲染后小于 7 pt 的字都必须改布局，不许整体缩小。"
+    },
+    "en_half": {
+      "font": "Arial",
+      "fallback": [
+        "Arial",
+        "Helvetica",
+        "Liberation Sans",
+        "DejaVu Sans"
+      ],
+      "body_pt": 7.0,
+      "axis_pt": 7.0,
+      "tick_pt": 6.0,
+      "legend_pt": 6.0,
+      "panel_letter_pt": 8.0,
+      "panel_title_pt": 7.0,
+      "small_pt": 6.0,
+      "min_pt": 6.0,
+      "line_width": 0.9,
+      "marker_size": 3.8,
+      "tick_width": 0.5,
+      "spine_width": 0.7,
+      "_note": "88 mm 半栏；Nature 允许 5 pt 地板，但本 skill 以 6 pt 为下限。"
+    }
+  },
+  "canvas": {
+    "zh": {
+      "width_mm": 160,
+      "half_width_mm": 80,
+      "height_mm": 100,
+      "dpi": 300
+    },
+    "en": {
+      "width_mm": 183,
+      "half_width_mm": 88,
+      "height_mm": 110,
+      "dpi": 300
+    },
+    "_note": "CUMCM 正文版心约 160 mm；半栏 80 mm。Nature 双栏 183 mm、单栏 88 mm。不要用 tight bbox 改物理宽度；宽度是排版契约。"
+  },
+  "lines": {
+    "markers": [
+      "o",
+      "s",
+      "^",
+      "D",
+      "v",
+      "P",
+      "X",
+      "*"
+    ],
+    "linestyles": [
+      "-",
+      "--",
+      ":",
+      "-.",
+      [
+        0,
+        [
+          3,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      ],
+      [
+        0,
+        [
+          6,
+          1,
+          1,
+          1
+        ]
+      ]
+    ],
+    "_note": "颜色 + 线型 + 标记三重区分。相邻 series 色在灰度下可能只差一点，不能只靠颜色。"
+  },
+  "surface3d": {
+    "view": {
+      "elev": 25,
+      "azim": 45
+    },
+    "edgecolor": "#5A5A5A",
+    "linewidth": 0.35,
+    "rcount": 37,
+    "ccount": 40,
+    "zoom": 1.3,
+    "_note": "三维数据曲面默认值。网格边让淡色平台不糊在白底上；rcount/ccount 抽稀只为画法，不改 z 数据。不要画瀑布/幕布替代曲面。"
+  },
+  "composition": {
+    "panel_letter": "bold",
+    "panel_title": "bold",
+    "hero_fraction": [
+      0.42,
+      0.6
+    ],
+    "gutter_mm": 4.0,
+    "margin_mm": 6.0,
+    "_note": "拼版时 hero 面板占宽/高的 42%–60%；面板字母在左上角外沿；共享轴、共享色标；面板标题短，解释留图注。"
+  },
+  "export": {
+    "png_dpi": 300,
+    "tiff_dpi": 600,
+    "formats": [
+      "pdf",
+      "svg",
+      "png"
+    ],
+    "editable_text": true,
+    "_note": "PDF fonttype 42、SVG fonttype none；交付 PDF/SVG/PNG，投稿包另出 600 dpi TIFF。"
+  }
+}

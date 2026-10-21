@@ -32,13 +32,15 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-try:                                     # 包内导入（正常用法）；直接跑本文件时退回同级
+try:                                     # 包内导入；直接跑本文件时退回同级
     from .safe_walk import walk_files
 except ImportError:                      # pragma: no cover
     from safe_walk import walk_files
 
 OTHER_DIR = "其余文件"
-OTHER_SUBDIRS = ("正文", "附录", "辅助脚本", "内部报告")
+# `演示`：`demo/` 整目录（demo.html + ⑯ 的截图存档）。截图是交付物的一部分
+# （16Web-demo SKILL 第 5 步：「随 demo/ 进产物的其余文件/」），不是提交件。
+OTHER_SUBDIRS = ("正文", "附录", "演示", "辅助脚本", "内部报告")
 
 # 提交项（产物根）的**类别**规则。清单（SUBMISSION_MANIFEST.json）声明具体有哪些文件，
 # 这里只负责「这个名字该从工作区的哪里取」。
@@ -445,7 +447,7 @@ def build_plan(root, items):
         src = item["source"] or resolve_source(root, item["path"])
         submission.append((src, item["path"]))
 
-    for sub, src in (("正文", "paper"), ("附录", "paper_appendix")):
+    for sub, src in (("正文", "paper"), ("附录", "paper_appendix"), ("演示", "demo")):
         if (root / src).is_dir():
             other.append((src, f"{OTHER_DIR}/{sub}"))
     if (root / "reports").is_dir():

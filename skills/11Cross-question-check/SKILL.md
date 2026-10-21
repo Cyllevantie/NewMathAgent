@@ -1,6 +1,6 @@
 ---
 name: 11Cross-question-check
-description: "跨子问题一致性审查。成稿排版后、终验前，核对全局符号与命名、数据与窗口口径、结论是否自洽、引用结论是否一致、数值量级是否协调；输出 PASS/FAIL，FAIL 指明退回哪个子问题修复。"
+description: "跨子问题一致性审查。成稿后、评分标终审与 ⑭ 排版之前、15Verification 终验前，核对全局符号与命名、数据与窗口口径、结论是否自洽、引用结论是否一致、数值量级是否协调；输出 PASS/FAIL，FAIL 指明退回哪个子问题修复。"
 allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebFetch
 ---
 
@@ -16,7 +16,7 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 > 就再也没人碰。复用探针 ≠ 跳过复核：探针只是取证手段，判定仍逐条对着当前版本做。
 
 
-本阶段是完整工作流的第 11 步，位于论文撰写（9Paper-writing）与数学论证门禁（10Math-proof-gate）之后、评分标终审（12Rubric-final）之前。排版（14Layout-and-format）排在内容判据之后：本关与 ⑫ 都在排版之前判内容。排版只动版式、不改内容，所以驱动不会因此把本关拉回来重判 —— 被版式打磨过的内容判官会被标进 `state["layout_superseded"]`（面板上可见），需要时手动重跑该阶段。要害在于：每个子问题局部合理，合在一起可能互相矛盾（符号撞名、数据口径不一、前问结论被后问用错、时点/阈值跨问不一致）。本门禁在论文动笔前做一次全局一致性审查。
+本阶段是完整工作流的第 11 步，位于论文撰写（9Paper-writing）与数学论证门禁（10Math-proof-gate）之后、评分标终审（12Rubric-final）之前。排版（14Layout-and-format）排在内容判据之后：本关与 ⑫ 都在排版之前判内容。排版只动版式、不改内容，所以驱动不会因此把本关拉回来重判 —— 被版式打磨过的内容判官会被标进 `state["layout_superseded"]`（面板上可见），需要时手动重跑该阶段。要害在于：每个子问题局部合理，合在一起可能互相矛盾（符号撞名、数据口径不一、前问结论被后问用错、时点/阈值跨问不一致）。本门禁在论文成稿后、评分标终审与 ⑭ 排版之前做一次全局一致性审查。
 
 ## 输入
 

@@ -4,7 +4,8 @@ import warnings
 from matplotlib.text import Text
 
 from .evidence import path_in, register
-from .quality import inspect_png, legend_data_overlap, near_monochrome, texts_overlap
+from .quality import (content_coverage, inspect_png, legend_data_overlap,
+                      near_monochrome, texts_overlap)
 
 
 def export(fig, root, figure_id, *, sources, script, claim, caption, settings, included=True):
@@ -71,6 +72,18 @@ def export(fig, root, figure_id, *, sources, script, claim, caption, settings, i
                     print(f"⚠️ 近单色提醒：{figure_id} 的非白像素 {mono:.0%} 是同一个颜色"
                           f" rgb{modal} —— 若这是场图，说明该窗口内场近乎平坦，"
                           f"考虑改成剖面/折线，或裁色阶低端（config 的 _slice_note）", flush=True)
+                # 信息密度：内容框只占画布一小块时提醒（不挡复核 —— 地图/稀疏散点
+                # 可能本来就这样；⑦/⑧ 结合 claim 判断）。这是用户点名的
+                # “一大批空白只用上非常非常小一部分”。
+                try:
+                    cc = content_coverage(out)
+                    if cc["bbox_area_ratio"] < 0.30:
+                        print(f"⚠️ 信息密度提醒：{figure_id} 的内容框只占画布 "
+                              f"{cc['bbox_area_ratio']:.0%}（非白像素 {cc['coverage']:.1%}）"
+                              f"—— 检查是否大片空白、只用了很小一块；考虑改半栏/裁范围/拆面板。",
+                              flush=True)
+                except Exception:        # noqa: BLE001 —— 辅助提醒，绝不挡出图
+                    pass
         issues.extend(str(w.message) for w in caught if "Glyph" in str(w.message)
                       or "constrained_layout" in str(w.message))
     return register(root, figure_id, artifacts=artifacts, sources=sources, script=script,

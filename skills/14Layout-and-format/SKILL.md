@@ -151,7 +151,8 @@ paper/_base/math-style.tex  数学字体与环境
 |---|---|
 | 资产过期：`lib/visualization/*.py`、`config/visualization.json` 或绘图脚本改了 | 可以在本阶段重跑纯渲染脚本（只重画，不重算），再重新登记 + 目检。数值一步不重算 |
 | 缺登记 / 缺目检复核（`未登记图表`、`缺少当前版本的视觉复核`） | 本阶段的活：登记来源 + `visualization review` 目检 |
-| 数据本身变了（`code/outputs/*.npz` 变了） | 不是本阶段能修的 —— 写 `HANDBACK_REQUEST.md` 交回 `code`（重画要用新数据，那是它的产物） |
+| `[lock:contract]`：spec 的 fields/claim/统计口径被改 | 交回 `drawio`（⑦ 把 spec 改回锁定值；要改语义它再交回 ④） |
+| `[lock:data]`：bundle/source 在锁之后变了 | 不是本阶段能修的 —— 写 `HANDBACK_REQUEST.md` 交回 `code`（重画要用新数据，那是它的产物） |
 
 **两条硬禁止**：
 1. **不得只重新登记而不重画**。资产过期意味着当前那张图不是按当前代码/配置生成的，
@@ -169,9 +170,10 @@ paper/_base/math-style.tex  数学字体与环境
 |---|---|
 | `python skills/14Layout-and-format/scripts/measure_layout.py paper/main.pdf` | 量行距刚性与页边距（见下） |
 | `python -m lib.publication check` | 页数口径、物理页映射、A4 尺寸、20MB 上限 |
-| `python -m lib.publication map <页面区段JSON>` | **重绑 `paper/page-map.json`**（按当前 `main.pdf` 的 SHA256）。重编译后只跑这一条就够，别从零手写那份 JSON —— 盘上通常已有一份，先看它是否仍匹配（`check` 会报"未绑定当前PDF"）：匹配就直接用；只需重跑 map 把新 PDF 的 SHA 绑上去。**区段必须按内容实际归属声明**：一页横跨两个类别时归前一类，或让后一类别另起一页。声明成"整页判给后一类"会被 `boundary_page_issues` 当场识破 —— `map` 直接拒绑，`check` 判 FAIL（判据：某类别的起始页上，它的起始标记必须就是这一页最上面那块文字，见 `config/publication.json` 的 `kind_start_markers`/`boundary_top_tol`）。一份声明正文 2–30 的映射会藏住"正文实际到 31 页"，机械检查算出 30 页判 PASS，超限被静默放行。 | 
+| `python -m lib.publication map <页面区段JSON>` | **重绑 `paper/page-map.json`**（按当前 `main.pdf` 的 SHA256）。重编译后只跑这一条就够，别从零手写那份 JSON —— 盘上通常已有一份，先看它是否仍匹配（`check` 会报"未绑定当前PDF"）：匹配就直接用；只需重跑 map 把新 PDF 的 SHA 绑上去。**区段必须按内容实际归属声明**：一页横跨两个类别时归前一类，或让后一类别另起一页。声明成"整页判给后一类"会被 `boundary_page_issues` 当场识破 —— `map` 直接拒绑，`check` 判 FAIL（判据：某类别的起始页上，它的起始标记必须就是这一页最上面那块文字，见 `config/publication.json` 的 `kind_start_markers`/`boundary_top_tol`）。一份声明正文 2–29 的映射会藏住"正文实际到 30 页"，机械检查算出 29 页判 PASS，超限被静默放行。 |
 | `python -m lib.publication report` | 同上但落盘 `reports/PUBLICATION_CHECK.json` |
 | `python -m lib.visualization audit` | 图已登记、资产不过期、目检复核有效 |
+| `python skills/figure-studio/scripts/figure_lock.py verify --root .` | 数据层契约：`[lock:data]` 交回 ④，`[lock:contract]` 交回 ⑦ |
 | `xelatex -interaction=nonstopmode main.tex`（在 `paper/` 内跑两遍） | 编译 |
 
 ### 行距与页边距的机器判据
@@ -219,10 +221,11 @@ pdftoppm -png -r 160 paper/main.pdf _tmp/pdf-pages/page   # 或 mutool draw / ma
 
 ## 篇幅预算与超页处置（两段式）
 
-读 `config/publication.json`（国赛电子版：摘要独立 1 页、正文（一～七）≤30 页、
-「八、AI 工具使用说明」与「九、参考文献」合计 ≤1 页、附录不限、总计 ≤32 页、不要目录）。
-参考文献不占正文额度 —— 它和 AI 说明合占 1 页，不算进 30 页。
-篇幅口径是**写满 30 页、宁多不少**（超了能压，少了是真少）；低于 25 页 `publication check`
+读 `config/publication.json`（国赛电子版：摘要独立 1 页、**摘要 + 正文（一～七）合计 ≤30 页**
+（即正文 ≤29 页）、「八、AI 工具使用说明」与「九、参考文献」合计 ≤1 页、附录不限、总计 ≤32 页、
+不要目录）。参考文献与 AI 说明合占 1 页，不计入摘要 + 正文的 30 页。
+篇幅口径是**写满 30 个计页、宁多不少**（含摘要那 1 页；正文因此是 29 页；超了能压，少了是真少）；
+低于 25 页 `publication check`
 会出 warning，不判 FAIL，但要在报告里写明为什么。补页数归 `9Paper-writing`，不归本阶段 ——
 本阶段只做定点版式手术，不许用缩字号/压页边距/转图片凑页，也不许自己加内容。
 
@@ -233,7 +236,8 @@ pdftoppm -png -r 160 paper/main.pdf _tmp/pdf-pages/page   # 或 mutool draw / ma
 - 整张补充图、整张补充表、完整推导块、更细的参数表 → 移进附录
 - 逐字重复的段落 → 直接删（不是迁移）
 
-**能迁的只有「补充图」；示意图 / 求解流程图 / 关键结果图一律不在其中。** 下面那张
+**能迁的只有补充内容（补充图、补充表、完整推导块、更细的参数表）；示意图 / 求解流程图 /
+关键结果图一律不在其中。** 下面那张
 「哪些图必须在正文」的分配表优先级高于本条 —— 即便正文超页，也不许把示意图赶进附录腾地方。
 赶走示意图是拆东墙补西墙：页数好看了，读者却再也看不懂模型是什么。
 例如 `fig_q4_material`（问题四的动边界与材料坐标）按分配表属正文，不许随其它图一起迁进附录。
@@ -244,7 +248,7 @@ pdftoppm -png -r 160 paper/main.pdf _tmp/pdf-pages/page   # 或 mutool draw / ma
 那正文装不下怎么办？ 按这个顺序，而不是动示意图：① 删逐字重复的段落；② 迁补充图 /
 补充表 / 推导块；③ 仍超页 → 走下面的 ② 回 write，由 write 决定重写哪一节。
 根子在 ⑨ 写作时没给图留位 —— 正文的图是**必须项**，文字才是可压的那一头（口径见
-`9Paper-writing` 的「篇幅目标是写满 30 页」：先给图留位、再拿文字填满剩下的）。把 30 页
+`9Paper-writing` 的「篇幅目标是写满 30 个计页」：先给图留位、再拿文字填满剩下的）。把 30 个计页
 全填成文字，本阶段就只剩「赶图」这一条歪路可走。
 
 ② 仍超页 → 才回 write：写 `reports/HANDBACK_REQUEST.md` 交回，由它决定删什么迁什么。
@@ -330,7 +334,7 @@ pdftoppm -png -r 160 paper/main.pdf _tmp/pdf-pages/page   # 或 mutool draw / ma
 - **修补（本阶段保留的"改文字"权）**：末页清单表塞不下 / 表题表头叠印 / 行数太长把表体顶出 P32 —— 那是**版式事故**、归本阶段：优先重跑 ⑨ 留下的生成脚本调行粒度（同类合并），脚本不在 / 不够用时就地修补；**改完必须重新对账**。清单缺项或有新增提交件时，同样就地补齐并让两边一致；**清单整份缺失**（回退把它暂存走了、而本轮不从 ⑨ 起跑）时按 ⑨ 的「交付层」节**整份重建** —— 那是保底，不是抢首产；内容口径（每件是什么、`desc` 怎么写）以 ⑨ 写的为准。名字集合的一致性另有机器判据（`lib/delivery` 的清单表核对：链尾终检必跑；⑮ 预检在启用交付配置（`config/delivery.local.json`）的工作区里跑），`desc`↔「说明」的文字对应仍需这里人核。
 
 **编译两个 PDF（各跑两遍）**：
-- `paper/` → `正文.pdf`（31 页正文 + 1 页清单表）
+- `paper/` → `正文.pdf`（摘要 1 页 + 正文（一～七）29 页 = 计页 30 页；八/九合计 1 页；末页清单表 1 页，共 32 页）
 - `paper_appendix/` → `附录A.pdf`（不限页）
 - 附录工程的 `\setcounter{equation}{N}` 里 N 用正文公式总数填。
 

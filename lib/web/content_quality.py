@@ -51,9 +51,12 @@ RESULT_CHECK_CATEGORY = {
     "stochastic_semantics": "stochastic_model", "model_assumptions": "constraint_model",
     "implementation_fidelity": "implementation", "feasibility": "validation",
     "optimality": "validation", "comparison_validity": "validation",
-    # 评分标阶段（rubric）的两条：它们是**模型层判断**，审查者若填成 claim/presentation
+    # 评分标阶段（rubric）的适配性判断：它是**模型层判断**，审查者若填成 claim/presentation
     # 就能混进"改措辞即可"的那条路 —— 所以钉死在反推表里。
-    "rubric_adaptation": "constraint_model", "rubric_redline": "presentation",
+    # rubric_redline 刻意**不在这里**：普通红线判词也可能只是版式/表述问题，由审查者按证据
+    # 分类（presentation 可延后给 ⑭）；但它的 fatal 形态不许被这样延后，另钉在
+    # FATAL_CHECK_CATEGORY（见下）。
+    "rubric_adaptation": "constraint_model",
 }
 
 # ---------------- 评分标终审（rubric / 13Repair-by-rubric-verdict）专用 ----------------
@@ -72,6 +75,10 @@ RUBRIC_FORWARD_CATEGORY = "claim"
 FATAL_CHECK_CATEGORY = {
     "rubric_evidence": "experiment",              # 全文无检验 → 回 robustness 补做
     "rubric_originality": "task_interpretation",  # 模型确实没有针对性改进 → 回 analysis 重设计
+    # 红线一票否决 → 回 code 核对/修正结果。不钉死的话，fatal 红线只要被填成
+    #   `presentation`，就会被 `_rubric_route` 当成「⑭ 之后才能修」的下游项
+    #   **PASS + advisories_deferred** —— 一票否决被洗成一条版式建议。
+    "rubric_redline": "validation",
 }
 # 允许被标成 optional（"轻微/可选，先看成本再定改不改"）的类别。
 # 模型/数据/实现类**即使审查者标了 optional 也强制返修**：那正是 RESULT_CHECK_CATEGORY
@@ -123,12 +130,15 @@ REQUIRED = {
     "cross": ["task_fidelity", "comparison_validity", "narrative_consistency"],
     "verify": ["task_fidelity", "optimality", "proof_applicability", "narrative_consistency",
                "figure_coverage", "content_coverage"],
-    # 评分标终审：四份评委视角评分标（适配性 15 维 / AI 痕迹 10 维 / 合规红线 26 条 /
+    # 评分标终审：四份评委视角评分标（适配性 15 维 / AI 痕迹 10 维 / 合规红线 25 条 /
     #   官方四大项 16 维）逐项打分，产出「严重 / 中等 / 轻微」三级判词。
     #   缺了这一项，enforce 会在 `if stage not in REQUIRED` 处**原样放行** —— 门禁静默空转。
-    #   前两项在 RESULT_CHECK_CATEGORY 里（模型层不许被填成措辞）；后三项刻意**不在**：
-    #   "创新点没写清楚"（便宜，claim→fix）与"模型确实没有针对性改进"（很贵，optional+成本）
-    #   都得由审查者按证据选；"论文里没写灵敏度分析"也可能是根本没做（experiment→robustness）。
+    #   只有 rubric_adaptation 在 RESULT_CHECK_CATEGORY 里（模型层不许被填成措辞）；
+    #   rubric_originality / rubric_evidence / rubric_redline / rubric_trace 的**普通**判词
+    #   刻意不在："创新点没写清楚"（便宜，claim→fix）与"模型确实没有针对性改进"（很贵，
+    #   optional+成本）都得由审查者按证据选；"论文里没写灵敏度分析"也可能是根本没做
+    #   （experiment→robustness）；普通红线也可能只是版式/表述。fatal 形态另由
+    #   FATAL_CHECK_CATEGORY 钉回生产阶段。
     "rubric": ["rubric_adaptation", "rubric_originality", "rubric_evidence",
                "rubric_trace", "rubric_redline"],
 }
@@ -326,6 +336,8 @@ def _rubric_route(decision, typed, stage_order, current):
     #   推荐停黄灯），也不该塞给 ⑬（它只改措辞，版式不归它）。
     #   与通用分支的 `advisories_deferred` 同款处置：**放行并留痕** —— 驱动会把它投递给
     #   目标阶段（`_fold_in_deferred_advisories` / `adv_by_stage`）⇒ ⑭ 跑之前就拿到清单。
+    #   fatal 红线**不会**落进 downstream：`FATAL_CHECK_CATEGORY` 已把它反推成
+    #   validation→code，一票否决照旧走 backward。
     downstream = [i for i in hard if i["category"] != RUBRIC_FORWARD_CATEGORY
                   and stage_order.index(TARGETS[i["category"]]) >= current]
     backward = [i for i in hard if i["category"] != RUBRIC_FORWARD_CATEGORY

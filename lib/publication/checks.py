@@ -9,6 +9,8 @@ from pathlib import Path
 from lib.visualization.evidence import path_in, sha, write_json
 
 KINDS = {"cover", "abstract", "contents", "body", "references", "ai_statement", "appendix"}
+# 纸面尺寸容差（mm）：主 PDF 与附录 PDF 用**同一把尺子**，别让两处各写一个数再漂移。
+A4_TOLERANCE_MM = 0.5
 
 
 def classify(total, mapping, policy):
@@ -74,7 +76,7 @@ def classify(total, mapping, policy):
     if policy.get("require_appendix"):
         appendix = [n for n in pages if pages[n] == "appendix"]
         if not appendix or any(pages[n] != "appendix" for n in range(min(appendix), total+1)):
-            raise ValueError("须在正文之后保留附录，登记支撑文件清单与完整源程序")
+            raise ValueError("须在正文之后保留附录，登记支撑材料清单（源码以散装 .py 提交，不排进论文）")
     if policy.get("profile") == "cumcm_2026_electronic_user_supplied" and pages.get(2) != "body":
         raise ValueError("国赛电子版摘要之后应开始正文")
     used = sum(counts[k] for k in set(counted))
@@ -379,7 +381,7 @@ def formula_clearance_issues(pdf):
     唯独式 (8) = **−8.36pt**（压住下一行正文）；成因是多行 display 写成了 `equation` 套
     `aligned` —— `aligned` 把整块包成**一个**盒子，公式后的净空不再落回常规档
     （同内容改 `gather` 就是 +13.78pt）。**「aligned 一律坏」不成立**：
-    三行的 aligned 是 +11.09/+13.32pt（正的）⇒ 判据只能量净空。
+    三行的 aligned 是 +11.09/+13.32pt ⇒ 判据只能量净空。
     **必须靠右边的公式编号 `(N)` 认定公式块**：只按"非 SimSun 行"切块会把
     表格里的数字行、代码/文件名行误判成公式（5 条假阳性，还漏掉真的 (8)）。
     加上「块内要有 `(N)`」之后：本稿正文 20 条全认出、命中 1 条 = (8)、附录 0 条。
@@ -507,6 +509,55 @@ def effective_policy(root, policy):
     return out
 
 
+def appendix_pdf_issues(root):
+    """附录 PDF（`paper_appendix/main.pdf`）的纸面与大小 —— 主 PDF 的那两条判据这里也要有。
+
+    为什么单列：`inspect()` 只打开 `paper/main.pdf`。附录是**另一个工程、另一个 PDF**，
+    它的 A4 与 `max_pdf_bytes` 上限此前没有任何机械判据 —— 排成 Letter / 超 20MB
+    会一路绿到交付。容差与主 PDF 共用 `A4_TOLERANCE_MM`，大小上限读同一份
+    `config/publication.json` 的 `max_pdf_bytes`。
+
+    PyMuPDF 不可用（或附录还没产出）时**跳过**：环境缺库不该变成"附录不合格"。
+    PDF 打不开也跳过 —— "文件坏了"不由这条判据回答（它只量纸面与大小）。
+    """
+    root = Path(root).resolve()
+    pdf_path = root / "paper_appendix/main.pdf"
+    if not pdf_path.is_file():
+        return []
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        return []
+    try:
+        policy = json.loads((root / "config/publication.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        policy = {}
+    if not isinstance(policy, dict):
+        policy = {}
+    issues = []
+    expected = policy.get("paper_size_mm")
+    if (isinstance(expected, (list, tuple)) and len(expected) == 2
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in expected)):
+        try:
+            with fitz.open(pdf_path) as pdf:
+                for n, page in enumerate(pdf, 1):
+                    width = page.rect.width * 25.4 / 72
+                    height = page.rect.height * 25.4 / 72
+                    if (abs(width - expected[0]) > A4_TOLERANCE_MM
+                            or abs(height - expected[1]) > A4_TOLERANCE_MM):
+                        issues.append(f"附录 PDF 第{n}页不是规范要求的 A4 纸面"
+                                      f"（{width:.1f}×{height:.1f} mm）")
+        except (OSError, RuntimeError, ValueError):
+            pass                             # 打不开：不是这条判据能回答的（见 docstring）
+    maximum = policy.get("max_pdf_bytes")
+    if type(maximum) is int and maximum > 0:
+        size = pdf_path.stat().st_size
+        if size > maximum:
+            issues.append(f"附录 PDF 文件大小 {size / 1024 / 1024:.1f} MB 超过提交上限 "
+                          f"{maximum / 1024 / 1024:.1f} MB；应优化图片编码，保留文字和核心证据")
+    return issues
+
+
 def inspect(root):
     root = Path(root).resolve()
     result = {"schema_version": 1, "status": "UNVERIFIED", "issues": [], "warnings": [],
@@ -538,7 +589,7 @@ def inspect(root):
             # 谁都不读 —— `_manual_checks` 与 `_mechanical_floor` 都是 `audit()` = `issues`。
             # 于是 ⑨ 的返修单里从来没有这一条，"重跑还是没解决摘要少"就是这么来的
             # （另一半原因在 ⑨ 的 SKILL/norms：那句「850–950 字内安全」读起来是个**上限**）。
-            # 现在直接量**版心填充率**（即"尽量写满那一页"），分两档：
+            # 现在直接量**版心填充率**，分两档：
             #   < hard     ⇒ 进 `issues`，`lib/web/server.py::_mechanical_floor` 会判死；它据
             #                `prose_issues` 把回退目标由 ⑭排版改指 ⑨论文撰写（摘要文字只有 ⑨ 能改）
             #   [hard, target) ⇒ 只出 warning（差一点就别把小时级的链拖回去）
@@ -586,8 +637,8 @@ def inspect(root):
             for n, page in enumerate(pdf, 1):
                 if policy.get("paper_size_mm"):
                     expected = policy["paper_size_mm"]
-                    if (abs(page.rect.width * 25.4 / 72 - expected[0]) > .5 or
-                            abs(page.rect.height * 25.4 / 72 - expected[1]) > .5):
+                    if (abs(page.rect.width * 25.4 / 72 - expected[0]) > A4_TOLERANCE_MM or
+                            abs(page.rect.height * 25.4 / 72 - expected[1]) > A4_TOLERANCE_MM):
                         result["issues"].append(f"第{n}页不是规范要求的A4纸面")
                 for block in page.get_text("blocks"):
                     if block[0] < -1 or block[1] < -1 or block[2] > page.rect.width + 1 or block[3] > page.rect.height + 1:

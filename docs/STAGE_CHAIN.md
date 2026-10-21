@@ -18,12 +18,12 @@
 | ⓪ | 0Intake-readproblem | 读题：把上传的整个文件夹读一遍（题面+附件+数据），产出"我读到了什么"，**跑完停下等人确认**（确认页＝左内嵌原 PDF / 右渲染后的题面／可改＋更正说明） | INTAKE_REPORT.md / INTAKE.json |
 | 0 | 0Start-mathmodel | 问偏好→plan/todo（链外入口，不在 `STAGES` 里） | plan.md / todo.md |
 | 1 | 1Literature-orientation | 文献定向+机理基线（WebSearch） | LITERATURE_DIRECTION.md |
-| 2 | 2Modeling-design | 赛题分析+建模设计（三要素+代码契约） | ANALYSIS_MODELING_REPORT.md |
-| 3 | 3Modeling-review-gate | 建模评审门禁（数学/题意/机理/数据设计，独立子 agent 四查） | MODELING_REVIEW_REPORT.md |
-| 4 | 4Coding-and-computation | 实现/计算/图/溯源 | code/, RESULTS_REPORT.md |
-| 5 | 5Result-credibility-audit | 数据与结果可信度审计（防小样本高 AUC/泄漏/口径） | RESULT_AUDIT_REPORT.md |
-| 6 | 6Robustness | 稳健性/敏感性（扰动/boot/留组/口径） | ROBUSTNESS_REPORT.md |
-| 7 | 7Route-diagram | 技术路线图（**必出图 1 分析流程图**）+ 按需示意图 | DRAWIO_REPORT.md |
+| 2 | 2Modeling-design | 赛题分析+建模设计（三要素+代码契约+创新台账） | ANALYSIS_MODELING_REPORT.md, INNOVATION_LEDGER.json |
+| 3 | 3Modeling-review-gate | 建模评审门禁（数学/题意/机理/数据设计/创新，独立子 agent 五查） | MODELING_REVIEW_REPORT.md |
+| 4 | 4Coding-and-computation | 实现/计算/图/溯源 + 创新 baseline/intervention 复算 | code/, RESULTS_REPORT.md, INNOVATION_LEDGER.json（measurement） |
+| 5 | 5Result-credibility-audit | 数据与结果可信度审计（防小样本高 AUC/泄漏/口径 + 创新增量复核） | RESULT_AUDIT_REPORT.md, INNOVATION_AUDIT.json |
+| 6 | 6Robustness | 稳健性/敏感性（扰动/boot/留组/口径 + 核心创新稳健性） | ROBUSTNESS_REPORT.md, INNOVATION_LEDGER.json（robustness） |
+| 7 | 7Route-diagram | 技术路线图（**必出图 1 分析流程图**）+ 按需示意图（含第五类 3D 物理立体/剖切，`fig_geometry_3d`） | DRAWIO_REPORT.md |
 | 8 | 8Figure-gate | 绘图门禁（⑦ 之后图就全了 —— 机械地板 `visualization audit` + 查机器看不见的选型/可读性；**只判不改**，FAIL→回 7） | FIGURE_REVIEW_REPORT.md |
 | 9 | 9Paper-writing | 按角色计划（`roles.json` + `paper/structure.json`）分节撰写论文（模板+图与排版风格参考）+ 收尾交付层（提交清单/末页清单表/运行说明/AI工具使用详情） | paper/（含 paper-structure.tex / structure.json）、SUBMISSION_MANIFEST.json、运行说明.md、AI工具使用详情.pdf |
 | 10 | 10Math-proof-gate | 数学论证门禁（成稿定理/命题/证明字样须带等式级推导+前提声明；禁仿真代证明；REVISE→回 9） | MATH_PROOF_REPORT.md |

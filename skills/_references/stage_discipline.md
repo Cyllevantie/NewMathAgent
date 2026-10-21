@@ -166,8 +166,8 @@ allowed-tools: Read, Grep, Glob
 
 | 阶段 | 本阶段的「改 A 坏 B」长什么样 |
 |---|---|
-| 3analysis | 同一个量在验算表/判据汇总/口径表/必报字段多处重复，改一处必须同步全部引用处 |
-| 5coding | **改一处数值会影响下游全部派生量，顺手改动会被审计当成新缺陷抓出来 |
+| ② 2Modeling-design | 同一个量在验算表/判据汇总/口径表/必报字段多处重复，改一处必须同步全部引用处 |
+| ④ 4Coding-and-computation | **改一处数值会影响下游全部派生量，顺手改动会被审计当成新缺陷抓出来 |
 | 9Paper-writing | 同一个量在摘要/正文/图注/表/后文引用里反复出现，改一处不改其余即新硬错误 |
 | 14Layout-and-format | 版式改动尤其容易"顺手改了别的"：改一处必须重新量一次 `measure_layout.py` |
 
@@ -177,8 +177,9 @@ allowed-tools: Read, Grep, Glob
 
 ## 六、阶段收尾自检（自己产的东西，自己在交出去之前对一遍）
 
-适用：所有只审不改的门禁阶段（4review / 5Result-credibility-audit / 10Math-proof-gate / 11Cross-question-check /
-15Verification / 12Rubric-final），以及会产出互相引用的多个文件**的生产阶段（3analysis 的
+适用：所有只审不改的门禁阶段（③ 3Modeling-review-gate / ⑤ 5Result-credibility-audit /
+⑧ 8Figure-gate / ⑩ 10Math-proof-gate / ⑪ 11Cross-question-check / ⑫ 12Rubric-final /
+⑮ 15Verification），以及会产出互相引用的多个文件**的生产阶段（② 2Modeling-design 的
 `TASK_CONTRACT.json` + `ANALYSIS_MODELING_REPORT.md` 是最典型的一对）。
 
 ### 6.1 门禁：**先落骨架，再深挖
@@ -223,9 +224,9 @@ agent 照着执行方式做，就把骨架漏了。规则写在头部没人看�
 
 | 阶段 | 收尾自检 |
 |---|---|
-| 3analysis | `python lib/web/check_contract.py` —— 契约里每条 `quote` 是否还逐字指得到报告原文（与门禁**同一个函数**） |
-| 3analysis（被退回过的轮次） | `python lib/web/check_receipts.py` —— 返修台账（见 6.3） |
-| **全部门禁**（③⑤⑦⑧⑩⑪⑫⑮） | `python lib/web/check_verdict.py --stage <阶段id>` —— **交裁决侧车之前跑一遍 |
+| ② 2Modeling-design | `python lib/web/check_contract.py` —— 契约里每条 `quote` 是否还逐字指得到报告原文（与门禁**同一个函数**） |
+| ② 2Modeling-design（被退回过的轮次） | `python lib/web/check_receipts.py` —— 返修台账（见 6.3） |
+| **全部门禁**（③⑤⑧⑩⑪⑫⑮） | `python lib/web/check_verdict.py --stage <阶段id>` —— **交裁决侧车之前跑一遍 |
 
 那条命令做的是：拿驱动同一套函数**（`content_quality.enforce` + `workflow_quality.read_verdict`）
 校验你这就要交出去的 `reports/<报告>.verdict.json`，逐条说清哪里会被打回（缺哪个必查 ID、
@@ -279,7 +280,7 @@ probes：一串「改完之后才会出现在正文里」的检索串。四条�
    诚实登记比谎报便宜 —— review 下一轮照样会查，但谎报要多烧一整轮。
 
 实现见 `lib/web/receipt_ledger.py`（判据唯一来源，驱动与门禁读同一份），CLI 是 `lib/web/check_receipts.py`。
-驱动在 3analysis 收尾时会自己跑一遍，不过就当场挂起，不用等 40 分钟后被 review 拦下。
+驱动在 ② 2Modeling-design 收尾时会自己跑一遍，不过就当场挂起，不用等 40 分钟后被 review 拦下。
 
 ---
 
@@ -332,3 +333,17 @@ probes：一串「改完之后才会出现在正文里」的检索串。四条�
    走到需要你去杀进程，说明第 3 步之前就该拦住它。
 6. 想确认"还有没有我自己的残留进程"：**按 pid 对，别按进程名扫**。起后台任务时就顺手记：
    `<命令> & echo "PID=$!"`（PowerShell 用 `Start-Process -PassThru` 记 `.Id`）。
+
+## 八、多 agent 面板的锁协议
+
+阶段里开子 agent 面板（② 创新点、③ 评审、⑤ 审计、⑥ 稳健性、⑦ 图候选、⑨ 写后审稿、⑮ 验收、⑯ Demo 方案、① 检索角度）时：
+
+1. 主 agent 在 spawn 前用 Write 建一个空文件 `.fma_panel_lock`（根目录）；
+2. 子 agent 只写 `_tmp/` 或 `tmp/`，不写 `code/`、`results/`、`figures/`、`paper/`、`reports/`、`runtime/`、`demo/`；
+3. 收齐候选 / 结论后，主 agent 先删 `.fma_panel_lock`，再写正式报告、产物、登记；
+4. 如果忘了删锁，写正式产物会被 hook 拦下（提示「面板进行中」）——看到这句就删锁重试，不要改名绕过。
+5. 子 agent 类型优先用 `config/agents.json` 里的同名角色（`idea-*` / `review-*` / `audit-*` /
+   `robust-*` / `fig-candidate` / `paper-*` / `verify-*` / `demo-design` / `lit-*`）；
+   没有对应角色、或 CLI 不支持自定义 agent 时，再用 `general-purpose`。
+
+主 agent 自己也不要在锁存在时写正式产物：锁是给整个会话看的，不区分主/子。

@@ -40,6 +40,15 @@ class FrontendRenderTests(unittest.TestCase):
         rc, out = _run("frontend_splash_check.js")
         self.assertEqual(rc, 0, "开屏页夹具失败：\n" + out[-1500:])
 
+    def test_the_log_pane_splits_real_tool_lines_and_has_all_theme_rules(self):
+        """日志拆段真跑：真实 tool 行拆成 lt/tk/cmd/lx 四段，五套皮肤的配色规则都在。
+
+        ★ 这个 JS 夹具早就存在，但**一直没有测试调用它**（2026-10-20 审出来的漏网）：
+        它自己 rc≠0 也没人看 ⇒ 拆段逻辑被改坏、配色规则被删，回归照样全绿。
+        """
+        rc, out = _run("frontend_log_check.js")
+        self.assertEqual(rc, 0, "日志拆段夹具失败：\n" + out[-1500:])
+
     def test_no_top_level_lookup_runs_before_its_element_exists(self):
         """脚本顶层 `$('x')` 抓的元素必须出现在脚本标签之前。
 
@@ -58,6 +67,16 @@ class FrontendRenderTests(unittest.TestCase):
         """
         rc, out = _run("frontend_viewer_check.js")
         self.assertEqual(rc, 0, "查看器切页签夹具失败：\n" + out[-1500:])
+
+    def test_redo_asks_before_clearing_and_never_starts_a_doomed_late_stage(self):
+        """「从所选阶段重跑」真跑：清空前先预检，输入已变更时确认框说清「只能从 ①」，
+        确认后只清空、不再拿注定 409 的 from_stage 去起跑；取消则一个文件都不动。
+
+        这条是 2026-10-21 用户要求的「弹提示框询问是否确认清空该阶段及之后产物，
+        确认后再执行」——纯字符串哨兵钉不住“先清空还是先预检”。
+        """
+        rc, out = _run("frontend_redo_check.js")
+        self.assertEqual(rc, 0, "「从所选阶段重跑」夹具失败：\n" + out[-1500:])
 
     def test_the_github_badge_sits_centered_with_a_closable_card(self):
         """第二排正中的 GitHub 标识 + 赠言浮层。

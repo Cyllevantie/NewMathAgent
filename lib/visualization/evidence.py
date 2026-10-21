@@ -186,13 +186,13 @@ def _drawio_layout_issues(root, key, entry):
         #   真检出问题时会带 FAIL 行，所以"没有 FAIL 行的非零 rc"必是脚本级故障
         #   （读取时撞上写入/杀毒等瞬时失败）。若按原样判死，一次瞬时故障就能卡住整条链，
         #   而且**无法复现、无法排查**。
-        #   这里**必须 return []（真放行）**：若改成返回一条 message，`audit()` 会把它
+        #   这里**必须 return []**：若改成返回一条 message，`audit()` 会把它
         #   并进 issues → 照样判 FAIL，等于没放行。可见性靠 stderr，不靠加一条 issue。
         print(f"⚠️ {key}: 版式体检脚本未能完成（rc={proc.returncode}）—— 已放行，"
               f"不据此判图不合格。stderr 末 200 字：{(proc.stderr or '')[-200:]}",
               file=sys.stderr)
         return []
-    # 这条 return 不能少：漏了它，`bad` 非空（**真检出问题**）时函数走到末尾返回 None，
+    # 这条 return 不能少：漏了它，`bad` 非空时函数走到末尾返回 None，
     #   `audit()` 的 `issues.extend(None)` 会 **TypeError 崩掉整个审计** —— 比误报更糟。
     return [f"{key}: 版式体检不过 —— " + "；".join(bad[:4])]
 

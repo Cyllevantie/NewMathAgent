@@ -19,11 +19,12 @@ import sys
 
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
-from lib.delivery.checks import (DEMO_3D_ENGINE, DEMO_3D_EXEMPT_TOKEN, _a1_table_names,
-                                 check, checklist_consistency_issues, demo_3d_issues,
-                                 demo_html_issues, precheck, report, required_items_issues)
+from lib.delivery.checks import (DEMO_3D_ENGINE, DEMO_3D_EXEMPT_MIN_CHARS, DEMO_3D_EXEMPT_TOKEN,
+                                 _a1_table_names, check, checklist_consistency_issues,
+                                 demo_3d_issues, demo_html_issues, paper_figure_copy_issues,
+                                 physical3d_issues, precheck, report, required_items_issues)
 from lib.delivery.core import (BODY_PDF, OTHER_DIR, SUBMISSION_PARENT, SUBMISSION_POINTER,
-                           archive_into_cache, body_pdf_name, configured_output_dir,
+                           archive_into_cache, body_pdf_name, build_plan, configured_output_dir,
                            delivery_name, load_manifest, package, provisional_items,
                            resolve_output_dir, resolve_source, resolve_stage_dir,
                            resolve_submission_dir, rotate_pointer, unique_boundary_name)
@@ -41,6 +42,20 @@ def engine_text():
     本来想考的不是这件事。
     """
     return (PROJECT / DEMO_3D_ENGINE).read_text(encoding="utf-8")
+
+
+def write_pdf(path, width=595.276, height=841.89):
+    """写一张**真** PDF（交付层的附录判据会打开它量纸面）。
+
+    旧夹具用 `%PDF-1.4 appendix` 这种假字节：附录判据打不开就跳过，于是"夹具通过"
+    并不能证明 A4 判据真的量过。要考这条判据的用例必须给它一张量得出尺寸的 PDF。
+    """
+    import pymupdf as fitz
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc = fitz.open()
+    doc.new_page(width=width, height=height)
+    doc.save(path)
+    doc.close()
 
 
 def make_workspace():
@@ -71,6 +86,16 @@ def make_workspace():
         "schema_version": 1, "stage": "format",
         "items": [{"path": n, "desc": f"{n} 的说明"} for n in SUBMIT]}, ensure_ascii=False),
         encoding="utf-8")
+    # 附录判据（delivery.check/precheck）会打开 paper_appendix/main.pdf 量 A4 与大小：
+    # 夹具给一张真的 A4 单页（PyMuPDF 不在时留给判据自己跳过，与生产口径一致）。
+    try:
+        write_pdf(root / "paper_appendix/main.pdf")
+    except ImportError:
+        pass
+    (root / "config").mkdir(parents=True, exist_ok=True)
+    (root / "config/publication.json").write_text(json.dumps({
+        "schema_version": 1, "paper_size_mm": [210, 297], "max_pdf_bytes": 20000000},
+        ensure_ascii=False), encoding="utf-8")
     return root
 
 
@@ -424,6 +449,28 @@ class DemoHtmlTest(unittest.TestCase):
         issues = demo_html_issues(self.root)
         self.assertTrue(any("联网" in i for i in issues), issues)
 
+    def test_unquoted_local_reference_is_flagged(self):
+        """负对照：`src=app.js` 是**合法 HTML**，旧正则只认引号 ⇒ 白屏照样放行。"""
+        self.html.write_text("<html><script src=app.js></script></html>", encoding="utf-8")
+        issues = demo_html_issues(self.root)
+        self.assertTrue(any("app.js" in i and "本地文件" in i for i in issues), issues)
+
+    def test_css_url_references_are_flagged(self):
+        """`style`/`<style>` 里的 `url(...)` 同样加载本地文件 —— 旧判据只认标签属性。"""
+        for body, needle in [
+                ('<div style="background:url(bg.png)"></div>', "bg.png"),
+                ('<style>body{background:url("bg2.png")}</style>', "bg2.png")]:
+            self.html.write_text(f"<html>{body}</html>", encoding="utf-8")
+            issues = demo_html_issues(self.root)
+            self.assertTrue(any(needle in i and "本地文件" in i for i in issues), (needle, issues))
+
+    def test_css_data_and_fragment_urls_are_allowed(self):
+        """反向对照：`data:` 内联与 `#` 片段不是本地文件引用，不许误伤。"""
+        self.html.write_text(
+            '<html><style>body{background:url(data:image/png;base64,xx)}'
+            '#g{fill:url(#grad)}</style></html>', encoding="utf-8")
+        self.assertEqual(demo_html_issues(self.root), [])
+
     def test_no_demo_at_all_is_not_an_error(self):
         """有的题不做 demo（纯机理/纯证明），不判。"""
         self.html.unlink()
@@ -473,10 +520,43 @@ class Demo3DMainViewTest(unittest.TestCase):
                                encoding="utf-8")
         self.assertEqual(demo_3d_issues(self.root), [])
 
+    def test_a_prose_mention_of_the_token_is_not_an_exemption(self):
+        """报告里**提到**"没有使用三维豁免"不算豁免行 —— 豁免必须是行首的 `三维豁免：理由`。
+
+        真实形态：`DEMO_REPORT.md` 的可读性段落写「没有使用任何「三维豁免」」，
+        旧判据用 `token in line` 会把这句话当成豁免，于是二维 demo 也能过交付检查。
+        """
+        self.html.write_text("<html><body>二维曲线</body></html>", encoding="utf-8")
+        self.report.write_text("# Demo 报告\n本页没有使用任何「" + DEMO_3D_EXEMPT_TOKEN + "」。\n",
+                               encoding="utf-8")
+        self.assertEqual(len(demo_3d_issues(self.root)), 1)
+
     def test_exemption_without_a_reason_is_still_flagged(self):
         """对照组：光一个前缀不算豁免 —— 「说了理由」才是判据，不能拿空壳糊弄。"""
         self.html.write_text("<html><body>纯判定卡</body></html>", encoding="utf-8")
         self.report.write_text("# Demo 报告\n" + DEMO_3D_EXEMPT_TOKEN + "\n", encoding="utf-8")
+        self.assertEqual(len(demo_3d_issues(self.root)), 1)
+
+    def test_a_one_character_exemption_reason_is_rejected(self):
+        """`三维豁免：.` 这种一字符理由是空壳，旧判据只要非空就放行。"""
+        self.html.write_text("<html><body>纯判定卡</body></html>", encoding="utf-8")
+        self.report.write_text("# Demo 报告\n" + DEMO_3D_EXEMPT_TOKEN + "。\n", encoding="utf-8")
+        self.assertEqual(len(demo_3d_issues(self.root)), 1)
+        # 反向对照：理由补到下限就放行 —— 证明上面失败是因为长度，不是断行/前缀写错
+        self.report.write_text("# Demo 报告\n" + DEMO_3D_EXEMPT_TOKEN
+                               + "理" * DEMO_3D_EXEMPT_MIN_CHARS + "\n", encoding="utf-8")
+        self.assertEqual(demo_3d_issues(self.root), [])
+
+    def test_engine_text_outside_a_script_block_does_not_count(self):
+        """负对照：引擎原文贴进 HTML 注释/页面文字/`<style>` 都**不执行**，主视图仍是二维。"""
+        for wrapper in ("<!-- {} -->", "<body>{}</body>", "<style>{}</style>"):
+            self.html.write_text("<html>" + wrapper.format(engine_text()) + "</html>", encoding="utf-8")
+            self.assertEqual(len(demo_3d_issues(self.root)), 1, wrapper)
+
+    def test_engine_inside_a_commented_out_script_does_not_count(self):
+        """注释里的 `<script>` 是 HTML 注释、不是脚本块 —— 剥注释后再取 script 正文。"""
+        self.html.write_text("<html><!-- <script>" + engine_text() + "</script> --></html>",
+                             encoding="utf-8")
         self.assertEqual(len(demo_3d_issues(self.root)), 1)
 
     def test_one_character_changed_breaks_the_verbatim_match(self):
@@ -505,6 +585,146 @@ class Demo3DMainViewTest(unittest.TestCase):
         """有的题不做 demo（纯机理/纯证明），连 demo.html 都没有 ⇒ 不判。"""
         self.html.unlink()
         self.assertEqual(demo_3d_issues(self.root), [])
+
+
+class DemoPackagingTest(unittest.TestCase):
+    """`demo/` 是交付物的一部分（截图存档），而且 demo 判据要对着**提交包**里的那份跑。
+
+    16Web-demo SKILL 第 5 步原话：「这些截图是交付物的一部分（随 demo/ 进产物的其余文件/）」。
+    旧 `build_plan` 只收 `paper/`、`paper_appendix/`、`reports/`、`code/` ⇒ 截图一件都不进包。
+    另一半：`check` 过去查的是工作区 `demo/demo.html`，打包进去的是旧版时照样 PASS。
+    """
+
+    def setUp(self):
+        self.root = make_workspace()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.out = self.root / "产物"
+
+    def test_build_plan_files_demo_under_the_other_directory(self):
+        other = dict(build_plan(self.root, load_manifest(self.root))[1])
+        self.assertEqual(other.get("demo"), f"{OTHER_DIR}/演示")
+
+    def test_demo_screenshots_reach_the_package(self):
+        (self.root / "demo/shot_1_default.png").write_bytes(b"\x89PNG\r\n")
+        package(self.root, self.out, load_manifest(self.root))
+        self.assertTrue((self.out / OTHER_DIR / "演示/shot_1_default.png").is_file(),
+                        "⑯ 的截图没进 其余文件/演示/ —— SKILL 承诺它会随 demo/ 交付")
+        self.assertEqual(check(self.root, self.out), [])
+
+    def test_check_validates_the_packaged_demo_not_the_workspace_copy(self):
+        """负对照：工作区是好的、打包进去的是二维 ⇒ 必须报。
+
+        旧写法 `demo_3d_issues(root)` 只看工作区那份，这条会静默放行。
+        """
+        package(self.root, self.out, load_manifest(self.root))
+        (self.out / "demo.html").write_text("<html><body>二维曲线</body></html>", encoding="utf-8")
+        issues = check(self.root, self.out)
+        self.assertTrue(any("三维" in i for i in issues), issues)
+
+    def test_a_clean_package_passes_even_if_the_workspace_copy_is_dirty(self):
+        """反向对照：提交包里的那份是好的 ⇒ 打包后工作区再被改，不许影响对**已交付件**的判定。"""
+        package(self.root, self.out, load_manifest(self.root))
+        (self.root / "demo/demo.html").write_text("<html><body>二维曲线</body></html>",
+                                                  encoding="utf-8")
+        self.assertEqual(check(self.root, self.out), [])
+
+
+class PaperFigureCopyTest(unittest.TestCase):
+    """论文工程里的图件副本必须与根 `figures/` 同源。
+
+    `\\paperfigure`/`\\appfigure` 写的是 `figures/<stem>.pdf`，编译目录是 `paper/` /
+    `paper_appendix/` ⇒ 实际读工程内的 `figures/` 副本。副本没同步时论文里是旧图，
+    而 `visualization.evidence.audit` 只扫根目录 —— 登记/复核/审计全绿。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def _pdf(self, rel, body):
+        p = self.root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(body)
+        return p
+
+    def test_matching_copies_pass(self):
+        for rel in ("figures/a.pdf", "paper/figures/a.pdf", "paper_appendix/figures/a.pdf"):
+            self._pdf(rel, b"same-pdf")
+        self.assertEqual(paper_figure_copy_issues(self.root), [])
+
+    def test_a_stale_copy_is_flagged(self):
+        self._pdf("figures/a.pdf", b"new")
+        self._pdf("paper/figures/a.pdf", b"old")
+        issues = paper_figure_copy_issues(self.root)
+        self.assertEqual(len(issues), 1, issues)
+        self.assertIn("paper/figures/a.pdf", issues[0])
+        self.assertIn("sha256", issues[0])
+
+    def test_a_copy_without_a_root_source_is_flagged(self):
+        self._pdf("paper_appendix/figures/孤儿.pdf", b"orphan")
+        issues = paper_figure_copy_issues(self.root)
+        self.assertTrue(any("根 figures" in i and "孤儿.pdf" in i for i in issues), issues)
+
+    def test_demo_shot_is_whitelisted(self):
+        """⑯ 的附录专有截图不在根登记簿里，不许报「根缺失」。"""
+        self._pdf("paper_appendix/figures/demo_shot.pdf", b"appendix-only")
+        self.assertEqual(paper_figure_copy_issues(self.root), [])
+
+    def test_absent_project_figure_dirs_are_not_an_error(self):
+        self._pdf("figures/a.pdf", b"x")
+        self.assertEqual(paper_figure_copy_issues(self.root), [])
+
+    def test_check_and_precheck_surface_it(self):
+        root = make_workspace()
+        self.addCleanup(shutil.rmtree, root, True)
+        (root / "figures").mkdir(exist_ok=True)
+        (root / "figures/fig_a.pdf").write_bytes(b"new")
+        (root / "paper/figures").mkdir(parents=True, exist_ok=True)
+        (root / "paper/figures/fig_a.pdf").write_bytes(b"old")
+        self.assertTrue(any("fig_a.pdf" in i for i in precheck(root)), precheck(root))
+        out = root / "产物"
+        package(root, out, load_manifest(root))
+        self.assertTrue(any("fig_a.pdf" in i for i in check(root, out)), check(root, out))
+
+
+class AppendixPdfWiringTest(unittest.TestCase):
+    """附录 PDF 的 A4/大小判据必须真的挂在 check/precheck 上（函数测了、接线没人守）。"""
+
+    def setUp(self):
+        self.root = make_workspace()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.out = self.root / "产物"
+
+    def _resize(self, width, height):
+        try:
+            write_pdf(self.root / "paper_appendix/main.pdf", width=width, height=height)
+        except ImportError:
+            self.skipTest("Requires PyMuPDF")
+
+    def test_a4_appendix_is_clean(self):
+        self.assertEqual(precheck(self.root), [])
+        package(self.root, self.out, load_manifest(self.root))
+        self.assertEqual(check(self.root, self.out), [])
+
+    def test_a_letter_sized_appendix_fails_both_checks(self):
+        self._resize(612, 792)                      # Letter，差 > 0.5mm
+        self.assertTrue(any("A4" in i and "附录" in i for i in precheck(self.root)),
+                        precheck(self.root))
+        package(self.root, self.out, load_manifest(self.root))
+        self.assertTrue(any("A4" in i and "附录" in i for i in check(self.root, self.out)),
+                        check(self.root, self.out))
+
+    def test_an_oversized_appendix_fails_precheck(self):
+        try:
+            import pymupdf  # noqa: F401 —— 判据缺库时整条跳过，测试也就不该假装量过
+        except ImportError:
+            self.skipTest("Requires PyMuPDF")
+        cfg = self.root / "config/publication.json"
+        cfg.write_text(json.dumps({"schema_version": 1, "paper_size_mm": [210, 297],
+                                   "max_pdf_bytes": 10}, ensure_ascii=False), encoding="utf-8")
+        self.assertTrue(any("上限" in i and "附录" in i for i in precheck(self.root)),
+                        precheck(self.root))
 
 
 class PrecheckTest(unittest.TestCase):
@@ -926,6 +1146,41 @@ class NestedAttachmentTests(unittest.TestCase):
         package(self.root, self.out, self._manifest_with(exclude=[{"why": "忘了写 path"}]))
         issues = check(self.root, self.out)
         self.assertTrue([i for i in issues if "exclude" in i], f"没报结构错：{issues}")
+
+
+class Physical3dQaTest(unittest.TestCase):
+    """第五类物理立体图的 QA 报告必须被交付层消费，而不是只由 ⑦ 自证。"""
+
+    def setUp(self):
+        self.root = make_workspace()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        (self.root / "figures").mkdir()
+        (self.root / "figures/fig_geometry_3d.pdf").write_bytes(b"%PDF-1.4")
+        self.report = self.root / "reports/FIG_GEOMETRY_3D_QA.json"
+
+    def _write(self, data):
+        self.report.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    def test_missing_qa_report_is_an_error(self):
+        self.assertTrue(any("FIG_GEOMETRY_3D_QA" in i
+                            for i in physical3d_issues(self.root)))
+
+    def test_a_passed_report_is_clean(self):
+        self._write({"ok": True, "parts": {"pdf": {"ok": True, "errors": [], "warnings": []}}})
+        self.assertEqual(physical3d_issues(self.root), [])
+
+    def test_warnings_are_consumed_not_ignored(self):
+        """qa_physical3d 的字体/宽度/压实体只出 warning、rc=0；交付层必须把它们当问题读。"""
+        self._write({"ok": True, "parts": {"pdf": {"ok": True, "errors": [],
+                                                   "warnings": ["PDF 字体列表里没找到 SimHei"]}}})
+        issues = physical3d_issues(self.root)
+        self.assertTrue(any("字体列表" in i for i in issues), issues)
+
+    def test_a_failed_report_is_an_error(self):
+        self._write({"ok": False, "parts": {"pdf": {"ok": False,
+                                                   "errors": ["有文字被画布裁掉"], "warnings": []}}})
+        issues = physical3d_issues(self.root)
+        self.assertTrue(any("画布裁掉" in i for i in issues), issues)
 
 
 if __name__ == "__main__":

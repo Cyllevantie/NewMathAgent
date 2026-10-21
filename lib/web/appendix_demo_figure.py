@@ -75,7 +75,7 @@ def _latex_safe(text: str) -> str:
 
     中文散文里「完成度 100%」这种极常见，而 LaTeX 会把 `%` 之后整行**静默注释掉** ——
     编译照样成功、字却少了，是最难发现的一类失效。只处理 `%`：`&`/`_`/`#` 撞上会直接
-    编译报错（响的），不会静默丢内容。
+    编译报错，不会静默丢内容。
     """
     return re.sub(r"(?<!\\)%", r"\\%", text)
 
@@ -161,7 +161,7 @@ def ensure_demo_figure(root, png, intro, caption=DEMO_CAPTION):
     _png_to_pdf(png, figdir / f"{DEMO_FIGURE_ID}.pdf")
     shutil.copy2(png, figdir / f"{DEMO_FIGURE_ID}.png")
 
-    # ---- 4) 整段插到**所有 A.x 小节之前**（= 附录第一页）----
+    # ---- 4) 整段插到**所有 A.x 小节之前** ----
     lines = text.split("\n")
     at = next((i for i, l in enumerate(lines) if SUBSECTION_RE.match(l)), 0)
     block = _build_block(intro, caption)

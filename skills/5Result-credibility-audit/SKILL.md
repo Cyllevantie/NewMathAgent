@@ -29,6 +29,8 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 - `reports/RESULTS_REPORT.md`（5coding 结果）
 - 5coding 的代码目录 `code/` 与结果文件
 - 3analysis 报告中的数据口径说明
+- `reports/INNOVATION_LEDGER.json`（② 设计，只读）
+- `reports/INNOVATION_MEASUREMENT.json`（④ 的实测值，只读）
 
 > 本阶段排在 6Robustness 之前，所以 不读 `ROBUSTNESS_REPORT.md` —— 那时它还不存在。
 > 换序的理由是成本：本阶段基本只读 + 小脚本复核（便宜），6Robustness 要跑 bootstrap/扰动（贵）。
@@ -40,6 +42,7 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 在当前工作目录的 `reports/` 下创建 `RESULT_AUDIT_REPORT.md`：
 
 - 逐项审计结论（每项 PASS / 需修正 / 不可信，附证据：哪个文件/哪段代码/哪个数）
+- `reports/INNOVATION_AUDIT.json`（第 7 项：每个 adopted 项的 `verdict + evidence`）
 - 若判"需修正/不可信"：给出具体修法（改划分、改口径、降级表述、补 PR-AUC 等）
 - 末尾整题结论：CLEAN（可信，放行到 6Robustness —— 本阶段排在它之前）/ NEEDS_FIX（退回 5coding 修正后重跑 code，再跑本审计）
 
@@ -71,6 +74,18 @@ Web 裁决侧车（content-quality 启用时）：另写 `reports/RESULT_AUDIT_R
 4. 小样本稳定性：阳性极少的分组/类别，波动范围多大（留一或小 bootstrap）；波动过大要求降级为"仅描述/需更多样本"，禁止确定结论。
 5. 标签口径：用哪个标签、报告是否一致；多标签（若存在两个口径不同的结果标签）差异是否处理并披露；结论对标签选择是否敏感。
 6. 可复现性抽查：结果能否由 code/ 复现（seed 是否固定、随机状态是否记录）；若报告的数字代码里找不到来源，标记。
+7. 创新增量核验：逐个 `status=adopted` 的台账项，按 `measurement.source` 打开结果文件，核对
+   `baseline_value / intervention_value / delta` 是否真实存在、单位是否一致、baseline 与
+   intervention 是否只差声明的那一处；`passed=false` 的项是否仍 `adopted`（是则判 NEEDS_FIX，
+   回 ④ 改 `downgraded`，⑤ 不代改）。
+   **主答案护栏**：`measurement.primary` 是否真的报了主答案（不是只挑次要指标）、
+   `relative_change` 是否与 `(intervention-baseline)/|baseline|` 重算一致、`guard_passed` 是否自洽；
+   `guard_passed=false` 时是否有 `independent_evidence`，该证据是否独立于本模型
+   （实验/文献/题面给定值/多模型一致/解析极限）。
+   主答案大幅偏离又拿不出独立证据 → 不是“创新”，按模型没闭合判 NEEDS_FIX（回 ④/②），
+   不能只改措辞放行。查不到来源、数字对不上、或把失败项继续叫“创新” → NEEDS_FIX，
+   侧车挂 `implementation_fidelity`（回 ④）；若数值真实、只是正文措辞过强 →
+   `claim_scope` + `claim`（交 ⑨）。
 
 ## 执行方式
 
@@ -78,6 +93,37 @@ Web 裁决侧车（content-quality 启用时）：另写 `reports/RESULT_AUDIT_R
 2. 按审计项逐项读报告 + 查对应代码/结果文件核对（不只看报告措辞）。
 3. 对可疑点做小脚本复核（如重新分层 CV、算 PR-AUC、查特征列）——审计要落到代码与数字，不是感觉。脚本要几分钟内跑得完：本阶段是门禁，唯一无可替代的产物是报告，复算有替代品（审不动就如实写"待核实"，别把时间全烧在自己的脚本上）。
 4. 汇总定稿 `RESULT_AUDIT_REPORT.md`。
+5. 把第 7 项的结论写到**独立文件** `reports/INNOVATION_AUDIT.json`（不要改台账）：
+   ```json
+   {"schema_version": 1,
+    "items": {"INN-1": {"verdict": "PASS",
+                        "evidence": "按 measurement.source（results/innovation_checks.json）复算，两列与代码输出一致"}}}
+   ```
+   `verdict` 只能是 `PASS / FAIL / REVISE / UNVERIFIED`。**非 PASS 时不要改台账**：
+   ⑤ 是门禁，台账是它的输入；门禁改自己的输入会被驱动判成“执行期间输入变更”。
+   非 PASS 由本阶段的门禁裁决写进 `RESULT_AUDIT_REPORT.verdict.json`，路由回 ④/②；
+   台账的 `status=downgraded` 由 ④ 或 ② 按回执修改，不由 ⑤ 代劳。
+   收尾跑 `python lib/web/check_innovation.py --stage audit`（该命令允许审计文件里出现
+   FAIL/REVISE；它只校验格式，不替门禁做裁决）。
+
+### 审计面板（2–3 个子 agent，按维度拆）
+
+审计项多、彼此独立时（≥3 项且证据源不同），用 Agent 工具并行 2–3 个子 agent，每个只盯一组。
+开工先按 `../_references/stage_discipline.md` 八建 `.fma_panel_lock`，收齐后删锁再写报告/裁决。
+
+| 子 agent | 只负责 |
+|---|---|
+| `audit-metrics` | 审计项 1（指标异常乐观）、3（分析单位）、4（小样本稳定性） |
+| `audit-leakage` | 审计项 2（泄漏回查）、5（标签口径）、特征时序 |
+| `audit-repro` | 审计项 6（可复现性）、同一数字多处不一致、代码里找不到来源的数字 |
+
+硬规则：
+
+- 子 agent 只写 `_tmp/audit_panel/<lens>.md`：每条给 `PASS/FAIL + 证据（文件:行/数字）+ 修法`；
+  **不得**改 `code/`、`results/`、`figures/data`，**不得**写 `RESULT_AUDIT_REPORT.md` / `.verdict.json`；
+- 主 agent 收齐后抽查关键证据（几分钟内跑得完的短脚本），再写报告与唯一裁决；
+- 任一维度 FAIL 且有具体证据 → 整题 NEEDS_FIX/REVISE_CLAIM，写清是哪一维、卡在哪一条；
+- 审计项不足 3 项、证据源单一，或子 agent 不可用 → 主 agent 顺序审，不要为并行而拆。
 
 ## 门禁动作
 

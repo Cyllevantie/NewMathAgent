@@ -153,7 +153,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="裁决侧车自检（与驱动同一套校验函数）")
     ap.add_argument("--stage", help="阶段 id，如 verify / rubric / cross")
     ap.add_argument("--verdict", help="直接指定侧车路径；给了它就不必给 --stage")
-    ap.add_argument("--root", default=str(HERE.parent), help="项目根（默认取本文件的上一级）")
+    # 本文件在 `lib/web/` 下：HERE.parent 是 **lib/**，HERE.parents[1] 才是项目根。
+    #   默认写 HERE.parent 时，文档里的 `python lib/web/check_verdict.py --stage ...`
+    #   会去 `lib/reports/` 找侧车 ⇒ 永远 rc=2「找不到侧车」，把路径问题报成环境问题。
+    ap.add_argument("--root", default=str(HERE.parents[1]),
+                    help="项目根（默认取本文件的上两级 <root>/lib/web → <root>）")
     ap.add_argument("--port", type=int, default=8901)
     ap.add_argument("--json", action="store_true", help="只输出机器可读的一行 JSON")
     a = ap.parse_args(argv)

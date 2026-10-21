@@ -114,10 +114,14 @@ workflow:
 │   ├── ... 
 │   └── utils.py
 ├── results/                     # 4: 结果记录（4Coding-and-computation）
-├── figures/                     # 4+7: 所有图表（5coding 数据图 + 7Route-diagram 非数据图）
-│   ├── manifest.json            #     逐张登记来源/脚本/sha256 + 目检复核（visualization audit）
-│   ├── *.pdf                    #     数据图 + 非数据图 PDF
-│   ├── *.drawio                 #     非数据图源文件
+├── figures/                     # 4+7: 所有图表（4 数据层 + 7 渲染/非数据图）
+│   ├── data/*.npz               #     4: 只读数据包（studio.save_bundle）
+│   ├── spec/*.json              #     4: recipe + fields/claim/stats
+│   ├── *.lock.json              #     4: bundle/spec/source/claim 的哈希
+│   ├── make_figures.py          #     7: 数据图渲染器（唯一写者）
+│   ├── manifest.json            #     7: 逐张登记来源/脚本/sha256 + 目检复核（visualization audit）
+│   ├── *.pdf                    #     7: 数据图 + 非数据图 PDF
+│   ├── *.drawio                 #     7: 非数据图源文件
 ├── paper/                       # 8-9: 论文（9Paper-writing 写各节；14Layout-and-format 独占导言区与版式）
 │   ├── _base/                  #     共享模板层（preamble/macros/math-style）—— 14Layout-and-format 独占
 │   ├── main.tex                 #     论文主文件
@@ -165,15 +169,15 @@ workflow:
 | 文献定向与机理锚定 | `1Literature-orientation` | WebSearch 近 3-5 年文献，给每问"主流建模方向 + 领域机理基线"，供建模与评审作外部参照。 | `LITERATURE_DIRECTION.md` |
 | 赛题分析与建模设计 | `2Modeling-design` | 解析题意、识别变量/约束/数据/评价指标，建立数学模型（决策变量/目标函数/约束/求解算法）与代码契约。 | `ANALYSIS_MODELING_REPORT.md` |
 | 建模评审门禁 | `3Modeling-review-gate` | 独立评审数学正确性/题意权衡（防退化解）/领域机理/数据设计预检；FAIL 附修改清单退回建模手。 | `MODELING_REVIEW_REPORT.md` |
-| 编程实现和图表生成 | `4Coding-and-computation` | 实现可复现代码，运行实验，生成结果表和图表。 | `code/`, `results/`, `RESULTS_REPORT.md`, `figures/图表` |
+| 编程实现与数据交付 | `4Coding-and-computation` | 实现可复现代码，运行实验，生成结果表，交付数据图的 bundle/spec/lock（不画成品图）。 | `code/`, `results/`, `RESULTS_REPORT.md`, `figures/data/`, `figures/spec/`, `figures/*.lock.json`, `reports/FIGURE_BRIEF.json` |
 | 数据与结果可信度审计 | `5Result-credibility-audit` | 专项审计指标乐观性/泄漏/样本单位/小样本/标签口径，防"不严谨结论"。排在稳健性之前：结果不可信时不该白跑昂贵的扰动计算。 | `RESULT_AUDIT_REPORT.md` |
 | 稳健性与敏感性分析 | `6Robustness` | 对关键结论做参数扰动/bootstrap/留组/口径对照，标出稳健与敏感项。 | `ROBUSTNESS_REPORT.md` |
-| 流程与架构图绘制 | `7Route-diagram` | 绘制技术路线图、各问求解流程图、数据处理流程图等非数据图。 | `figures/*.pdf`、`figures/*.drawio`、`DRAWIO_REPORT.md` |
-| 绘图门禁 | `8Figure-gate` | 图全在盘上之后统一复核：登记与过期资产、位图质量（图例压数据/分辨率）、文字压框。只回 7Route-diagram（数据图的问题由它写 HANDBACK_REQUEST 交回 4Coding-and-computation）。 | `FIGURE_REVIEW_REPORT.md` |
+| 流程图与数据图渲染 | `7Route-diagram` | 绘制技术路线图、各问求解流程图、数据处理流程图等非数据图；并读取 ④ 的 bundle/spec/lock 渲染数据图（唯一渲染者）。 | `figures/*.pdf`、`figures/*.drawio`、`DRAWIO_REPORT.md` |
+| 绘图门禁 | `8Figure-gate` | 图全在盘上之后统一复核：登记与过期资产、位图质量（图例压数据/分辨率）、文字压框。只回 7Route-diagram（画法/契约/登记类；数据层 `[lock:data]` 由驱动直接回 4Coding-and-computation，不经 ⑦）。 | `FIGURE_REVIEW_REPORT.md` |
 | 竞赛论文撰写 | `9Paper-writing` | 基于各报告与图表撰写论文各节并插入图表。只写 `sections/` 与摘要，不碰 `paper/_base/` 导言区；收尾产出提交清单、正文末页清单表、运行说明.md、AI工具使用详情.pdf。 | `paper/sections/`、`SUBMISSION_MANIFEST.json` |
 | 数学论证门禁 | `10Math-proof-gate` | 成稿里以定理/命题/证明命名或做强解析声称的对象，须带可逐行复核的等式级推导 + 前提声明；数值/图表不得充当证明。 | `MATH_PROOF_REPORT.md` |
 | 跨子问题一致性审查 | `11Cross-question-check` | 核对符号/数据口径/结论自洽/数值协调。 | `CROSS_QUESTION_REVIEW.md` |
-| 评分标终审 | `12Rubric-final` | 用四份评委视角评分标（适配性15维/AI痕迹10维/合规红线26条/官方四大项16维）对成稿逐项打分，出「严重/中等/轻微」三级判词与获奖预测。每条判词先证伪再报；轻微项只给成本估计、不返修。只审不改。 | `RUBRIC_REVIEW.md` |
+| 评分标终审 | `12Rubric-final` | 用四份评委视角评分标（适配性15维/AI痕迹10维/合规红线25条/官方四大项16维）对成稿逐项打分，出「严重/中等/轻微」三级判词与获奖预测。每条判词先证伪再报；轻微项只给成本估计、不返修。只审不改。 | `RUBRIC_REVIEW.md` |
 | 按评分判词定点返修 | `13Repair-by-rubric-verdict` | 按判词做论文侧修改（措辞/结构/摘要/结论表述）。动手前逐条复核判词属实，不属实的记 `not_reproduced` 不动稿。模型/数值类判词不在这里改。 | `FIX_REPORT.md` |
 | 排版与版式验收 | `14Layout-and-format` | 独占排版层：字号字体行距标题图题表题统一、浮体位置与溢出重叠、篇幅预算、正文/附录编号接续、编译与逐页视觉验收；对账并修补 ⑨ 首产的提交清单与末页清单表。只做定点版式手术。 | `paper/` 版式、`FORMAT_REPORT.md` |
 | 验证和验收 | `15Verification` | 结构/图表/数值/编译/数学论证措辞-内容扫描；只审不改。 | `VERIFY_REPORT.md` |
@@ -189,8 +193,10 @@ workflow:
 - `12Rubric-final` 是唯一有正向出路的门禁：它的判词分「严重/中等/轻微」三层，
   措辞类交 `13Repair-by-rubric-verdict` 就地改写（不回退 `9Paper-writing`），模型/数值/实现类仍回退生产阶段。
   只要判词里混有任一条模型类，就整单回退、`13Repair-by-rubric-verdict` 这轮不跑 —— 措辞改不掉一个错的模型。
-- `4Coding-and-computation` 负责生成所有依赖计算结果或实验输出的数据图。
-- `7Route-diagram` 只负责概念图、算法流程图、架构图、路线图等非数据图；不重复绘制数据图。
+- `4Coding-and-computation` 只交数据层：`figures/data/<id>.npz` + `figures/spec/<id>.json` +
+  `figures/<id>.lock.json`（`studio.save_bundle`），不写画布、PDF/PNG、`make_figures.py`。
+- `7Route-diagram` 是数据图的唯一渲染者（读三件套渲染 `figures/make_figures.py` / PDF/PNG / source data / meta），
+  并负责概念图、算法流程图、架构图、路线图等非数据图。
 - `9Paper-writing` 决定每张图放进哪一节并写入插图代码；**用 `_base/macros.tex` 的宏，不要手写环境**：
   `\paperfigure[0.85\textwidth]{fig_q1_error}{问题一预测误差分布}{q1_error}`
   （在 `paper/` 内编译，所以宏内部的相对路径是 `figures/xxx.pdf`）。
@@ -205,12 +211,15 @@ workflow:
   `再试一次` / `回退到所选阶段` / `延长本次限时`（仅超时）/ `接受并披露` / `我已手工修好`。
 - 超时不杀进程：超过墙钟上限或假死阈值时只是亮黄灯、任务继续跑；等人决定延长（回绿灯）
   或取消重试；若等待期间它自己跑完了，自动回绿灯。
-- 默认回退目标（面板上的推荐值，人可改）：`3Modeling-review-gate→3analysis`、`5Result-credibility-audit→5coding`、
-  `10Math-proof-gate→9Paper-writing`、`11Cross-question-check→9Paper-writing`、`15Verification→14Layout-and-format`（版式/引用/编译/超页
-  是 format 的活，不该重跑整篇写作）、`12Rubric-final→13Repair-by-rubric-verdict`（论文侧判词就地改写；
-  但要判词里全是论文侧才走这条 —— 混有模型类就转成对那个生产阶段的回退）。
-- 分类路由：缺图/图画错（`diagram`）→ `7Route-diagram`；版式/排版（`presentation`）→ `14Layout-and-format`；
-  措辞/结论（`claim`/`proof`）→ `9Paper-writing`；模型类 → `3analysis`；实现/数据类 → `5coding`。
+- 默认回退目标（面板上的推荐值，人可改）：`③ 3Modeling-review-gate → ② 2Modeling-design`、
+  `⑤ 5Result-credibility-audit → ④ 4Coding-and-computation`、
+  `⑩ 10Math-proof-gate → ⑨ 9Paper-writing`、`⑪ 11Cross-question-check → ⑨ 9Paper-writing`、
+  `⑮ 15Verification → ⑭ 14Layout-and-format`（版式/引用/编译/超页是 format 的活，不该重跑整篇写作）、
+  `⑫ 12Rubric-final → ⑬ 13Repair-by-rubric-verdict`（论文侧判词就地改写；但要判词里全是论文侧才走这条
+  —— 混有模型类就转成对那个生产阶段的回退）。
+- 分类路由：缺图/图画错（`diagram`）→ ⑦ 7Route-diagram；版式/排版（`presentation`）→ ⑭ 14Layout-and-format；
+  措辞/结论（`claim`/`proof`）→ ⑨ 9Paper-writing；模型类 → ② 2Modeling-design；
+  实现/数据类 → ④ 4Coding-and-computation。
 - 发现上游错了（不是本阶段能修的）：按各 SKILL 的「动态交回规则」写 `reports/HANDBACK_REQUEST.md`
   并结束本轮 —— 驱动会把它作为回退建议交给用户，确认后补跑并自动回到本阶段续跑。
 - 每完成一阶段更新 `todo.md` 勾选。

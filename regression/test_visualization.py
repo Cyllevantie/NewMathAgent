@@ -139,5 +139,48 @@ class SnapshotScopeTests(unittest.TestCase):
         self.assertNotIn("evidence.py", PIXEL_PRODUCERS)
 
 
+class TextOverlapScopeTests(unittest.TestCase):
+    """Figure-level texts are shared by every Axes; they must be counted once.
+
+    Before the fix, ``texts_overlap`` appended ``fig.texts`` inside the
+    ``for ax in fig.axes`` loop, so a three-panel figure compared every
+    figure-level label with itself and reported 100% overlap. That made the
+    multi-panel gate unusable.
+    """
+
+    def test_figure_texts_are_not_duplicated_per_axes(self):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from lib.visualization.quality import texts_overlap
+
+        fig = plt.figure(figsize=(6, 4))
+        try:
+            fig.text(0.05, 0.95, "figure title")
+            for i in range(3):
+                ax = fig.add_axes([0.08 + i * 0.30, 0.15, 0.24, 0.65])
+                ax.text(0.05, 0.95, f"panel {i}", transform=ax.transAxes)
+            errors, warnings = texts_overlap(fig)
+            self.assertEqual(errors, [], "figure-level text must not overlap itself")
+        finally:
+            plt.close(fig)
+
+    def test_real_overlap_still_blocks(self):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from lib.visualization.quality import texts_overlap
+
+        fig = plt.figure(figsize=(4, 3))
+        try:
+            ax = fig.add_axes([0.2, 0.2, 0.6, 0.5])
+            ax.text(0.5, 0.5, "same place")
+            ax.text(0.5, 0.5, "same place")
+            errors, _ = texts_overlap(fig)
+            self.assertTrue(errors, "two texts at the same coordinates must be caught")
+        finally:
+            plt.close(fig)
+
+
 if __name__ == "__main__":
     unittest.main()

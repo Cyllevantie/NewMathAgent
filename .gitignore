@@ -1,6 +1,8 @@
 # 本地配置与密钥：只在本机生效，不进仓库
 .env
 config/*.local.json
+config/mcp/*.json
+.claude/settings.local.json
 
 # Python 缓存
 __pycache__/
@@ -15,6 +17,8 @@ runtime/.runclock.json
 runtime/.watch_*.json
 runtime/driver.pid
 runtime/effective_profile.json
+runtime/tool_calls.jsonl
+.fma_panel_lock
 
 # 赛题输入：你自己上传的原件与附件，按需保留在本机，不进仓库
 request/

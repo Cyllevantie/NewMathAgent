@@ -48,6 +48,9 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent
 - **必须三维** —— 模型里带空间结构：曲面（膜面/温度场/水位）、场/体（浓度/应力/密度分布）、轨迹（光束/质点/机构运动）、三维点云、参数曲面（响应随两三个参数变化）。数学建模题绝大多数都落在这里 ⇒ **每一个**带空间结构的子问题/页签都以数据驱动的三维动态模型做主视图——**不只首屏那一个**（首屏只是排最前的那个；用户 2026-10-16：「这个网页好像只有第一个题有，别的题怎么没有」）。"图案/分区/反演"这类视图各自去想它们的空间坐标：轨迹的第三维是时间、分区的第三维是判别量、反演的第三维是残差/灵敏度面。原有二维曲线**不删**（谱线/剖面能回答三维答不了的问题），降为同页辅助图。
 - **可以不三维** —— 结论天然是一维曲线/二维散点、参数与空间无关的判定/查表/排序题。此时在 `DEMO_REPORT.md` 里写一行 **`三维豁免：<一句理由>`**（固定前缀，交付检查按它放行）。
 - **不许为了三维而三维**：编一个与模型无关的三维场景，与前端"编一个看起来对的数"同罪。
+- **与论文静态图同视角**：论文里的物理立体图由 ⑦ 第五类 `fig_geometry_3d` 生成
+  （规范见 `skills/7Route-diagram/references/physical-3d.md`）；网页交互如果画同一对象，
+  用 Route B `*.scene.json` 里的 `camera.azim/elev/zoom` 初始化视角，别论文一个角度、网页另一个。
 
 **四条硬要求**（每条自测时都要过一遍）：
 
@@ -107,6 +110,18 @@ reports/DEMO_REPORT.md   # 功能说明 + 数据来源清单 + 交互说明 + �
 
 图表：优先内联 SVG/Canvas 自绘（不依赖联网 CDN，离线也能跑）；确实要用 Chart.js 之类的库，把库整个内联进 `<script>`，不靠 CDN、也不留 `vendor/`。
 
+## 方案面板（2–3 个候选，先选后做）
+
+模型有 ≥2 种合理可视化/交互形态时（如三维曲面 vs 二维曲线、参数滑块 vs 情景预设），
+先按 `../_references/stage_discipline.md` 八建 `.fma_panel_lock`，再用 2–3 个子 agent 各写一份
+**一页设计方案**；收齐后删锁，再动手写 `demo.html`：
+
+- 每个子 agent 只写 `_tmp/demo_design/<n>.md`：主视图、数据映射（哪个输入 → 哪个输出）、
+  交互方式、三维必要性、截图计划、离线/无头可行性、风险；
+- **不写 `demo/`、不写 `demo.html`、不跑浏览器**；主 agent 选 1 个（可嫁接局部）后自己实现；
+- 评分：模型保真、数据可溯源、三维是否真的必要、无头截图能否复现、实现成本；
+- 只有一种显然合适的形态，或子 agent 不可用 → 主 agent 自己列 2–3 条设计取舍，直接做。
+
 ## 工作流
 
 1. 读结论与数据：读 `reports/RESULTS_REPORT.md` 对应子问题 + `code/outputs/*.json`，确定"哪些是输入参数、哪些是输出结论、输出怎么随输入变"。
@@ -114,15 +129,16 @@ reports/DEMO_REPORT.md   # 功能说明 + 数据来源清单 + 交互说明 + �
 3. 写 demo/：一个 `demo/demo.html` 写完 —— 数据块、逻辑、样式、结构都在里面（想清楚再写，别先生成一堆文件再合并）。**开工先读** `skills/16Web-demo/assets/scene3d.js`（引擎全文，逐字内联）与 `skills/16Web-demo/references/scene3d.md`（API 与惯用型），再写数据块/逻辑/样式/结构。
 4. 自测：本地用浏览器打开 `demo/demo.html`，逐项验证——每个输入改动都触发正确结果更新、无 console 报错、数值与 outputs 一致。必查项：① 拖动/修改每个输入，对应的数字结果是否实时变；② 每张与输入有关的图是否随输入更新并带当前状态指示（竖线/高亮点/高亮当前项），不是静态图；③ 有没有任何"输入改了、页面某处却纹丝不动"的死角。**三维视图再过四条**：④ **每个**三维视图的每个参数档/预设都走一遍，`scene.stats()` 的 `skipped` 只许是 0（不为 0 说明有坏点被静默跳过，是数据缺口）；⑤ 拖拽转一圈 + 滚轮缩放，无 console 报错、无画面裂口；⑥ `runSelfTest()` 的输出（含与 `outputs` 的对账结果）原文抄进 `DEMO_REPORT.md`；⑦ **dpr 幂等实测**（无头截图 dpr=1，这类病**只有它抓得住**）：`msedge --headless=new --disable-gpu --force-device-scale-factor=1.25 --virtual-time-budget=8000 --dump-dom "file:///…/demo.html#…"` —— 页面里连画 ~40 次后断言**所有画布**的 width/height/style 尺寸纹丝不动（探针：`for(i<40) 重画();` 再把尺寸写进隐藏元素，grep 出来对账；写法见「画布尺寸幂等」那条的事故注）。⑧ **数据块点数与区间自检**：内联的预计算网格逐条查 min/max/越界计数，且"邻域半宽 8×ζf"这类**注记要与生成参数同源**（事故：探针里半宽被多乘一个 f0 ⇒ 1189 点里 648 点越界（340 个负频率），画布把越界点裁掉、肉眼零异常，只有自检能拦）。
 5. 截图存档（交付要求，不是可选）：用 headless 浏览器给 demo 截图，存进 `demo/`，并在 `DEMO_REPORT.md` 里列出每张截图对应的状态。
-   - 至少 **3 张**：①首屏默认状态（**必须是三维主视图**——它是附录 图 A1 的图源）；②拖到某个有代表性的非默认输入后的状态（要能看出数值/图随输入变了）；③（若有多个子问题/视图）切换/展开后的状态。
+   - 至少 **3 张**：①首屏默认状态（**若本页有三维主视图，必须用三维主视图**——它是附录 图 A1 的图源；
+     已写「三维豁免」的题用该页主视图即可）；②拖到某个有代表性的非默认输入后的状态（要能看出数值/图随输入变了）；③（若有多个子问题/视图）切换/展开后的状态。
    - **三维视图先定格再拍**：动画不定格时两张截图抓到不同帧、不可复现 —— 用 `#…&t=<相位>&play=0` 定格、参数与相机角也全部走 hash（`&az=&el=&dist=`），截图命令照抄得出来。
-   - 三维截图里至少一张要**转过相机**或参数状态明显不同（转一度不算，要一眼看出转过去了）——这就是"可转/可调"两条硬要求的截图证据。
+   - 有三维视图时，截图里至少一张要**转过相机**或参数状态明显不同（转一度不算，要一眼看出转过去了）——这就是"可转/可调"两条硬要求的截图证据。
    - 命令里带上 **`--force-device-scale-factor=1.25`**（按常见 120%/125% 缩放拍）：它顺带让"每次重画 ×dpr 连乘"那类病在截图轮就露头（dpr=1 会把它完全藏住）。每个三维视图各拍一张主状态，别只拍首屏那个。
    - 命令（无需装 Playwright；先把 `demo/demo.html` 的绝对路径求出来再拼 `file://` URL，
      别在提示里留 `<绝对路径>` 这样的占位符直接抄）：
-     - Windows：`msedge --headless=new --disable-gpu --window-size=1400,900 --screenshot=demo/shot_default.png "file:///<abs>/demo/demo.html"`
+     - Windows：`msedge --headless=new --disable-gpu --window-size=1400,900 --screenshot=demo/shot_1_default.png "file:///<abs>/demo/demo.html"`
        （Edge 不在 PATH 时用 `"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"`）
-     - Linux：`chromium --headless=new --disable-gpu --window-size=1400,900 --screenshot=demo/shot_default.png "file:///<abs>/demo/demo.html"`
+     - Linux：`chromium --headless=new --disable-gpu --window-size=1400,900 --screenshot=demo/shot_1_default.png "file:///<abs>/demo/demo.html"`
        （或 `google-chrome`；容器里加 `--no-sandbox`）
      - macOS：`"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new …`
      - 真一个浏览器都没有时：写一份 `demo/自测记录.md` 说明"没有可用的 headless 浏览器"，
@@ -144,7 +160,7 @@ reports/DEMO_REPORT.md   # 功能说明 + 数据来源清单 + 交互说明 + �
 
    ① 先写介绍：把 demo 的说明写进 `_tmp/demo_intro.tex`（纯文本、UTF-8）。照参考件的路子，
       分几个自然段讲清四件事 —— 这是什么（一句话）、方法贯通可视化（把论文的链路做成了
-      哪几个页面/视图，**三维主视图要在这一段里点出来**：可旋转、随参数实时重算、时间可定格）、
+      哪几个页面/视图，**若本题/本页有三维主视图，要在这一段里点出来**：可旋转、随参数实时重算、时间可定格）、
       稳健性与负对照（哪些页是拿来证伪的）、工程可用性（文件多大、
       离线双击即用、深链、配套多少项回归）。**每一条都要对得上你自己的 `demo.html` 与
       `DEMO_REPORT.md`**：页数、视图数、文件大小、回归项数一律用你自己数出来的实际值，别照抄参考件的数字。

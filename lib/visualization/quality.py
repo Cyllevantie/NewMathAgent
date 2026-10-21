@@ -29,7 +29,7 @@ import numpy as np
 # 顶带 28 px，右/下干净 —— 放在白底正文里活像一副没对齐的边框。
 # 只数"暗"像素的判据（`border.mean(axis=1) < 32`）对它天生失明：这个灰是 232.7
 # （既不够暗、又不够白）⇒ 0 error / 0 warning 放行。
-# 判据只抓**不对称**：四条边里有的贴着非白带、有的干净 ⇒ warning。四边都贴（成框）视为
+# 判据只抓**不对称**：四条边里有的贴着非白带、有的干净 ⇒ warning。四边都贴视为
 # 有意的设计，不报 —— 左+上有、右+下没有这种半拉子才要报。
 EDGE_MIN_SHARE = 0.60   # 某条边上非白像素占比达到它，才算"这条边贴着东西"
 EDGE_MIN_WIDTH = 6      # 且带子要够宽：matplotlib 的轴线只有 1~2 px，不是带
@@ -194,17 +194,24 @@ def texts_overlap(fig, *, warn_ratio=0.30, error_ratio=0.55):
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     boxes = []
+    # Figure-level texts are shared by every Axes.  Appending ``fig.texts``
+    # inside this loop duplicates each one once per Axes, so a multi-panel
+    # figure reports every label as overlapping itself at 100%.  Keep the
+    # per-Axes texts and the figure texts in two separate passes.
+    candidates = []
     for ax in fig.axes:
-        for text in list(getattr(ax, "texts", [])) + list(fig.texts):
-            if not text.get_visible() or not text.get_text().strip():
-                continue
-            try:
-                box = text.get_window_extent(renderer)
-            except Exception:            # 极端字号/空文本下 extent 可能算不出来
-                continue
-            if box.width <= 0 or box.height <= 0:
-                continue
-            boxes.append((box, " ".join(text.get_text().split())[:24]))
+        candidates.extend(getattr(ax, "texts", []))
+    candidates.extend(fig.texts)
+    for text in candidates:
+        if not text.get_visible() or not text.get_text().strip():
+            continue
+        try:
+            box = text.get_window_extent(renderer)
+        except Exception:            # 极端字号/空文本下 extent 可能算不出来
+            continue
+        if box.width <= 0 or box.height <= 0:
+            continue
+        boxes.append((box, " ".join(text.get_text().split())[:24]))
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
             (a, ta), (b, tb) = boxes[i], boxes[j]
@@ -218,6 +225,34 @@ def texts_overlap(fig, *, warn_ratio=0.30, error_ratio=0.55):
             msg = f"文字互相压：『{ta}』×『{tb}』（重叠 {ratio:.0%}）—— 挪开其中一条注记"
             (errors if ratio >= error_ratio else warnings_out).append(msg)
     return errors, warnings_out
+
+
+def content_coverage(png_path, *, threshold=NEAR_WHITE):
+    """How much of the canvas actually carries ink.
+
+    Returns ``{"coverage": share of non-white pixels, "bbox": (x0,y0,x1,y1),
+    "bbox_area_ratio": bbox area / canvas area}``.  This is the machine-readable
+    half of "右侧 55% 空白、只用上很小一块" —— it does **not** decide whether
+    that is wrong (a map or a sparse scatter may legitimately be sparse); it
+    gives ⑦/⑧ a number to judge against the figure's claim.
+    """
+    from PIL import Image
+
+    with Image.open(png_path) as image:
+        grey = np.asarray(image.convert("L"), dtype=np.uint8)
+    mask = grey < int(threshold)
+    total = int(mask.size)
+    if total == 0 or not mask.any():
+        return {"coverage": 0.0, "bbox": None, "bbox_area_ratio": 0.0}
+    ys, xs = np.where(mask)
+    x0, x1 = int(xs.min()), int(xs.max())
+    y0, y1 = int(ys.min()), int(ys.max())
+    bbox_area = (x1 - x0 + 1) * (y1 - y0 + 1)
+    return {
+        "coverage": float(mask.sum()) / total,
+        "bbox": (x0, y0, x1, y1),
+        "bbox_area_ratio": float(bbox_area) / total,
+    }
 
 
 def near_monochrome(png_path, *, bucket=16, warn_ratio=0.75,

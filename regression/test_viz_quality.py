@@ -28,8 +28,8 @@ from PIL import Image  # noqa: E402
 
 import lib.visualization.charts as charts  # noqa: E402
 import lib.visualization.evidence as ev  # noqa: E402
-from lib.visualization.quality import (inspect_png, legend_data_overlap, near_monochrome,
-                                    texts_overlap)  # noqa: E402
+from lib.visualization.quality import (content_coverage, inspect_png, legend_data_overlap,
+                                    near_monochrome, texts_overlap)  # noqa: E402
 
 
 def _nm(path):
@@ -989,6 +989,55 @@ class NearMonochromeTests(unittest.TestCase):
         fig.savefig(out, dpi=settings["dpi"], facecolor="white")
         ratio, _ = _nm(out)
         self.assertLess(ratio, 0.75, f"折线图被误报为近乎单色（{ratio:.0%}）")
+
+
+class ContentCoverageTests(unittest.TestCase):
+    """信息密度：内容框只占画布一小块时，机器要能给出数字。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def _png(self, name, draw):
+        path = self.root / name
+        image = Image.new("L", (100, 100), 255)
+        draw(image)
+        image.save(path)
+        return path
+
+    def test_a_tiny_mark_reports_a_tiny_bbox(self):
+        def draw(image):
+            for x in range(5, 15):
+                for y in range(5, 15):
+                    image.putpixel((x, y), 0)
+        out = content_coverage(self._png("tiny.png", draw))
+        self.assertLess(out["bbox_area_ratio"], 0.05)
+        self.assertLess(out["coverage"], 0.05)
+        self.assertEqual(out["bbox"], (5, 5, 14, 14))
+
+    def test_a_full_page_reports_full_bbox(self):
+        path = self.root / "full.png"
+        Image.new("L", (100, 100), 0).save(path)
+        out = content_coverage(path)
+        self.assertEqual(out["coverage"], 1.0)
+        self.assertEqual(out["bbox_area_ratio"], 1.0)
+
+    def test_a_real_chart_is_not_tiny(self):
+        ctx = charts.style()
+        settings = ctx.__enter__()
+        self.addCleanup(lambda: ctx.__exit__(None, None, None))
+        fig = charts.canvas(settings)
+        ax = fig.add_subplot(111)
+        x = np.linspace(0, 2, 200)
+        for t, low in FAN:
+            charts.trend(ax, x, _field(x, low), label=f"t = {t} s")
+        ax.legend()
+        out = self.root / "chart.png"
+        fig.savefig(out, dpi=settings["dpi"], facecolor="white")
+        cc = content_coverage(out)
+        self.assertGreater(cc["bbox_area_ratio"], 0.30,
+                           f"正常折线图被判成小内容框（{cc['bbox_area_ratio']:.0%}）")
 
 
 if __name__ == "__main__":

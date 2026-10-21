@@ -1491,6 +1491,39 @@ class VerdictArchiveTests(unittest.TestCase):
                       "重启后判词留档没了 —— 📝 里的最终判词不该因为重启消失")
         self.assertEqual(s2.state["verdict_by_stage"]["verify"]["status"], "PASS")
 
+    def test_non_gate_stages_never_get_a_verdict(self):
+        """⑯ 交互Demo 这类非门禁阶段没有裁决；`not_gate` 只是流程占位。
+
+        旧实现把 `_gate_decision` 对非门禁返回的 `PASS / not_gate` 也记进留档，
+        于是 📝 里长出一句"最终判词：已通过"——用户看到的正是这个。
+        """
+        self.s._note_verdict("demo", {"status": "PASS", "reason": "not_gate", "issues": [],
+                                      "passed": True, "at": "2026-10-19 00:07"})
+        self.assertNotIn("demo", self.s.state["verdict_by_stage"],
+                         "非门禁阶段被写入了判词")
+        f = self.root / "runtime/quality/verdict_by_stage.json"
+        if f.is_file():
+            self.assertNotIn("demo", json.loads(f.read_text(encoding="utf-8")))
+        # 对照组：真门禁照常留档
+        self.s._note_verdict("figreview", {"status": "PASS", "reason": "", "issues": [],
+                                           "passed": True, "at": "2026-10-19 00:07"})
+        self.assertIn("figreview", self.s.state["verdict_by_stage"])
+
+    def test_restart_drops_legacy_non_gate_verdicts(self):
+        """旧版本写进盘的非门禁判词，重启读回时要被过滤掉。"""
+        f = self.root / "runtime/quality/verdict_by_stage.json"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({
+            "demo": {"status": "PASS", "reason": "not_gate", "passed": True},
+            "figreview": {"status": "PASS", "reason": "", "passed": True},
+        }), encoding="utf-8")
+        s2 = load_server(self.root)
+        self.assertNotIn("demo", s2.state["verdict_by_stage"],
+                         "重启后旧的非门禁判词又回来了")
+        self.assertIn("figreview", s2.state["verdict_by_stage"])
+        # 过滤后要顺手清盘，否则下一次重启还会看到
+        self.assertNotIn("demo", json.loads(f.read_text(encoding="utf-8")))
+
     def test_redo_clears_the_archive_from_that_stage_onward(self):
         """被作废的阶段即将重判：旧判词不能继续挂在面板上冒充现任。
         对照组：**上游**那一关的留档必须还在（别把整份留档一起掀了）。"""

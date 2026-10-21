@@ -110,7 +110,7 @@ tail -20 runtime/web_run.log
 
 ## 5. 收口与取件
 
-链正常收口后，`current output/` 会自动出现：`main.pdf`、`main.docx`、`reports/`、`figures/`、`code/`（含 outputs 的 xlsx/json）、`request/`、`data/`。
+链正常收口后，`current output/` 会自动出现：`main.pdf`、`reports/`、`figures/`、`code/`（含 outputs 的 xlsx/json）、`request/`、`data/`。不产出 Word/docx。
 对照基线：`cache/A2025_20260906_rerun_archive/`（同题早期产物）。
 
 ---

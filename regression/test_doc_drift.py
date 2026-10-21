@@ -66,6 +66,34 @@ class StageNumberingDriftTest(unittest.TestCase):
         self.assertEqual(hits, [], "旧编号/旧口径残留（按当前 STAGES 改成新编号）：\n" + "\n".join(hits))
 
 
+class CodeAppendixDriftTest(unittest.TestCase):
+    """「核心代码置于附录」旧口径不许回流（R15：源码以散装 `.py` 进提交清单）。
+
+    2026-10-20 审计：`rubric_official` 的 5.7 / 12.1 / 附录A 与
+    `docs/CUMCM_2026_REQUIREMENTS.md:32` 冲突；三处已改写并在 `precedence.md` 增 R15。
+    这里扫全部 live 文本，防只改回一处、或换个文件再写一遍。
+    """
+    STALE = ("核心代码是否放在附录中", "无代码附录", "附录放核心代码",
+             "附录是否包含核心代码")
+
+    def test_live_docs_do_not_require_source_code_in_appendix(self):
+        official = (PROJECT / "skills/12Rubric-final/references/rubric_official.md"
+                    ).read_text(encoding="utf-8")
+        precedence = (PROJECT / "skills/12Rubric-final/references/precedence.md"
+                      ).read_text(encoding="utf-8")
+        self.assertIn("散装 `.py`", official)          # 正对照：改写已落地
+        self.assertIn("R15", precedence)               # 正对照：仲裁条已登记
+        files = live_files()
+        self.assertGreater(len(files), 50, "没扫到 live 文件 —— glob 写错了？")   # 正对照
+        hits = []
+        for p in files:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            for s in self.STALE:
+                if s in text:
+                    hits.append(f"{p.relative_to(PROJECT).as_posix()}: {s}")
+        self.assertEqual(hits, [], "「源码排进附录」旧口径回流（R15）：\n" + "\n".join(hits))
+
+
 class TemplateOwnershipDriftTest(unittest.TestCase):
     """模板层的「清单表归属」句必须指向 ⑨ —— 模板会被 ⑨ 原样复制进两个工程。
 
@@ -201,6 +229,32 @@ class CheckerInstructionDependencyTest(unittest.TestCase):
                       "改 check_skeleton.py 不会让任何阶段 stale —— 加进 _LIB_INSTRUCTION_USERS")
         self.assertEqual(table["lib/web/check_skeleton.py"], {"write", "format", "drawio"},
                          "check_skeleton.py 的依赖阶段应正好是 ⑨/⑭/⑦（见各自 SKILL 的引用）")
+
+
+class FigureStudioDependencyTest(unittest.TestCase):
+    """The shared figure skill and the brief must be real instruction/input deps."""
+
+    def _table(self, name):
+        tree = ast.parse((PROJECT / "lib/web/server.py").read_text(encoding="utf-8"))
+        for node in tree.body:
+            if (isinstance(node, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)):
+                return ast.literal_eval(node.value)
+        self.fail(f"没找到 {name} —— 锚点变了？")
+
+    def test_figure_studio_is_an_instruction_dependency(self):
+        table = self._table("_LIB_INSTRUCTION_USERS")
+        self.assertEqual(table.get("skills/figure-studio"),
+                         {"code", "drawio", "figreview", "verify"},
+                         "改 figure-studio 的 SKILL/tokens/studio.py 必须让 ④/⑦/⑧/⑮ stale")
+
+    def test_figure_brief_is_an_input_of_drawio_and_figreview(self):
+        table = self._table("_EXTRA_INPUT_PATHS")
+        for stage in ("drawio", "figreview"):
+            self.assertIn("reports/FIGURE_BRIEF.json", table.get(stage, []),
+                          f"{stage} 的输入必须包含 FigureBrief")
+            self.assertIn("reports/figure_briefs", table.get(stage, []),
+                          f"{stage} 的输入必须包含 figure_briefs/")
 
 
 if __name__ == "__main__":

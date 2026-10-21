@@ -191,15 +191,21 @@ class FigureScriptIsNotFingerprintedTests(unittest.TestCase):
         return self.s._input_split(stage)[0]
 
     def test_the_data_figure_script_lives_under_figures(self):
-        # 这条钉的不变量是「它**不许**住在 code/ 下」；而 `figures/make_figures.py` 本身是
-        #   **④ 的产物**（SKILL 规定数据图脚本写进 figures/）。所以在**已清空的工作区**里
-        #   它本来就不存在 —— 那时只钉前一条，别把「还没跑到 ④」误判成缺陷。
+        # 这条钉的不变量是「渲染脚本**不许**住在 code/ 下」。④/⑦ 解耦后
+        #   `figures/make_figures.py` 是 **⑦ 的产物**：④ 只交 figures/data + spec + lock，
+        #   ⑦ 还没跑时它本来就不存在。所以：
+        #     · `code/make_figures.py` 永远不许存在；
+        #     · 若 ⑦ 已经跑过（文件在 figures/ 下）→ 通过；
+        #     · 若只有 ④ 的数据层（figures/spec/*.json）→ 说明 ⑦ 还没渲染，跳过；
+        #     · 旧工作区（既无 spec 也无渲染器）→ 跳过，迁移期不误判。
         self.assertFalse((PROJECT / "code/make_figures.py").exists(),
                          "code/ 下还有一份 —— 住在那里就会连锁触发 ⑤⑥ 重跑")
-        if not (PROJECT / "figures").is_dir():
-            self.skipTest("工作区已清空（还没有 figures/）：④ 跑完才会产出它")
-        self.assertTrue((PROJECT / "figures/make_figures.py").is_file(),
-                        "数据图脚本不在 figures/ 下 —— 那它就会进 ⑤⑥ 的输入指纹")
+        if (PROJECT / "figures/make_figures.py").is_file():
+            return
+        spec_dir = PROJECT / "figures/spec"
+        if spec_dir.is_dir() and any(spec_dir.glob("*.json")):
+            self.skipTest("④ 已交数据层，⑦ 尚未渲染（解耦后的正常中间态）")
+        self.skipTest("工作区没有 ⑦ 的渲染器（还没有跑到 ⑦）")
 
     def test_editing_the_figure_script_changes_no_stage_input(self):
         """正题：改一行画图代码，⑤⑥ 的输入指纹必须纹丝不动。"""
@@ -222,6 +228,65 @@ class FigureScriptIsNotFingerprintedTests(unittest.TestCase):
         p.write_text(p.read_text(encoding="utf-8") + "\n# 改一处数值\n", encoding="utf-8")
         self.assertNotEqual(self._art("audit"), before,
                             "改了 code/core.py 却不触发失效 —— 那数值过期就没人管了")
+
+
+class DecoupledFigureContractTests(unittest.TestCase):
+    """④ 只交数据层；⑦ 的输入要看得到它；渲染成品仍不进 ④ 的产物。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for rel in ("figures/data", "figures/spec", "code", "results"):
+            (self.root / rel).mkdir(parents=True)
+        (self.root / "figures/q1.lock.json").write_text("{}", encoding="utf-8")
+        (self.root / "figures/q1.pdf").write_bytes(b"%PDF")
+        self.s = load_server(self.root)
+
+    def _rels(self, sid, **kw):
+        return self.s._stage_rels(sid, **kw)
+
+    def test_code_owns_bundle_spec_and_lock_but_not_rendered_pixels(self):
+        rels = self._rels("code", own_only=True)
+        self.assertIn("figures/data", rels, "④ 的数据包没进产物 —— 回退时不会暂存")
+        self.assertIn("figures/spec", rels, "④ 的 spec 没进产物")
+        self.assertIn("figures/q1.lock.json", rels, "lock 通配没展开")
+        self.assertNotIn("figures/q1.pdf", rels,
+                         "渲染成品是 ⑦ 的产物，不该跟着 ④ 回退")
+
+    def test_data_layer_changes_the_coding_output_digest(self):
+        stage = next(x for x in self.s.STAGES if x["id"] == "code")
+        before = self.s._output_digest(stage)
+        (self.root / "figures/data/q1.npz").write_bytes(b"NPZ")
+        after = self.s._output_digest(stage)
+        self.assertNotEqual(before, after,
+                            "bundle 变了 ④ 的产物指纹却没变 —— 数据锁会形同虚设")
+
+    def test_drawio_inputs_include_the_data_layer_and_locks(self):
+        stage = next(x for x in self.s.STAGES if x["id"] == "drawio")
+        paths = self.s._input_paths(stage)
+        self.assertIn("figures/data", paths, "⑦ 的输入看不到 bundle")
+        self.assertIn("figures/spec", paths, "⑦ 的输入看不到 spec")
+        self.assertIn("figures/q1.lock.json", paths, "⑦ 的输入看不到 lock")
+
+    def test_polish_queue_survives_a_rollback_to_drawio(self):
+        (self.root / "reports").mkdir(exist_ok=True)
+        queue = self.root / "reports/FIGURE_POLISH_QUEUE.json"
+        queue.write_text("{}", encoding="utf-8")
+        figreview_rels = self.s._stage_rels("figreview", own_only=True)
+        self.assertNotIn("reports/FIGURE_POLISH_QUEUE.json", figreview_rels,
+                         "回退到 ⑦ 时把交办单当 ⑧ 的产物搬走了 —— ⑦ 会看不到要改哪几张图")
+        drawio = next(x for x in self.s.STAGES if x["id"] == "drawio")
+        self.assertIn("reports/FIGURE_POLISH_QUEUE.json",
+                      self.s._input_paths(drawio),
+                      "⑦ 的输入里没有交办单 —— 它读不到 ⑧ 的优化建议")
+
+    def test_verify_inputs_include_the_data_layer_and_locks(self):
+        stage = next(x for x in self.s.STAGES if x["id"] == "verify")
+        paths = self.s._input_paths(stage)
+        self.assertIn("figures/data", paths, "⑮ 的输入看不到 bundle")
+        self.assertIn("figures/spec", paths, "⑮ 的输入看不到 spec")
+        self.assertIn("figures/q1.lock.json", paths, "⑮ 的输入看不到 lock")
 
 
 class LibraryDependencyTests(unittest.TestCase):
@@ -521,9 +586,12 @@ class FigurePolishAuthorityTests(unittest.TestCase):
         self.assertIn("数值或口径", t, "⑧ 没写明『只有数值/口径才交回 ④』")
 
     def test_coding_stage_knows_it_no_longer_owns_the_polish(self):
+        """④/⑦ 解耦后，④ 只交数据层；画布与“画得好不好”归 ⑦。"""
         t = self._skill("skills/4Coding-and-computation/SKILL.md")
-        self.assertIn("首次生成", t, "④ 的分工没写『首次生成』")
+        self.assertIn("save_bundle", t, "④ 不知道要交 bundle/spec/lock")
+        self.assertIn("不负责画布", t, "④ 还认为自己要画成品图")
         self.assertIn("不再回退本阶段", t, "④ 不知道『画得好不好』已经不归它了")
+        self.assertIn("figure_lock", t, "④ 没写交付前要验数据锁")
 
 
 class TestEntrypointHygieneTests(unittest.TestCase):

@@ -75,6 +75,25 @@ WebFetch 失效的应对（重要）：本运行环境的 WebFetch 常因"Unable
 3. 需要确认某 DOI 的元数据（作者/期刊/年份）时，用 **Bash + python 请求** `https://api.crossref.org/works/<DOI>` 或 PubMed E-utilities `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=<pmid>&retmode=json`（公开接口，无需代理）。
 仅在确实需要网页正文时才再试 WebFetch，失败就换上面两条路。
 
+### Step 2.5：检索角度并行（2–3 个，按需）
+
+题目跨 ≥2 个学科、或第一轮检索明显偏薄时，按 `../_references/stage_discipline.md` 八建
+`.fma_panel_lock`，用 Agent 工具并行 2–3 个检索子 agent；收齐后删锁再写正式方向：
+
+| 子 agent | 只负责 |
+|---|---|
+| `lit-mechanism` | 机理/理论主线：领域综述、权威指南、奠基文献 |
+| `lit-method` | 方法/数据主线：同类建模、算法、统计口径、可复现数据 |
+| `lit-cn` | 中文核心刊/应用标准：近年中文文献、行业规范、数据来源 |
+
+硬规则：
+
+- 子 agent 只写 `_tmp/lit/<angle>.md`，每条给**真实可核验**的题录（DOI / 期刊 / 年至少一项）
+  + 一句与本题的关系；**不许编造**，拿不到就写"未找到"；
+- **不得**写 `reports/LITERATURE_DIRECTION.md`；主 agent 核验题录、去重、合并成正式方向；
+- 子 agent 不可用、或题目只涉及单一领域 → 主 agent 按上述角度顺序检索；
+- 2–3 个为上限；并行省的是"换关键词试错"，不是"少核验"。
+
 ### Step 3：提炼机理基线（关键）
 
 对每个子问题，在报告中明确写出：

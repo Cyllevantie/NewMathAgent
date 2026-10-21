@@ -113,8 +113,10 @@ class ShippedDemoTests(unittest.TestCase):
         engine = _fold_eol(ENGINE.read_text(encoding="utf-8"))
         if engine not in html:
             report = (PROJECT / "reports/DEMO_REPORT.md")
-            marked = report.is_file() and DEMO_3D_EXEMPT_TOKEN in report.read_text(
-                encoding="utf-8-sig", errors="replace")
+            text = report.read_text(encoding="utf-8-sig", errors="replace") if report.is_file() else ""
+            marked = any(line.strip().startswith(DEMO_3D_EXEMPT_TOKEN)
+                         and line.strip()[len(DEMO_3D_EXEMPT_TOKEN):].strip()
+                         for line in text.splitlines())
             self.assertTrue(marked, "demo.html 没有逐字内联三维引擎，且 DEMO_REPORT 里也没有"
                                     "【" + DEMO_3D_EXEMPT_TOKEN + "理由】的豁免行 —— 重跑 ⑯ "
                                     "或补一行豁免（见 skills/16Web-demo/SKILL.md「动态三维模型」）")

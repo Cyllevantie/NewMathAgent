@@ -14,13 +14,15 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 > 的对象写新脚本。别每轮从零重写 —— 全链 776 个自写脚本里 **683 个（88%）只被用过一次**
 > 就再也没人碰。复用探针 ≠ 跳过复核：探针只是取证手段，判定仍逐条对着当前版本做。
 
-本 skill 是验收门禁。其后还有三段：`12Rubric-final`（评分标终审）→ `13Repair-by-rubric-verdict`（按评分判词返修）
-→ `16Web-demo`（交互式 Demo，整链最后一阶段）。它不重新建模、不生成新结果、不代替写作阶段重写论文；
-它负责发现硬错误、提出具体返修要求，并输出 `reports/VERIFY_REPORT.md`。
+本 skill 是验收门禁。其后只有一段：`16Web-demo`（交互式 Demo，整链最后一阶段）。它不重新建模、
+不生成新结果、不代替写作阶段重写论文；它负责发现硬错误、提出具体返修要求，并输出
+`reports/VERIFY_REPORT.md`。
 
 > 分工：本阶段查硬错误（编译/结构/图表引用/数值一致/泄漏/视觉），
 > `12Rubric-final` 查评委视角的评分与合规（适配性/创新/AI痕迹/匿名/获奖预测）。
-> 两者不重复：`12Rubric-final` 只读本报告的结论，不重跑本阶段的检查。
+> 链路是 `11Cross-question-check → 12Rubric-final → 13Repair-by-rubric-verdict →
+> 14Layout-and-format → 15Verification → 16Web-demo`；两者不重复：本阶段不复评 ⑫ 已做的评分与合规，
+> 也不依赖其报告；`12Rubric-final` 同样不重跑本阶段的硬错误检查。
 
 Web 裁决侧车（content-quality 启用时）：另写 `reports/VERIFY_REPORT.verdict.json`（v2；本阶段必查 ID 由驱动注入：task_fidelity/optimality/proof_applicability/narrative_consistency/figure_coverage/content_coverage）。结构、category 路由与锚点要求见 `docs/CONTENT_QUALITY.md`「问题分类与机器裁决」——把「原题要求 → 模型 → 结果 → 图文成稿」逐项闭合：题面每条硬条件与交付都须在成稿可核验；**不得以「已写入局限/免责声明」替代正确性**，未证最优不得称最优。 报告末尾裁决行与 JSON `status` 必须一致；程序校验不通过一律 UNVERIFIED，重试或披露不构成放行。
 
@@ -30,7 +32,7 @@ Web 裁决侧车（content-quality 启用时）：另写 `reports/VERIFY_REPORT.
 
 ## 国赛提交规范
 
-国赛电子版：不要目录、摘要首张连续编号、附录完整代码及支撑清单、论文与支撑包分别限 20MB、身份匿名化。其他赛事依据明确规则另设口径。
+国赛电子版：不要目录、摘要首张连续编号、附录为支撑材料清单（源码不排进论文；代码以散装 `.py` 提交并在清单表逐项登记）、论文与支撑包分别限 20MB、身份匿名化。其他赛事依据明确规则另设口径。
 
 ## 正文编辑复核
 
@@ -42,7 +44,12 @@ Web 裁决侧车（content-quality 启用时）：另写 `reports/VERIFY_REPORT.
 
 ## 通用绘图协议
 
-读取项目根目录 `docs/VISUALIZATION.md`，只读运行 `python -m lib.visualization audit`，并逐张检查论文嵌入后的最终尺寸、图注、正文引用与 included 标记。VERIFY_REPORT 记录页码与实际发现；证据过期、缺失或未完成目检时不得 PASS。Web 审查只写本阶段报告及裁决，修复交前序。
+读取项目根目录 `docs/VISUALIZATION.md`，只读运行 `python -m lib.visualization audit` 与
+`python skills/figure-studio/scripts/figure_lock.py verify --root .`，并逐张检查论文嵌入后的
+最终尺寸、图注、正文引用与 included 标记。`[lock:data]` 是数据层问题（交回 ④），
+`[lock:contract]` 是 spec 语义被改（交回 ⑦）；两者都不得 PASS。
+VERIFY_REPORT 记录页码与实际发现；证据过期、缺失或未完成目检时不得 PASS。
+Web 审查只写本阶段报告及裁决，修复交前序。
 
 ## 数学建模规范参考
 
@@ -90,7 +97,8 @@ Web 裁决侧车（content-quality 启用时）：另写 `reports/VERIFY_REPORT.
 | `verify-math` | Step 4b 数学论证措辞-内容扫描、Step 5 数值与结果一致性、公式质量与定义式复算 |
 | `verify-build` | Step 1 文本门禁脚本、Step 6 引用与模板、Step 7 编译、Step 8 逐页视觉检查 |
 
-每个子 agent 只输出它那一维的 `PASS/FAIL + 证据（文件:行）+ 修法`，**禁止越界评其它维度**。
+按 `../_references/stage_discipline.md` 八建 `.fma_panel_lock`；每个子 agent 只输出它那一维的
+`PASS/FAIL + 证据（文件:行）+ 修法`，**禁止越界评其它维度**；收齐后删锁再写最终报告。
 汇总时任一维 FAIL 即整题 FAIL —— 但要写清是哪一维、卡在哪一条硬错误。
 
 **视觉检查（Step 8）不要分包**：逐页看图必须由有视觉能力的那一个上下文亲自看完，
@@ -105,7 +113,7 @@ Web 裁决侧车（content-quality 启用时）：另写 `reports/VERIFY_REPORT.
 
 ### Step 1: 运行文本质量门禁
 
-优先运行本 skill 的脚本。脚本针对 LaTeX 论文执行检查：`--main` 默认 `<paper-dir>/main.tex`，`--references` 默认 `<paper-dir>/references.tex`，章节按 `.tex` 扫描；脚本会递归展开 `main.tex → paper-structure.tex → blocks/sections`，编译用 xelatex 跑两遍。
+优先运行本 skill 的脚本。脚本针对 LaTeX 论文执行检查：`--main` 默认 `<paper-dir>/main.tex`，`--references` 默认 `<paper-dir>/references.tex`，章节按 `.tex` 扫描；脚本会递归展开 `main.tex → paper-structure.tex → blocks/sections`，只做文本扫描、不编译 PDF（编译见 Step 7）。
 
 ```bash
 set -o pipefail
@@ -125,7 +133,8 @@ bash "$SCRIPT_PATH" \
 
 如果本 skill 被复制到其他目录，使用实际脚本路径。可以先运行 `bash <script> --help` 查看参数。不要把脚本路径、论文目录或文件名写死在验收逻辑中。
 
-脚本只扫描文本，不生成论文，也不编译 PDF。它的 `FAIL` 属于硬错误，必须修复后重跑。
+脚本只扫描文本，不生成论文，也不编译 PDF。它的 `FAIL` 属于硬错误，写进返修清单交回
+对应生产阶段；本阶段不改稿。
 
 ### Step 2: 章节数量和标题顺序
 
@@ -154,7 +163,7 @@ bash "$SCRIPT_PATH" \
 
 ### Step 4: 写作质量和泄露检查
 
-检查并修复：
+检查（发现问题只记录，不修改论文）：
 
 - `TODO`、`PLACEHOLDER`、`待补充`、`待续写`、`示例数据` 等占位符。
 - 论文正文出现内部工作流文件名、临时目录名、代码目录名或结果 JSON 路径。
@@ -168,6 +177,9 @@ bash "$SCRIPT_PATH" \
 - 算法超参与复杂度（对照提交代码）：元启发/迭代算法（DE/GA/PSO/SA/禁忌/B&B…）是否在正文或附录给出"算法名 + 关键超参（DE 的 mutation(F)/CR/种群/最大迭代/多起点初值/收敛 tol）+ 复杂度一句"；超参须与提交代码一致（从代码抄写，不许写默认值）→ 缺即硬错误。
 - 公式质量（脚本 `writing_check.sh` 已扫，须在 VERIFY_REPORT 记录结论）：① 正文/公式用到的符号必须都在符号表（脚本给 missing 列表）→ 缺即硬错误；② 符号表条目须在正文被用到 → 未用即 WARN；③ 论文多处出现的大数若只差末 1–2 位 → 必须回查是否笔误（脚本给疑似对）→ 确认笔误即硬错误；④ **凡正文给出指标定义式（如 gap=(UB−π)/UB），必须按该式复算表中至少一个数字**并在报告记录复算结果 → 不符即硬错误（2024C 实际发生过：定义式与所报数字口径不一致，评审一算即穿）。
 - 摘要页/关键词/灵敏度可视化：CUMCM 摘要页 ≤1 页（溢出即硬错误）、**且版心填充 ≥ target**（`min_kind_fill.abstract`：当前 `target 0.90 / hard 0.80`，以 `config/publication.json` 为准；< hard 是硬失败、由机械地板直接判给 ⑨，[hard, target) 只出提示）——摘要写没写满不是本阶段能改的（版式无权动文字），所以发现欠写就如实判，别自己补字；关键词 ≤6；灵敏度章节若整节纯数字表无任何图 → WARN 并尽量补 1 张可视化（对照 norms「摘要写作要点/灵敏度可视化」）。
+
+以上各项一律写入 `VERIFY_REPORT.md` 的返修清单，经 HANDBACK 交回 `9Paper-writing` / `14Layout-and-format`；
+本阶段不改稿。**审查不修改被审查对象。**
 
 ### Step 4b: 数学证明措辞-内容一致性扫描（L2，硬错误项）
 
@@ -213,7 +225,8 @@ command -v xelatex >/dev/null 2>&1 && xelatex -interaction=nonstopmode "$MAIN_FI
 
 xelatex 需跑两遍解决目录和交叉引用。
 
-编译失败必须修复语法、路径、图片引用或模板问题后重跑。编译通过后确认输出 PDF 非空。
+编译失败时记录完整报错与修复位置（语法/路径/图片引用/模板），写进返修清单，交回
+`14Layout-and-format`（编译/模板属于其职责）；本阶段不改稿。编译通过后确认输出 PDF 非空。
 
 ### Step 8: PDF 视觉检查
 
@@ -285,7 +298,7 @@ PASS / FAIL
 ## 仍需处理的问题
 ```
 
-只有当硬错误都修复、文本门禁通过、核心图表都引用、数值一致、编译通过或明确说明不可编译原因、视觉检查通过或明确说明无法执行原因时，才写 `PASS`。
+只有当硬错误都已在前序阶段修复、文本门禁通过、核心图表都引用、数值一致、编译通过或明确说明不可编译原因、视觉检查通过或明确说明无法执行原因时，才写 `PASS`。
 
 ## 硬错误标准
 
@@ -308,7 +321,7 @@ PASS / FAIL
 
 ## 警告标准
 
-以下问题可判定为 `WARN`，但应尽量修复：
+以下问题可判定为 `WARN`；写进返修清单交回对应阶段，本阶段不改稿：
 
 - 未引用的备用图片。
 - 某章节过短或明显不均衡。

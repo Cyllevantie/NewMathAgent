@@ -14,6 +14,10 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 > 的对象写新脚本。别每轮从零重写 —— 全链 776 个自写脚本里 **683 个（88%）只被用过一次**
 > 就再也没人碰。复用探针 ≠ 跳过复核：探针只是取证手段，判定仍逐条对着当前版本做。
 
+> **创新第一原则：主答案优先。** 任何创新默认只能让主答案在 `primary_guard` 内变化；
+> 主答案大幅偏离基线（例如温度 33 ℃ → 5 ℃、空气 41 ℃）又拿不出独立证据，先按模型没闭合
+> 处理，不是“方法更精细”。先保住简洁模型的答案，再谈改进；复杂模型不能单独覆盖主结果。
+
 ## 几何表达与篇幅排版
 
 建模报告完成时，初步列出每问必须解释的几何/空间关系与核心推导，交给 7Route-diagram 和 9Paper-writing。区分正文必需证据与可放附录的细节（篇幅预算见 config/publication.json），不改变模型以迁就篇幅。
@@ -48,7 +52,16 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
   - 逐子问题给出：变量与符号、模型假设、决策变量 / 目标函数 / 约束条件（建模三要素显式写出）、求解算法、机理依据（引用文献方向）、实现口径、代码阶段任务清单。
   - 求解算法选型：黑箱/非凸/不可导/组合优化类子问题，可标注"用 `metaheuristic-optimization` skill（MEALPY：GA/PSO/DE/GWO/WOA）"；线性/凸/可精确求解的问题优先用专用求解器（scipy/Gurobi），不强行套用元启发式。
   - 每个关键假设/建模决策附一行"为什么"，让评审员能据以判断是否偏离题意/机理。
+  - 「创新点与取舍」小节：基线卡、候选表、六项硬门槛评分、采用/不用的理由；只把有实测/可证伪增量、且主答案守住护栏的叫“核心创新”，其余叫“关键处理”。schema 与反模式见 `references/innovation-ledger.md`。
   - 报告带版本号与修订历史（评审回执如何被吸收）。
+- `reports/INNOVATION_LEDGER.json`（本阶段必写的**设计台账**；③ 只读它。
+  ④⑥⑨ 分别写 `INNOVATION_MEASUREMENT.json` / `INNOVATION_ROBUSTNESS.json` /
+  `INNOVATION_PAPER.json`，**不得回写设计台账**）：
+  - 记全部候选（含 rejected），不是只记采用项；至少 3 条，`panel.lenses` 至少 3 个视角且含对抗/审稿（纯优化题可用 optimization 代替）。
+  - 每条 adopted 必须有 `core（true/false）/ baseline_id / failure_mode / intervention / claim / predicted_delta / test / kill_if / primary_guard`；全篇最多 1 个 `core=true`，adopted 最多 2 条。
+  - `primary_guard` 写主答案是什么、允许相对变化多少（默认 10%）、为什么；主答案超出护栏且无独立证据 → 不能 adopted。
+  - 没有 adopted 时写 `no_adoption_reason`（为什么本题没有值得做的增量），不许空着。
+  - 收尾自检：`python lib/web/check_innovation.py --stage design`。
 - `reports/TASK_CONTRACT.json`（启用 content-quality 时必写：项目根存在 `docs/CONTENT_QUALITY.md` / `config/content_quality.json`；schema 见前者「题意契约」）：
   - 把题面每条硬条件与交付要求映射为一个 requirement：`{id, source:{file,quote}, source_semantics, model_semantics, model_anchor:{file,quote}, status:"mapped"}`。
   - `source.quote` 必须是 `request/` 下文件（题面/附件说明）中逐字存在的原文（子串匹配，照抄含标点，别改简繁/空格）；`model_anchor.quote` 指向本报告里对应模型定义的原文。
@@ -143,6 +156,166 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 题面 -> 数据清洗(EDA) -> 子问题一模型 -> 子问题二模型 -> 。。。。 -> 结果检验 -> 论文展示
 ```
 
+### Step 3.4: 基线卡（先写基线，再谈创新）
+
+创新不是“用了什么方法”，而是“基线在什么条件下会错，我们改了什么，改完哪个数字变了”。
+每问先写一张基线卡，写进 `ANALYSIS_MODELING_REPORT.md` 的「创新点与取舍」小节：
+
+| 问 | 基线模型（最简可辩护） | 头条数字/决策 | 单位 | 已知失败模式 |
+|---|---|---|---|---|
+| Q1 | 一维径向有限体积 + 题给物性 | 1800 s 末含水率 | kg/kg | 表面活度取 Ce=Y 可能高估干燥速率 |
+| Q4 | 材料坐标 + 实测 R(t) | 达标时间 t_dry | h | R(t) 只作输入，收缩与失水关系未被检验 |
+
+硬要求：
+
+- 基线必须是**本题最简、可跑、可辩护**的方案，不是“随便一个能出数的模型”；
+- 头条数字/决策必须是论文要回答的那一个（如 t_dry、最大含水率、成本、分组数）；
+- 失败模式要具体到方程/边界/数据口径/判据/决策，不写“精度不够”“效果一般”。
+
+**主答案护栏（最重要）**：每个 adopted 项另写
+
+```json
+"primary_guard": {
+  "metric": "1800 s 中心温度",
+  "allowed_relative_change": 0.10,
+  "why": "题给空气温度 41.5 ℃ 与多数模型的量级；超过 10% 必须有独立证据"
+}
+```
+
+创新默认只能让主答案在护栏内变化；如果主答案大幅偏离基线（例如温度从 33 ℃ 掉到 5 ℃，
+而空气是 41 ℃），先按**模型没闭合**处理，不叫创新。必须有独立证据（实验/文献/题面给定值/
+多模型一致/解析极限）证明是基线错了，否则只能降级为负结果/局限。没有护栏，不许 adopted。
+
+**创新的形态**：优先“简单模型 + 一个可控增量”（加一项闭合、换一个判据、证明一个结构），
+而不是“换一套模型把主答案带走”。如果确实要换模型类，baseline 与 intervention 都保留：
+主结果先按基线报，创新只作为条件性改进；除非独立证据表明基线错，否则不要让复杂模型
+覆盖主答案。这样评委看到的是“在原答案上改进”，不是“算出了另一个世界”。
+
+**温度/能量类尤其**：加潜热/相变/辐射前，先做能量收支与边界量级检查；如果加完后温度
+低于环境温度、又没有表面蒸发冷却/活度闭合解释，按模型错误处理，不要写成“更精细的模型”。
+同理，浓度/压力/成本类创新先做守恒与边界检查，再看主答案有没有越过护栏。
+
+没有基线卡，不许开创新面板。
+
+### Step 3.5: 创新分级（先认清什么算创新）
+
+| 级别 | 定义 | 竞赛里怎么算 | 例子 |
+|---|---|---|---|
+| L0 | 正确实现标准方法 | 不算；但必须有 | 有限体积、Brent、PSO |
+| L1 | 标准方法适配本题 | 弱；只能叫“关键处理” | 材料坐标处理收缩 |
+| L2 | 任务特定的结构观察/判据 | 可算创新，但必须有可测 delta | 单调性 → 一次求根 |
+| L3 | 新机制/新状态/新决策链，改变结论 | 强创新；目标 | 收缩作为状态、风险冗余 |
+| L4 | 新通用方法 | 罕见；不要求 | — |
+
+判据四因子：
+
+```
+创新 = 反常识洞察 × 可证伪机制 × 可测量改变 × 任务相关性
+```
+
+- **反常识洞察**：题面/文献没有直接给出，需要推导或对照才能看见；
+- **可证伪机制**：能写出“若……则……”，并有一个可能失败的 test；
+- **可测量改变**：对头条数字/决策给出方向与量级，或定性翻转；
+- **任务相关性**：改变的是题目要回答的东西，不是顺手多算一个指标。
+
+以下**不算创新**：用了有限体积/PSO/机器学习；考虑了收缩/端面/变物性；做了灵敏度分析/
+网格收敛；精度更高；把三个模型拼在一起。它们是 L0/L1 或验证工作，只能叫“关键处理”。
+
+### Step 3.6: 创新面板（3 个默认视角 + 1 个可选）
+
+目的：避免第一条建模思路定终身，但**不是让 agent 多想几个点子**——每个候选都必须从
+基线卡的失败模式出发，而不是从“我想用什么方法”出发。
+
+1. 主 agent 先建 `_tmp/idea_panel/`，把题面、子问题拆解、Step 0 硬约束、**基线卡、失败模式清单**
+   写进 `_tmp/idea_panel/brief.md`。子 agent 只读这份 brief，不读整个仓库。
+   （用 Write 直接写 `brief.md` 即可，它会自动建目录；不要依赖 PowerShell `New-Item`——
+   本次实测它在 `acceptEdits` 下会被拒绝，白费一轮。）
+   建好 brief 后，按 `../_references/stage_discipline.md` 八建 `.fma_panel_lock`；收齐候选后先删锁，再写正式报告。
+2. 用 Agent 工具并行启动 3 个子 agent（优先 `config/agents.json` 的
+   `idea-mechanism` / `idea-data` / `idea-adversarial`；不可用时 general-purpose；默认 3 个**不同视角**，不是 3 份同题重答）：
+   - A 机理 / 闭合（`idea-mechanism`）：模型漏了哪条物理通道、边界、耦合、尺度；
+   - B 数据 / 辨识（`idea-data`）：哪个参数不可辨识、哪个数据没用上、误差怎么传到结论；
+   - C 对抗 / 审稿（`idea-adversarial`）：专门攻击基线，找“如果成立就会让结论翻转”的假设，给最小修补。
+   - D 优化 / 决策（`idea-optimization`，**仅当题目真是优化/决策题**）：最优控制、鲁棒设计、
+     调度、多目标、情景规划。非优化题不要默认开这个视角——它会产出题面没问的“优化烘房温度”。
+
+   **默认 3 的理由**：实测 2 个 agent 已能给出 5–6 条不重复方向，第 3 个用于补盲区；
+   再往上多是同一模型的重复采样，边际新意下降，主 agent 的评审成本反而上升。
+   三份候选如果**重叠 >50%**，或**可落地的不足 2 条**，再补 1–2 个「补位」agent：
+   对立假设 / 另一学科视角 / 审稿人视角；总数 **≤5**。补位要针对缺口写 prompt，
+   不要重复已有视角。连续一轮没有新主题就停（loop-until-dry）。
+3. 每个子 agent 只写 `_tmp/idea_panel/<lens>.md`，每个方向固定七行：
+
+   ```text
+   失败模式：基线在什么条件下会错/不够？
+   干预：加/换/证明什么？（机制 / 结构 / 判据 / 证据）
+   可证伪命题：若……则……（要能被一个 test 推翻）
+   预测增量：对哪个头条数字/决策，方向与量级；主答案预计怎么变、是否在护栏内
+   验证：用什么数据/对照/负控制；什么结果算失败
+   代价：实现时间、数据需求、是否违反硬约束
+   类型与视角：mechanism/structure/criterion/evidence + mechanism/data/adversarial/optimization
+   ```
+
+   禁止写最终报告，禁止改 `code/`、`results/`。
+4. 主 agent 读全部候选（3–5 份），按 Step 3.7 的**硬门槛**评分，选 1 个 core + 至多 1 个 supporting；
+   其余方向各写一句「为什么不用」（不可验证 / 超时间 / 偏离题意 / 必要性不足）。
+5. 子 agent 不可用（CLI 禁用 Agent）时，退回主 agent 自己按 A/B/C 三个视角各写 3 条，
+   不要卡住阶段。
+
+硬约束：
+
+- 候选必须从失败模式出发，**不许从“我想用什么方法”出发**；工具名不是创新；
+- 不得违反 Step 0 的题面硬约束，不得编数据；
+- 采用前先做代价 / 收益判断：竞赛时间内能否实现、能否被 ③ 复核、④ 能否测出 delta；
+- 子 agent 只写 `_tmp/idea_panel/`，正式报告与台账只由主 agent 写。
+- 本机 headless `claude -p` 已实测可用 Agent 工具（2 个并行子 agent，约 32 s 全部完成）；
+  若你的 CLI 版本禁用，按第 5 条退回，不要因此判阶段失败。
+
+### Step 3.7: 评分与预注册（硬门槛，不是 1–5 分）
+
+| 维度 | 通过条件 |
+|---|---|
+| 必要性 | 去掉它，头条数字变化 ≥5%，或定性结论翻转；达不到就降为“关键处理” |
+| 可证伪 | 能写出一个可能失败的 test（对照/负控制/复算），不是“做灵敏度分析” |
+| 非显然 | 题面/文献没有直接给出，需要推导或对照才能看见 |
+| 可落地 | 数据可得，④ 能实现，⑥ 能检验；不超竞赛时间 |
+| 主答案护栏 | 主答案变化 ≤ `primary_guard.allowed_relative_change`；超出必须有 `independent_evidence`，否则不能 adopted |
+| 合规 | 不违反 Step 0 硬约束，不靠改口径/编数据 |
+
+只有**必要性 + 可证伪 + 主答案护栏**都过，才能 `status=adopted`；一篇最多 **1 个 `core=true` +
+1 个 supporting**。每个 adopted 必须写 `kill_if`：④ 测不到或测失败就降级，不许嘴硬。
+
+**主答案优先于创新**：如果创新让主答案大幅偏离基线、又没有独立证据，正确结论是“这个创新
+不成立/模型没闭合”，不是“我的方法更精细”。温度 5 ℃ vs 空气 41 ℃ 就是前一种。
+
+把**全部候选（含 rejected）**写进 `reports/INNOVATION_LEDGER.json`，schema 与示例见
+`references/innovation-ledger.md`。最低要求：
+
+- `panel.lenses` 至少 3 个视角且含 `adversarial`（纯优化题可用 `optimization` 代替）；
+- `items` ≥3 条，adopted 最多 2 条；每条 adopted 必须有
+  `core（true/false）/ baseline_id / failure_mode / intervention / claim / predicted_delta /
+  test / kill_if / primary_guard`；
+- 没有 adopted 时写 `no_adoption_reason`（为什么本题没有值得做的增量），不许空着。
+
+### Step 3.8: 写进报告
+
+在 `ANALYSIS_MODELING_REPORT.md` 写「创新点与取舍」：
+
+- **基线卡表**（Step 3.4）；
+- **候选表**：`ID / 问 / 类型 / 失败模式 / 干预 / 可证伪命题 / 预测增量 / 主答案护栏 / 验证 / 状态`；
+- 采用项写清“为什么是它 + 代价 + 风险”，并标明 `core` 还是 `supporting`；
+- 未采用项各一句“为什么不用”（不可验证 / 超时间 / 偏离题意 / 必要性不足）；
+- 只把 `adopted` 且 `core=true` 的 1 项叫“核心创新”；其余 adopted 叫“关键处理”；
+- 不要用“创新点一/二/三”把 L0/L1 工作包装成创新。
+
+收尾自检：
+
+```bash
+python lib/web/check_innovation.py --stage design
+```
+
+不过就当场修：补基线、补失败模式、补 test/kill_if，或把测不了的项改成 rejected。
+
 ### Step 4: 建模报告
 
 在 `ANALYSIS_MODELING_REPORT.md` 中写出可交给代码阶段实现的完整方案。
@@ -199,6 +372,8 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 - 不编造数据字段和数值。
 - 不跳过歧义分析。
 - 模型既要有数学表达，也要能被代码实现。
+- 创新点必须能落到 `INNOVATION_LEDGER.json` 的可证伪增量（基线 → 失败模式 → 干预 → 实测 delta）；
+  不为创新而创新，不把模型堆复杂；方法名（PSO/机器学习/材料坐标）不是创新。
 - 若数据不足或题面不清，要明确记录风险和替代方案。
 
 ### 数学结构与理论精简（进代码前先"找结构"，避免纯蛮力/纯枚举）
@@ -224,7 +399,17 @@ python lib/web/check_contract.py      # 契约里每条 quote 还逐字指得到
 
 不过就当场修（把 quote 换成新报告里的原文，或改引一个确实存在的段落）。
 
-### ② 返修台账（被门禁退回过的轮次必做）
+### ② 创新台账
+
+```bash
+python lib/web/check_innovation.py --stage design
+```
+
+不过就当场修：补基线/失败模式/test/kill_if/主答案护栏；测不了的项写 rejected + 理由。
+尤其检查主答案护栏：如果创新会让主答案大幅偏离基线又拿不出独立证据，先按模型没闭合处理，
+不要写成“创新点”。
+
+### ③ 返修台账（被门禁退回过的轮次必做）
 
 ```bash
 python lib/web/check_receipts.py

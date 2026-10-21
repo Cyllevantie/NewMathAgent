@@ -16,7 +16,7 @@ try {
 } catch (e) { /* 桩环境/隐私模式：保持默认，交给主脚本里的 setTheme 兜底 */ }
 </script>
 <style>
-  :root{--bg:#0f1419;--panel:#1a2027;--line:#2a323b;--fg:#d7e0e8;--dim:#8a96a3;--acc:#4da3ff;--ok:#2ecc71;--fail:#e74c3c;--run:#f1c40f;--wait:#ff9f1a;--manual:#b07cff;}
+  :root{--bg:#0f1419;--panel:#1a2027;--line:#2a323b;--fg:#d7e0e8;--dim:#8a96a3;--acc:#4da3ff;--ok:#2ecc71;--fail:#e74c3c;--run:#f1c40f;--wait:#ff9f1a;--manual:#b07cff;--stage:#7fc4ff;}
   /* 黄灯不能只靠颜色区分（--run 也是黄）—— 用脉冲光晕做第二通道，色盲/灰度下也能分。 */
   @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,159,26,.55)}50%{box-shadow:0 0 0 5px rgba(255,159,26,0)}}
   .stage.wait .dot{background:var(--wait);animation:pulse 1.6s infinite}
@@ -35,6 +35,8 @@ try {
   button{background:#26303a;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 14px;cursor:pointer}
   button:hover{background:#2f3b47}button.primary{background:var(--acc);color:#062}
   #status{font-size:13px;margin-left:auto;color:var(--dim)}
+  /* SSE 连接状态：驱动死掉时页头不能还挂着最后一次的「运行中」（见 setConn）。 */
+  #conn{font-size:11.5px;margin-left:8px;color:var(--dim);white-space:nowrap}
   /* ★ 第二排（产物 chip 靠左、**GitHub 标识居中**、🤖托管 靠右 —— 用户 2026-09-29 / 2026-09-30）。
      `flex-basis:100%` 让它**必然独占一行**：不用"内容长了自己掉下去"那种概率写法，
      这里要的是确定性。
@@ -167,6 +169,9 @@ try {
   .stage.fail .dot{background:var(--fail)}.stage.fail{color:#f0a}
 @keyframes blink{50%{opacity:.3}}
   .file{font-size:12px;padding:3px 8px;color:var(--dim);cursor:pointer;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .file.withstage{display:flex;align-items:center;gap:6px}
+  .file.withstage .fname{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .filestage{flex:0 0 auto;font-size:10.5px;line-height:1.5;font-weight:600;color:var(--stage,var(--acc));border:1px solid var(--stage,var(--acc));border-radius:9px;padding:0 5px;white-space:nowrap}
   .file:hover{background:#26303a;color:var(--fg)}
   /* 侧栏两组的展开/收起表头（2026-09-28 用户要求）。caret 固定宽度，展开收起时标题不左右跳。 */
   .grp{font-size:11px;color:var(--dim);padding:6px 8px 3px;cursor:pointer;user-select:none;border-top:1px solid var(--line);margin-top:4px}
@@ -179,10 +184,84 @@ try {
   #view{flex:1;overflow:auto;padding:14px 18px;white-space:pre-wrap;font:13px/1.6 Consolas,Menlo,monospace}
   /* ★ 选择器从 `#view.markdown` 放宽到 `.markdown`（2026-09-29）：读题确认页新增的
      `#ik_view` 也要吃这套渲染样式（它渲染的是同一份 markdown 题面）。 */
-  .markdown{white-space:normal;font-family:inherit;font-size:14px}
-  .markdown h1{font-size:20px}.markdown h2{font-size:16px}
-  .markdown table{border-collapse:collapse;margin:8px 0}.markdown td,.markdown th{border:1px solid var(--line);padding:4px 8px}
+  /* #view 的 ID 选择器会压过 .markdown：不显式写 #view.markdown，
+     `white-space:pre-wrap` 与 1.6 行高会继续生效，mdToHtml 的换行会变成大段空行。 */
+  #view.markdown{white-space:normal;line-height:1.55;font-family:inherit;font-size:14px;color:var(--fg)}
+  .markdown{white-space:normal;font-family:inherit;font-size:14px;line-height:1.55;color:var(--fg)}
+  .markdown h1{font-size:20px;line-height:1.35;margin:18px 0 10px}
+  .markdown h2{font-size:16px;line-height:1.4;margin:16px 0 8px}
+  .markdown h3{font-size:14px;line-height:1.4;margin:14px 0 6px}
+  .markdown h4,.markdown h5,.markdown h6{font-size:13px;line-height:1.4;margin:12px 0 5px}
+  .markdown p{margin:0 0 3px}
+  .markdown ul,.markdown ol{margin:2px 0 3px;padding-left:24px}
+  .markdown li{margin:0}
+  .markdown blockquote{margin:6px 0;padding:6px 10px;border-left:3px solid var(--acc);
+    background:rgba(77,163,255,.08);color:var(--dim)}
+  .markdown blockquote p:last-child{margin-bottom:0}
+  .markdown hr{border:0;border-top:1px solid var(--line);margin:16px 0}
+  .markdown .tablewrap{overflow-x:auto;margin:10px 0}
+  .markdown table{border-collapse:collapse;width:auto;min-width:100%;margin:0}
+  .markdown td,.markdown th{border:1px solid var(--line);padding:4px 8px;vertical-align:top;
+    min-width:96px;word-break:normal;overflow-wrap:break-word}
+  .markdown thead th{background:rgba(255,255,255,.04);font-weight:700}
+  .markdown pre{background:#0d1117;border:1px solid var(--line);border-radius:6px;
+    padding:8px 10px;overflow:auto;white-space:pre}
+  .markdown pre code{background:none;border:0;padding:0;font-family:var(--mono,monospace);font-size:12px}
+  .markdown code{font-family:var(--mono,monospace);background:rgba(77,163,255,.12);
+    border:1px solid var(--line);border-radius:3px;padding:0 4px;
+    word-break:break-word;overflow-wrap:anywhere}
+  .markdown img{max-width:100%;height:auto;border-radius:4px}
+  .markdown input[type=checkbox]{margin-right:4px;vertical-align:middle}
+  /* 报告里的 $...$ / $$...$$：KaTeX 真排版；块级公式横向可滚，不撑破版心。 */
+  .math{display:inline-block;max-width:100%;vertical-align:middle}
+  .math .katex{font-size:1.02em}
+  .mathblock{display:block;margin:8px 0;overflow-x:auto;overflow-y:hidden;text-align:center}
+  .mathblock .katex-display{margin:.35em 0}
+  .mathraw{font-family:var(--mono,monospace);background:rgba(77,163,255,.10);
+    padding:0 4px;border-radius:3px}
   img.grid{max-width:45%;margin:6px}
+  /* 图片页：**固定卡片槽**，不是平铺 img。用户 2026-10-18：图片平铺、缺一张后面的就往前挤，
+     看着很怪。现在每张图占一个固定 16:10 槽；图缺了也留槽并显示占位，网格不重排。 */
+  #view.figview{white-space:normal}
+  /* 一行三张：用户 2026-10-18 明确不要一行五张，图要大一些。 */
+  .figgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+  @media(max-width:1100px){.figgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:760px){.figgrid{grid-template-columns:1fr}}
+  .figcard{margin:0;border:1px solid var(--line);border-radius:8px;background:var(--panel);
+    overflow:hidden;min-width:0;cursor:pointer;transition:border-color .15s,transform .15s}
+  .figcard:hover{border-color:var(--acc);transform:translateY(-1px)}
+  .figcard.single{cursor:default;max-width:980px;margin:0 auto}
+  .figcard.single:hover{border-color:var(--line);transform:none}
+  .figcard.single .figthumb{aspect-ratio:auto;min-height:220px;max-height:calc(100vh - 250px)}
+  .figcard.single .figthumb img{max-height:calc(100vh - 250px)}
+  .figthumb{position:relative;aspect-ratio:16/10;background:var(--bg);display:flex;
+    align-items:center;justify-content:center;overflow:hidden;padding:8px}
+  .figthumb img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block}
+  .figthumb .missing{display:none;flex-direction:column;align-items:center;justify-content:center;
+    gap:6px;color:var(--dim);font-size:12px;text-align:center;padding:10px;line-height:1.5}
+  .figthumb.figmissing .missing{display:flex}
+  .figthumb .missing small{font-size:10.5px;color:var(--dim);word-break:break-all}
+  .figcap{display:flex;justify-content:space-between;gap:8px;padding:7px 10px;
+    border-top:1px solid var(--line);font-size:11.5px;color:var(--dim)}
+  .figcap .figtitle{flex:1 1 auto;min-width:0;white-space:normal}
+  .figcap b{color:var(--fg);font-weight:600;line-height:1.35;min-width:0;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .figcap .figfile{flex:0 0 auto;max-width:52%;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .figbar{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:12px;
+    color:var(--dim);word-break:break-all}
+  .figbar button{flex:none;white-space:nowrap}
+  .figcard:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .figempty{color:var(--dim);font-size:13px;padding:18px 4px;line-height:1.8}
+  .figempty button{margin-left:8px}
+  /* 文件打不开时的错误态：必须写明 detail/HTTP 状态，不能把查看区清成空白。 */
+  .fileerr{color:var(--fail);font-size:13px;padding:14px 4px;line-height:1.8;white-space:pre-wrap}
+  .fileerr button{margin-top:8px}
+  html[data-theme="sketch"] .figcard{border:1.5px solid var(--ink);border-radius:12px 5px 11px 6px/6px 11px 5px 12px;
+    box-shadow:2px 2px 0 rgba(51,48,42,.12)}
+  html[data-theme="blueprint"] .figcard{border-color:var(--line2);border-radius:3px}
+  html[data-theme="editorial"] .figcard{border-color:var(--ink);border-radius:0}
+  html[data-theme="pixel"] .figcard{border:2px solid var(--line2)}
   a{color:var(--acc)}
   #pwrap{height:6px;background:#222;margin:0 18px;border-radius:3px;overflow:hidden;flex:1;min-width:120px}
   #pbar{height:100%;width:0;background:linear-gradient(90deg,#2ecc71,#4da3ff);transition:width .5s}
@@ -392,7 +471,7 @@ try {
     box-shadow:0 16px 42px -14px var(--acc),0 0 28px -6px var(--acc)}
   #splash #cf_back{color:var(--dim)}
   #splash #cf_back:hover{color:var(--fg);background:rgba(255,255,255,.07)}
-  /* 结果行：`#cf_msg` 由 JS 直接写 textContent/innerHTML（没动那段逻辑），
+  /* 结果行：`#cf_msg` 由 JS 直接写 textContent/innerHTML，
      所以这里用 `:empty` 让它空着时不占位、有内容时才长成一条终端输出 */
   #splash #cf_msg{margin-top:16px;font-size:12.5px;line-height:1.7;color:var(--fg);word-break:break-all}
   #splash #cf_msg:empty{display:none}
@@ -490,6 +569,7 @@ try {
     /* 原深色变量 → 纸面版：全站大量组件直接吃这些变量，换完就是大半个皮 */
     --bg:var(--paper); --panel:var(--paper2); --line:#b9ae92; --fg:var(--ink); --dim:#8a8069;
     --acc:var(--pen); --ok:#2f9e63; --fail:#d8534a; --run:#dd8a2b; --wait:#dd8a2b; --manual:#7d5fb2;
+    --stage:var(--pen);
   }
   html[data-theme="sketch"] ::selection{background:rgba(255,226,89,.75)}
   /* 图标语言：emoji 染成**铅笔暖调**（手绘稿里没有图库，这层染色就是它的"手绘化"） */
@@ -518,7 +598,7 @@ try {
   html[data-theme="sketch"] input[type=text],html[data-theme="sketch"] input[type=password],
   html[data-theme="sketch"] input[type=number]{font-family:var(--mono)}
 
-  /* 标题（字标）：手写体 + 荧光笔划线 */
+  /* 标题：手写体 + 荧光笔划线 */
   html[data-theme="sketch"] header h1{font-family:var(--hand);font-weight:700;letter-spacing:.3px;
     transform:rotate(-.6deg);
     background:linear-gradient(180deg,transparent 58%,rgba(255,226,89,.8) 58% 95%,transparent 95%)}
@@ -686,7 +766,7 @@ try {
   html[data-theme="sketch"] .markdown h5,html[data-theme="sketch"] .markdown h6{font-size:15px;
     display:inline-block;padding:0 3px;
     background:linear-gradient(180deg,transparent 62%,rgba(207,224,255,.9) 62% 95%,transparent 95%)}
-  html[data-theme="sketch"] .markdown p{color:var(--ink2);font-size:13.5px;line-height:1.8}
+  html[data-theme="sketch"] .markdown p{color:var(--ink2);font-size:13.5px;line-height:1.6}
   html[data-theme="sketch"] .markdown p b,html[data-theme="sketch"] .markdown li b,
   html[data-theme="sketch"] .markdown td b{color:var(--ink)}
   html[data-theme="sketch"] .markdown ul,html[data-theme="sketch"] .markdown ol{padding-left:22px;
@@ -699,6 +779,8 @@ try {
   html[data-theme="sketch"] .markdown th{background:var(--paper3)}
   html[data-theme="sketch"] .markdown code{font-family:var(--mono);background:rgba(255,226,89,.55);
     padding:0 4px;border-radius:4px}
+  html[data-theme="sketch"] .markdown blockquote{background:rgba(255,226,89,.28);
+    border-left-color:var(--pen);color:var(--ink2)}
   html[data-theme="sketch"] a{color:var(--pen)}
 
   /* ---- 运行日志（节点类名由脚本加上：.logpane / .logjump）---- */
@@ -716,6 +798,16 @@ try {
   html[data-theme="sketch"] .logpane .ln{white-space:pre-wrap;word-break:break-word}
   html[data-theme="sketch"] .logpane .lt{color:var(--pen);
     background:linear-gradient(180deg,transparent 55%,rgba(255,226,89,.62) 55% 96%,transparent 96%)}
+  html[data-theme="sketch"] .logpane .tk{color:#6b4fa0}
+  html[data-theme="sketch"] .logpane .cmd{color:#1d4f8c;font-weight:700}
+  html[data-theme="sketch"] .logpane .lx{color:var(--ink2)}
+  html[data-theme="sketch"] .logpane .lx .log-path{color:#2f6fb3}
+  html[data-theme="sketch"] .logpane .lx .log-file{color:#1d4f8c}
+  html[data-theme="sketch"] .logpane .lx .log-url{color:#2f6fb3;text-decoration:underline}
+  html[data-theme="sketch"] .logpane .lx .log-time{color:#9a6a11}
+  html[data-theme="sketch"] .logpane .lx .log-num{color:#4f7d4a}
+  html[data-theme="sketch"] .logpane .lx .log-warn{color:#b5761f;font-weight:700}
+  html[data-theme="sketch"] .logpane .lx .log-ok{color:#4f7d4a;font-weight:700}
 
   /* ---- 浮层：📝 判词 / 目录选择 / 赠言（黑框 → 贴纸条）---- */
   html[data-theme="sketch"] #advpop{background:var(--paper2);border:1px solid var(--ink);color:var(--ink);
@@ -874,11 +966,12 @@ try {
     --orange:#ffab5e; --red:#ff8f8f; --hard:#ffb454; --soft:#5fd8b4; --infotag:#6fb6ff;
     --mono:ui-monospace,"Cascadia Mono","Cascadia Code",Consolas,Menlo,monospace;
     --sans:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
-    /* 全局变量复写（大半个皮） */
+    /* 全局变量复写 */
     --bg:var(--paper); --panel:var(--paper2); --line:rgba(150,192,240,.34);
     --fg:var(--ink); --dim:var(--dim2);
     --acc:var(--cyan); --ok:var(--mint); --fail:var(--red);
     --run:var(--amber); --wait:var(--amber); --manual:var(--infotag);
+    --stage:var(--cyan);
   }
   html[data-theme="blueprint"] ::selection{background:rgba(111,211,255,.30)}
   /* 图标语言：emoji 去彩 → **青色单色化**（对齐蓝图的线稿气质） */
@@ -1044,11 +1137,23 @@ try {
   html[data-theme="blueprint"] .markdown th{font-family:var(--mono);font-size:11.5px;color:var(--dim2);background:rgba(111,211,255,.06)}
   html[data-theme="blueprint"] .markdown code{font-family:var(--mono);font-size:11.5px;color:#bfe6ff;
     background:rgba(111,211,255,.10);border:1px solid var(--line3);border-radius:3px;padding:0 4px}
+  html[data-theme="blueprint"] .markdown blockquote{background:rgba(111,211,255,.06);
+    border-left-color:var(--cyan);color:#c9dbf0}
   html[data-theme="blueprint"] a{color:var(--cyan)}
   /* 日志：等宽；时间淡蓝、无荧光笔底；跳底按钮 = mini 样式 */
   html[data-theme="blueprint"] .logpane{color:#cfe2f8!important;font-family:var(--mono)!important;
     background-color:transparent!important;background-image:none!important}
   html[data-theme="blueprint"] .logpane .lt{color:#7fa3c9;background:none}
+  html[data-theme="blueprint"] .logpane .tk{color:var(--cyan)}
+  html[data-theme="blueprint"] .logpane .cmd{color:var(--amber);font-weight:700}
+  html[data-theme="blueprint"] .logpane .lx{color:var(--ink2)}
+  html[data-theme="blueprint"] .logpane .lx .log-path{color:#6fd3ff}
+  html[data-theme="blueprint"] .logpane .lx .log-file{color:#8fd3ff}
+  html[data-theme="blueprint"] .logpane .lx .log-url{color:#6fd3ff;text-decoration:underline}
+  html[data-theme="blueprint"] .logpane .lx .log-time{color:#ffc85e}
+  html[data-theme="blueprint"] .logpane .lx .log-num{color:#5fe3a1}
+  html[data-theme="blueprint"] .logpane .lx .log-warn{color:#ffc857;font-weight:700}
+  html[data-theme="blueprint"] .logpane .lx .log-ok{color:#5fe3a1;font-weight:700}
   html[data-theme="blueprint"] .logjump{background:rgba(8,24,44,.5)!important;color:var(--dim2)!important;
     border:1px solid var(--line2)!important;border-radius:3px!important;text-shadow:none!important;
     box-shadow:none!important;font-family:var(--mono)!important}
@@ -1179,9 +1284,23 @@ try {
        日志行还被切成 .lt/.tk/.cmd/.lx 四段（renderLog 负责），配色见各主题块。 */
   .pxa{display:none;position:relative;font-size:2px;width:8em;height:8em;flex:none}
   .pxa::before{content:'';position:absolute;left:0;top:0;width:1em;height:1em}
-  .logpane .lt{margin-right:6px}
+  /* 日志配色：**每个主题都要有自己的一套**（用户 2026-10-18：日志内容都是黑色，看着难受）。
+     基础层给默认深色皮一套；sketch/blueprint 在各自主题块里补 .tk/.cmd/.lx，
+     pixel/editorial 本来就有。`.lx` 是正文，不能只靠父级继承 —— 继承在浅色皮上就是墨黑。 */
+  .logpane{color:var(--fg)}
+  .logpane .lt{margin-right:6px;color:var(--dim)}
   .logpane .ic{display:inline-flex;align-items:center;margin-right:6px}
-  .logpane .tk{margin-right:6px}
+  .logpane .tk{margin-right:6px;color:#c792ea}
+  .logpane .cmd{color:var(--acc);font-weight:600}
+  .logpane .lx{color:var(--fg)}
+  /* 日志正文语义色：路径 / 文件 / URL·IP / 时间·耗时 / 数值单位 / 告警 / 完成 */
+  .logpane .lx .log-path{color:#6fd3ff}
+  .logpane .lx .log-file{color:#8ab4ff}
+  .logpane .lx .log-url{color:#8ab4ff;text-decoration:underline;text-underline-offset:2px}
+  .logpane .lx .log-time{color:#f0b45a}
+  .logpane .lx .log-num{color:#a8e6cf}
+  .logpane .lx .log-warn{color:#f0b45a;font-weight:600}
+  .logpane .lx .log-ok{color:#43d9a3;font-weight:600}
   .pxa.px-tterm{width:6em;height:6em}
   .pxa.px-tterm::before{box-shadow:0 0 currentColor,1em 0em currentColor,2em 0em currentColor,3em 0em currentColor,4em 0em currentColor,5em 0em currentColor,0em 1em currentColor,5em 1em currentColor,0em 2em currentColor,1em 2em currentColor,5em 2em currentColor,0em 3em currentColor,2em 3em currentColor,5em 3em currentColor,0em 4em currentColor,1em 4em currentColor,5em 4em currentColor,0em 5em currentColor,1em 5em currentColor,2em 5em currentColor,3em 5em currentColor,4em 5em currentColor,5em 5em currentColor}
   .pxa.px-tdoc{width:6em;height:6em}
@@ -1247,6 +1366,7 @@ try {
     /* 全局变量复写（--bg 已在上面的私有变量里定过，同值） */
     --panel:#121b40; --line:#35498f; --fg:#e9f0ff; --dim:#94a7d8;
     --acc:#ffd23f; --ok:#5be07a; --fail:#ff5d5d; --run:#ffb02e; --wait:#ffb02e; --manual:#b48cff;
+    --stage:var(--acc2);
   }
   /* ★ 零圆角是全站的签名：一条规则管到底（圆点也会变方块，正是我们要的） */
   html[data-theme="pixel"] *{border-radius:0!important}
@@ -1379,7 +1499,7 @@ try {
   html[data-theme="pixel"] #view{background:#080c22;border:0;border-radius:0;color:var(--ink)}
   html[data-theme="pixel"] .logpane{color:#8fa5d6!important;font-family:var(--mono)!important;
     background-color:transparent!important;background-image:none!important;font-size:11.5px!important;line-height:1.85!important}
-  html[data-theme="pixel"] .logpane .lt{color:var(--faint);background:none}
+  html[data-theme="pixel"] .logpane .lt{color:#6f88c9;background:none}
   html[data-theme="pixel"] .logjump{background:#101a3e!important;color:var(--ink)!important;
     border:2px solid var(--line)!important;text-shadow:none!important;font-family:var(--mono)!important;
     box-shadow:inset 2px 2px 0 0 #3d55a3, inset -2px -2px 0 0 #0b1231, 2px 2px 0 0 var(--shadow)!important}
@@ -1388,9 +1508,10 @@ try {
   html[data-theme="pixel"] .markdown h1,html[data-theme="pixel"] .markdown h2,
   html[data-theme="pixel"] .markdown h3{color:#fff;background:none;display:block;padding:0;
     letter-spacing:.03em;text-shadow:2px 2px 0 #2b3a7a}
-  html[data-theme="pixel"] .markdown p{color:#c6d3f5;line-height:1.8}
+  html[data-theme="pixel"] .markdown p{color:#c6d3f5;line-height:1.6}
   html[data-theme="pixel"] .markdown td,html[data-theme="pixel"] .markdown th{border:2px solid var(--line2);padding:5px 12px}
   html[data-theme="pixel"] .markdown th{background:#182352;color:var(--acc);font-weight:700}
+  html[data-theme="pixel"] .markdown blockquote{background:#101a3e;border-left-color:var(--acc2);color:#c6d3f5}
   html[data-theme="pixel"] .markdown code{font-size:11.5px;color:var(--acc);background:#1a2350;
     border:2px solid var(--line2);padding:0 4px}
   html[data-theme="pixel"] a{color:var(--acc2)}
@@ -1514,7 +1635,14 @@ try {
   html[data-theme="pixel"] .logpane .tk{color:#c9a4ff}
   html[data-theme="pixel"] .logpane .cmd{color:var(--ink)}
   html[data-theme="pixel"] .logpane .lx{color:#8fa5d6}
-  html[data-theme="pixel"] .logpane .lt{color:var(--faint)}
+  html[data-theme="pixel"] .logpane .lx .log-path{color:#6ef3ff}
+  html[data-theme="pixel"] .logpane .lx .log-file{color:#8ab4ff}
+  html[data-theme="pixel"] .logpane .lx .log-url{color:#6ef3ff;text-decoration:underline}
+  html[data-theme="pixel"] .logpane .lx .log-time{color:#ffd166}
+  html[data-theme="pixel"] .logpane .lx .log-num{color:#a8ff60}
+  html[data-theme="pixel"] .logpane .lx .log-warn{color:#ffd166;font-weight:700}
+  html[data-theme="pixel"] .logpane .lx .log-ok{color:#a8ff60;font-weight:700}
+  html[data-theme="pixel"] .logpane .lt{color:#6f88c9}
 
   /* ============================================================
      主题「杂志编辑版式」（来源：设计稿 18-editorial.html，逐区翻译）。
@@ -1526,7 +1654,7 @@ try {
     --paper:#e7dfcc; --sheet:#f8f4e9; --card:#fffdf6;
     --ink:#1d1813; --ink2:#4a4136; --mut:#7d7261;
     --rule:#ddd3bc; --rule2:#c3b598;
-    --red:#bf3222; --red2:#8d2217; --gold:#c08a1e; --amber:#a86a12;
+    --red:#bf3222; --red2:#8d2217; --red-ink:#e88b76; --gold:#c08a1e; --amber:#a86a12;
     --green:#2e7d46; --teal:#3e7c8c; --yellow:#d9a521;
     --plate:#241f19; --platetext:#efe6d2;
     --serif:Georgia,'Times New Roman','Songti SC','SimSun',serif;
@@ -1536,6 +1664,7 @@ try {
     --bg:var(--sheet); --panel:var(--card); --line:var(--rule2); --fg:var(--ink); --dim:var(--mut);
     --acc:var(--red); --ok:var(--green); --fail:var(--red);
     --run:var(--yellow); --wait:var(--amber); --manual:var(--teal);
+    --stage:var(--red);
   }
   html[data-theme="editorial"] ::selection{background:rgba(191,50,34,.22)}
   html[data-theme="editorial"] body{font-family:var(--sans2);color:var(--ink);
@@ -1676,9 +1805,16 @@ try {
     background-image:radial-gradient(rgba(239,230,210,.07) 1px,transparent 1.25px)!important;
     background-size:4px 4px!important;font-size:11.5px!important;line-height:1.83!important}
   html[data-theme="editorial"] .logpane .lt{color:#d9a745;background:none}
-  html[data-theme="editorial"] .logpane .tk{color:#f3ead4}
+  html[data-theme="editorial"] .logpane .tk{color:var(--red-ink)}
   html[data-theme="editorial"] .logpane .cmd{color:#fdf6e3;font-weight:700}
   html[data-theme="editorial"] .logpane .lx{color:#e7ddc6}
+  html[data-theme="editorial"] .logpane .lx .log-path{color:#a8c8ff}
+  html[data-theme="editorial"] .logpane .lx .log-file{color:#c7ddff}
+  html[data-theme="editorial"] .logpane .lx .log-url{color:#a8c8ff;text-decoration:underline}
+  html[data-theme="editorial"] .logpane .lx .log-time{color:#e8b45a}
+  html[data-theme="editorial"] .logpane .lx .log-num{color:#9fe0a8}
+  html[data-theme="editorial"] .logpane .lx .log-warn{color:#ff9b6a;font-weight:700}
+  html[data-theme="editorial"] .logpane .lx .log-ok{color:#9fe0a8;font-weight:700}
   html[data-theme="editorial"] .logjump{background:#fbf4e2!important;color:var(--red)!important;
     border:1.4px solid var(--red)!important;text-shadow:none!important;font-family:var(--mono)!important;
     box-shadow:2px 2px 0 rgba(29,24,19,.25)!important}
@@ -1689,12 +1825,17 @@ try {
     display:block;padding:0 0 5px;border-bottom:2.5px solid var(--ink)}
   html[data-theme="editorial"] .markdown h1::before,html[data-theme="editorial"] .markdown h2::before,
   html[data-theme="editorial"] .markdown h3::before{content:"# ";font:600 13px var(--mono);color:var(--red)}
-  html[data-theme="editorial"] .markdown p{color:var(--ink2);line-height:1.95}
+  html[data-theme="editorial"] .markdown p{color:var(--ink2);line-height:1.7}
   html[data-theme="editorial"] .markdown p b{color:var(--ink)}
   html[data-theme="editorial"] .markdown td,html[data-theme="editorial"] .markdown th{
     border:1px solid var(--rule2);padding:4px 10px;text-align:left}
   html[data-theme="editorial"] .markdown th{background:#f1e9d5;font-weight:700;letter-spacing:.06em}
   html[data-theme="editorial"] .markdown tr:nth-child(even) td{background:#faf6ea}
+  html[data-theme="editorial"] .markdown pre{background:#f1e9d5;border:1px solid var(--rule);
+    border-radius:0;padding:8px 10px;overflow:auto}
+  html[data-theme="editorial"] .markdown pre code{background:none;border:0;padding:0}
+  html[data-theme="editorial"] .markdown blockquote{background:#f1e9d5;
+    border-left-color:var(--red);color:var(--ink2)}
   html[data-theme="editorial"] .markdown code{font:11.5px var(--mono);background:#efe6ce;border:1px solid var(--rule);
     border-radius:2px;padding:0 4px;color:var(--red2)}
   html[data-theme="editorial"] a{color:var(--red)}
@@ -1827,6 +1968,9 @@ try {
   html:not([data-theme="sketch"]) #theme_btn,
   html:not([data-theme="sketch"]) #autopilot{height:26px!important;top:0!important;align-self:center!important;box-sizing:border-box!important}
 </style>
+<!-- 本地 KaTeX（MIT）：报告里的 $...$ / $$...$$ 用真数学排版；不走 CDN，离线可用。 -->
+<link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+<script src="/static/vendor/katex/katex.min.js"></script>
 </head>
 <body>
 <header>
@@ -1841,6 +1985,7 @@ try {
   <div id="pwrap"><div id="pbar"></div></div><span id="ptext" style="color:var(--dim);font-size:12px"></span>
   <span id="timer" style="color:#39ff14;font-size:12px;font-family:var(--mono,monospace);margin-left:6px;text-shadow:0 0 6px rgba(57,255,20,.6)"></span>
   <span id="status">未运行</span>
+  <span id="conn" title="与驱动的实时连接">● 未连接</span>
   <!-- ★ 第二排：**左边**产物 chip、**右边** 🤖托管（用户 2026-09-29 指定）。
        这两个原本都挤在第一排右端，于是「计时器那栏一变长就把托管顶到下一排」。
        请下第一排之后：第一排不用再压缩、宽度也宽裕了，两个各占第二排一头，谁也不再挤谁。
@@ -1850,7 +1995,7 @@ try {
   <span class="auxrow">
   <!-- 左槽：产物 chip + 🎚 默认主题 包一层（用户 2026-10-16：「这个按钮的右边加个设置
        默认主题的按钮」）—— 包 span 是为了不动 .auxrow 的三栏网格结构（同右槽的处置）。 -->
-  <span id="auxleft"><span id="delivchip" style="font-size:11.5px;color:var(--dim);border:1px solid var(--line);border-radius:10px;padding:2px 8px;white-space:nowrap;position:relative"><button id="template_btn" type="button" title="选择比赛/输出模板">选择比赛/输出模板 <span class="tpl-caret">▾</span></button><select id="dv_template" title="选择比赛/输出模板" style="display:none"></select><div id="template_pop" style="display:none"></div></span><button id="dtheme_btn" title="选择默认主题：每次进入先显示它">🎚 默认主题</button></span>
+  <span id="auxleft"><span id="delivchip" style="font-size:11.5px;color:var(--dim);border:1px solid var(--line);border-radius:10px;padding:2px 8px;white-space:nowrap;position:relative"><button id="template_btn" type="button" title="选择比赛/输出模板">选择比赛/输出模板 <span class="tpl-caret">▾</span></button><select id="dv_template" title="选择比赛/输出模板" style="display:none"></select><div id="template_pop" style="display:none"></div></span><button id="dtheme_btn" title="选择默认主题">🎚 默认主题</button></span>
   <!-- ★ 第二排**正中**的 GitHub 标识（用户 2026-09-30）。点它：弹赠言浮层 + 新开项目标签页。
        整链跑完（⑯ 结束）时也会自动「点」它一次，见 showGhCard 的调用点。 -->
   <span id="ghbadge" title="点这里：项目主页 + 一句想说的话">
@@ -1860,7 +2005,7 @@ try {
   <!-- 🎨 主题切换（用户 2026-10-16：「在托管中的左边加个切换主题的按钮」）：
        与 🤖托管 包在同一个右槽里（不动 .auxrow 的三栏网格结构，也保住
        「delivchip → ghbadge → autopilot」的元素顺序 —— 那条被回归夹具钉着）。 -->
-  <span id="auxbtns"><button id="theme_btn" title="切换主题（皮肤）——点一下换下一套">🎨</button><button id="autopilot">🤖 托管</button></span>
+  <span id="auxbtns"><button id="theme_btn" title="切换主题——点一下换下一套">🎨</button><button id="autopilot">🤖 托管</button></span>
   </span>
 </header>
 <div id="uppanel" style="display:none;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);font-size:13px">
@@ -1888,7 +2033,7 @@ try {
   <div style="margin-top:6px;display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">
     <label>产物路径（留空 = 项目根下的 <code>产物/</code>）<br>
       <input id="dv_dir" type="text" size="46" placeholder="留空 → <项目根>/产物/" style="background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:4px">
-      <button id="dv_pick" title="点着选一个目录（浏览器不让网页读本地绝对路径，所以由服务端列目录）">📁 选…</button></label>
+      <button id="dv_pick" title="点着选一个目录——由服务端列目录">📁 选…</button></label>
     <label>当前模板<br>
       <span id="dv_template_desc" style="color:var(--dim);font-size:12px;display:inline-block;max-width:36ch"></span></label>
     <button id="dv_archive" title="把两个「最新」（提交作品/最新作品、各阶段产物/最新产物）整目录改名成 <产物>/&lt;名称_日期_时间&gt;/（名称留空则只用时间），再新建两个空的">📦 归档本题并换新</button>
@@ -2009,7 +2154,7 @@ try {
        （必须在中文标题之前）、第二行的 ht-line + ht-indent 组合，以及 cf_base / cf_key / cf_model /
        cf_1m / cf_test / cf_save / cf_back / cf_msg —— 换皮时**一个都不许改名**，
        `regression/test_setup.py` 与 `frontend_splash_check.js` 盯着它们。
-       ★ 本注释里刻意**不写出那两个 class 属性的字面形态**（连这里也不写）——
+       ★ 本注释里刻意**不写出那两个 class 属性的字面形态** ——
          `test_the_english_name_sits_above_the_chinese_title` 是按属性字面量在整份文件里定位元素的，
          注释里先出现一次，它就会把锚点指到注释上而不是元素上（我在这条注释上连踩两次）。 -->
   <div id="splash_inner" class="term">
@@ -2113,7 +2258,7 @@ function fillDelivery(d){
   // ★ 这里必须是**配置原值**（`output_dir`）：填成解析后的绝对路径会让「留空 = 用默认」
   //   这个语义在界面上消失。`/api/delivery` 与 `/api/state` 两个 payload 的口径已统一。
   // ★ 只有**用户没在编辑、且这一格没被改脏**时才回写（2026-09-28 审出来的 medium）：
-  //   原先只挡"当前正聚焦"—— 用户打完路径**失焦**（去点别的）之后，4 秒一次的轮询会把
+  //   原先只挡"当前正聚焦"—— 用户打完路径**失焦**之后，4 秒一次的轮询会把
   //   服务端那份**旧值**写回去 ⇒ 面板上显示的还是老路径 ⇒ 点 ▶ 时 `dvPayload()` 读到的是
   //   被回写过的旧值 ⇒ **产物落到旧目录** ✗（而且用户以为自己已经改了）。
   //   改脏标记在 `input` 事件里置上、在保存成功时清掉。
@@ -2339,7 +2484,7 @@ function _stagePairs(pairs, name){
   const flat=pairs.every(([,rel])=>rel.indexOf('/')<0);
   $('up_pick').style.display='block';
   $('up_pick').innerHTML='已选 <b>'+pairs.length+'</b> 份原件，来自 <b>'+esc(_pend.name)+'</b>'
-    +(flat?'<br><span style="color:var(--wait)">⚠ 这些都是散文件（没有子目录）—— 请确认题目附件确实没有嵌套目录</span>'
+    +(flat?'<br><span style="color:var(--wait)">⚠ 这些都是散文件 —— 请确认题目附件确实没有嵌套目录</span>'
           :'<br><span style="color:var(--dim)">保留了子目录结构</span>');
   $('up_go').disabled=false;
 }
@@ -2425,6 +2570,41 @@ async function postRedo(stage){
   if(!r.ok) return {ok:false, why:(d&&d.detail)||('HTTP '+r.status)};
   return {ok:true, cleared:d.cleared||[]};
 }
+// ★ 清空之前先问后端：输入变了的话，这一轮**不可能**从所选阶段起跑
+//   （`/api/start` 会 409）。必须在用户点「确定」之前说清楚 ——
+//   否则确认框一关、产物已经进了 cache，才弹出「没能开始」。
+//   查不通时**不冒充“能跑”**：仍然允许用户清空，但清空后不自动起跑
+//   （旧版驱动的 `/api/start` 未必有 409 兜底）；真正的兜底仍是 `/api/start`。
+async function lateStartPreflight(stage){
+  try{
+    const r=await fetch('/api/start/preflight?from_stage='+encodeURIComponent(stage));
+    let d={}; try{ d=await r.json(); }catch(_){}
+    if(!r.ok){
+      // 旧版驱动没有这个端点（404）或接口报错：**不能假装“输入没变”**。
+      //   仍然允许用户清空，但清空后不自动起跑 —— 否则旧的 `/api/start`
+      //   可能没有 409 兜底，会真的拿新输入从中间阶段跑。
+      return {ok:false, verified:false,
+              why:'无法核对输入版本（预检接口不可用：'+((d&&d.detail)||('HTTP '+r.status))+'）'};
+    }
+    return {ok:d.ok!==false, verified:true, why:(d&&d.detail)||''};
+  }catch(e){
+    return {ok:false, verified:false,
+            why:'无法核对输入版本（预检请求失败：'+((e&&e.message)||e)+'）'};
+  }
+}
+// 确认框/成功提示里那句“清空之后会怎样”。`verified:false` = 连输入版本都没核成，
+//   既不能说“能重跑”，也不能冒充“输入一定变了”；一律停在这里，让用户点 ▶。
+function redoConsequence(nm, pre){
+  if(pre.ok) return '随后从该阶段重跑？';
+  if(pre.verified) return '清空后不能从「'+nm+'」重跑，只能点 ▶ 开始全链（从 ⓪ 读题 起跑）。';
+  return '清空后不会自动起跑；请点 ▶ 开始全链。';
+}
+// 「该阶段及之后」的显示清单。只用于确认框，不参与真实清空 ——
+//   真实清空仍由后端 `_redo_from` 按 `STAGES` 决定。
+function redoStageNames(stage){
+  const i=STAGE_ORDER.indexOf(stage);
+  return i<0?[]:STAGE_ORDER.slice(i);
+}
 // ★ 链正在跑时，**一键**走完「暂停当前阶段 → 清空 → 从选定阶段重跑」（2026-09-23 用户要求）。
 //   原先只回一句"请先停止"，用户得手动 ⏹ → 清空 → ▶ 三步，且运行中那一步还会被静默拒绝 ✗。
 //   顺序不能颠倒：暂停要等**真的停下**（暂停是"请求中断"，收尾要几秒到几十秒）才清空，
@@ -2438,19 +2618,49 @@ async function pauseAndWait(){
   }
   return {ok:false, why:'暂停等待超时（4 分钟）'};
 }
-$('redo_btn').onclick=async()=>{
+async function redoFromSelected(){
   const id=$('stage_sel').value; if(!id) return;
   const nm=STAGE_NAME[id]||id;
-  if(!confirm('清空「'+nm+'」及之后全部产物，随后从该阶段重跑？（已完成的前序会自动跳过）')) return;
+  const tail=redoStageNames(id);
+  const list=tail.map(s=>STAGE_NAME[s]||s).join('、');
+  // ★ 先问后端能不能从该阶段起跑，再决定确认框怎么写。
+  //   输入已变更（或预检不可用）时，确认框必须把「清空之后怎么办」一起说清：
+  //   用户点取消 ⇒ 一个文件都不动；点确定 ⇒ 只清空，不自动起跑
+  //   （不能拿一个注定 409 的 from_stage 再去撞一次）。
+  let pre=await lateStartPreflight(id);
+  const ask=pre.ok
+    ? ('清空「'+nm+'」及之后全部产物（共 '+tail.length+' 个阶段：'+list+'），'
+       +redoConsequence(nm,pre)+'\n\n产物先暂存到 cache/，可恢复。')
+    : ((pre.why||'不能从该阶段起跑')+'\n\n'
+       +'仍要清空「'+nm+'」及之后全部产物（共 '+tail.length+' 个阶段：'+list+'）吗？\n'
+       +redoConsequence(nm,pre)+'\n'
+       +'产物先暂存到 cache/，可恢复。');
+  if(!confirm(ask)) return;
   let res=await postRedo(id);
   if(!res.ok){
-    if(!confirm('链条正在跑：'+res.why+'\n\n要「暂停当前阶段 → 清空 → 从「'+nm+'」重跑」吗？')) return;
+    if(!confirm('链条正在跑：'+res.why+'\n\n要「暂停当前阶段 → 清空」吗？\n'
+      +(pre.ok ? ('清空后从「'+nm+'」重跑。') : redoConsequence(nm,pre)))) return;
     const pw=await pauseAndWait();
     if(!pw.ok){ alert('暂停失败 —— '+pw.why+'\n请手动 ⏹ 停止后再点本按钮'); loadState(); return; }
+    // 暂停期间输入也可能被改：只在原先允许从该阶段起跑时重问一次；
+    // 原先就不允许的保持不允许（用户已经按「只清空、不自动起跑」确认过）。
+    if(pre.ok) pre=await lateStartPreflight(id);
     res=await postRedo(id);
     if(!res.ok){ alert('清空失败 —— '+res.why); loadState(); return; }
+    if(!pre.ok){
+      alert('已暂停并清空：'+(res.cleared.join(', ')||'无')+'\n'
+        +(pre.why||'不能从该阶段重跑。')+'\n'
+        +(pre.verified?'（点 ▶ 开始全链 会从 ⓪ 读题 起跑）':'（清空后不会自动起跑；请点 ▶ 开始全链）'));
+      loadState(); return;
+    }
     alert('已暂停并清空：'+(res.cleared.join(', ')||'无')+'\n现在从「'+nm+'」开始重跑。'); loadState();
     await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:dvPayload(id)});
+    loadState(); return;
+  }
+  if(!pre.ok){
+    alert('已清空：'+(res.cleared.join(', ')||'无')+'\n'
+      +(pre.why||'不能从该阶段重跑。')+'\n'
+      +(pre.verified?'（点 ▶ 开始全链 会从 ⓪ 读题 起跑）':'（清空后不会自动起跑；请点 ▶ 开始全链）'));
     loadState(); return;
   }
   // ★ 清空之后**自动开始**（2026-09-27 用户：「从所选阶段重跑点完后应该自动开始才对」）——
@@ -2467,11 +2677,12 @@ $('redo_btn').onclick=async()=>{
     alert('已清空：'+(res.cleared.join(', ')||'无')+'\n已从「'+nm+'」开始重跑 ✓');
   }
   loadState();
-};
+}
+$('redo_btn').onclick=redoFromSelected;
 $('wipe_btn').onclick=async()=>{
   if(!confirm('确定要清空全部产物、从文献开始完整重跑吗？此操作不可撤销。')) return;
-  const t=prompt('请在下方输入“清空”二字确认（防止误点）：');
-  if(t!=='清空'){ alert('已取消（未输入“清空”）。'); return; }
+  const t=prompt('请在下方输入“清空”二字确认：');
+  if(t!=='清空'){ alert('已取消。'); return; }
   const res=await postRedo('literature');
   if(!res.ok){ alert('没能清空 —— '+res.why); loadState(); return; }
   // 与「从所选阶段重跑」同款：清空完**自动开始**（用户 2026-09-27 的口径：「点完后应该自动开始」）。
@@ -2926,7 +3137,7 @@ function renderDecision(st){
     $('dc_stage').insertAdjacentHTML('afterbegin','<option value="">— 请选择目标阶段 —</option>');
     $('dc_stage').value='';
   }
-  // ★ 超时（延长）面板里的「目标阶段」下拉与延长**毫不相干** —— 延长的是**正在跑的那个阶段**，
+  // ★ 超时面板里的「目标阶段」下拉与延长**毫不相干** —— 延长的是**正在跑的那个阶段**，
   //   不是下拉里选的阶段（用户 2026-09-27：「目前在跑 10，前面却写的 4 或者别的阶段超时延长」
   //   「延长又不是他，选他没啥用」）。⇒ **延时时把下拉收起**，并把「再延长 N 分钟 + 延长按钮」
   //   挪到它原来的位置上（用户：「仅在延长时把这个选项删了，把后面这个延长移到选项的位置」）。
@@ -3127,7 +3338,7 @@ async function decide(action){
   // ★ 服务端会**再校验一遍**（`_validate_roles`）—— 前端只是收集，不做判定。
   if(action==='confirm'){
     const ik=_ikCollect();
-    if(!ik.roles.length){ msg.textContent='确认表读不出来（页面可能被改过）—— 刷新一下再试。'; return; }
+    if(!ik.roles.length){ msg.textContent='确认表读不出来 —— 刷新一下再试。'; return; }
     const n=ik.roles.filter(r=>r.role!=='ignore'&&r.role!=='needs_manual').length;
     if(!confirm('确认 AI 读到的内容？\n\n会把 _inbox 里的文件按上面那张表搬到位（'+n+' 份），'
                +'删掉 _inbox，然后从 ① 文献定向 开始跑链。\n'
@@ -3232,11 +3443,11 @@ function logPane(){
     //   于是往上翻之后就没有回底部的入口了 —— 这个按钮补上。
     //   ★ 它挂在 `view` 上、**不是**挂在滚动容器 `d` 里：挂在 `d` 里会跟着内容一起滚走。
     //     `view` 是 `position:relative` 的，所以 `position:absolute` 正好浮在右下角。
-    //   ★ 只在**离开底部**时出现：贴在底部还杵着它，会挡住最新几行。（App 里都是这个行为。）
+    //   ★ 只在**离开底部**时出现：贴在底部还杵着它，会挡住最新几行。
     const b=document.createElement('div');
     b.className='logjump';   // 换皮抓手（同 .logpane）；hover 的行内样式会被主题的 !important 压住
     b.textContent='↓ 回到最新';
-    b.title='滚到最底下（往上翻历史之后用）';
+    b.title='滚到最底下';
     // 配色：**蓝色框 + 黄字**（用户 2026-09-28 拍板；黄字用 `--run` #f1c40f，比纯白更醒目）。
     // 配色：**蓝框 + 荧光黄字**（用户 2026-09-28 拍板）。
     //   · 框 `--acc` #4da3ff —— 主题里"可点"的信号色（`a{color:var(--acc)}`）
@@ -3274,6 +3485,61 @@ function exitLogPane(){
 }
 function scheduleLog(){ if(curTab!=='log'||_logTimer) return; _logTimer=setTimeout(()=>{ _logTimer=null; renderLog(false); },120); }
 function appendLog(t){ logBuf.push(sanitizeLog(t)); if(logBuf.length>LOG_MAX) logBuf.shift(); scheduleLog(); }
+// 日志行拆段（纯函数，便于回归）：时间 / 缩进 / 图标 / 工具标签 / 动作词 / 正文。
+// 真实 server 日志常见 `  🛠 [sid] Tool: …` 与 `  ✗ [sid] 工具报错: …`：
+// 旧 renderLog 只剥一个空格、且要求 rest 以 `[` 开头，整行会掉进 .lx —— 主题的
+// .tk/.cmd 配色永远吃不到。这里先把缩进留下来，再认图标，再认标签/动作词。
+function logParts(line){
+  let rest=String(line==null?'':line);
+  let time='', indent='', icon='', iconText='', tag='', cmd='', text='';
+  const mt=/^(\[\d{2}:\d{2}:\d{2}\])([\s\S]*)$/.exec(rest);
+  if(mt){ time=mt[1]; rest=mt[2]; if(rest.charAt(0)===' ') rest=rest.slice(1); }
+  const im=/^(\s*)/.exec(rest); indent=im[1]; rest=rest.slice(indent.length);
+  const cps=Array.from(rest);
+  if(cps.length && ICON_ART[cps[0]]){
+    let k=1; if(cps[1]==='️') k=2;
+    iconText=cps.slice(0,k).join(''); icon=ICON_ART[cps[0]];
+    rest=cps.slice(k).join('').replace(/^\s+/,'');
+  }
+  // 动作词：英文工具名，以及 server 自己写的中文错误前缀（冒号全角/半角都认）。
+  const m2=/^(\[[A-Za-z][\w-]{0,23}\])(?:\s*((?:[A-Za-z][A-Za-z]{1,11}:)|(?:工具报错[:：])|(?:非JSON[:：])|(?:读输出线程异常[:：])|(?:等待进程退出时异常[:：])))?\s*([\s\S]*)$/.exec(rest);
+  if(m2 && (m2[2] || m2[1].toLowerCase()!=='[step]')){
+    tag=m2[1]; cmd=m2[2]||''; text=m2[3]||'';
+  } else {
+    text=rest;
+  }
+  return {time,indent,icon,iconText,tag,cmd,text};
+}
+// 日志正文里的“语义颜色”：文件/目录、URL/IP、时间/耗时、数值单位、告警词、完成词。
+// 只做**展示**上的拆分；文本仍按原样逐字 textContent 写入，零注入面。
+function logTokens(text){
+  const s=String(text==null?'':text);
+  const re=/(https?:\/\/[^\s，。；、）)]+)|(\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b)|((?:[A-Za-z]:[\\/]|\.{0,2}[\\/])?(?:[\w.\-一-龥]+[\\/])+[\w.\-一-龥]+)|([A-Za-z0-9_一-龥][\w.\-一-龥]*\.(?:py|md|json|tex|pdf|png|jpg|jpeg|html|js|css|xlsx|xls|csv|npz|log|txt|yaml|yml|sh|bat|ps1|toml|ini)\b)|(\b\d{1,2}:\d{2}(?::\d{2})?\b)|(\b\d+(?:\.\d+)?\s*(?:ms|s|m|min|h)\b)|(\d+\s*分\s*\d+\s*秒|\d+\s*分|\d+\s*秒|\d+\s*小时)|(\b\d+(?:\.\d+)?\s*(?:KB|MB|GB|K|kg|cm|mm|%)(?![A-Za-z0-9_]))|(超时|失败|错误|异常|警告)|(?<![未不])(完成|成功|通过|已签|就绪)/g;
+  const out=[]; let last=0, m;
+  while((m=re.exec(s))){
+    if(m.index>last) out.push({text:s.slice(last,m.index),cls:''});
+    let cls='';
+    if(m[1]||m[2]) cls='log-url';
+    else if(m[3]) cls='log-path';
+    else if(m[4]) cls='log-file';
+    else if(m[5]||m[6]||m[7]) cls='log-time';
+    else if(m[8]) cls='log-num';
+    else if(m[9]) cls='log-warn';
+    else if(m[10]) cls='log-ok';
+    out.push({text:m[0],cls});
+    last=m.index+m[0].length;
+  }
+  if(last<s.length) out.push({text:s.slice(last),cls:''});
+  return out;
+}
+function logLx(text){
+  const lx=document.createElement('span'); lx.className='lx';
+  for(const t of logTokens(text)){
+    if(!t.cls){ lx.appendChild(document.createTextNode(t.text)); continue; }
+    const s=document.createElement('span'); s.className=t.cls; s.textContent=t.text; lx.appendChild(s);
+  }
+  return lx;
+}
 function renderLog(forceScroll){ forceScroll=(forceScroll===undefined)?true:forceScroll;
   if(curTab!=='log') return;
   try{
@@ -3294,34 +3560,23 @@ function renderLog(forceScroll){ forceScroll=(forceScroll===undefined)?true:forc
     /* 图标映射表在全局（ICON_ART）：日志行首图标、按钮、阶段行共用同一张。 */
     const frag=document.createDocumentFragment();
     for(let li=0; li<logBuf.length; li++){
-      const line=logBuf[li];
+      const p=logParts(logBuf[li]);
       const d=document.createElement('div'); d.className='ln';
-      let rest=line;
-      const mt=/^(\[\d{2}:\d{2}:\d{2}\])([\s\S]*)$/.exec(line);
-      if(mt){
-        const t=document.createElement('span'); t.className='lt'; t.textContent=mt[1];
-        d.appendChild(t); rest=mt[2];
-        if(rest.charAt(0)===' ') rest=rest.slice(1);
-      }
+      if(p.time){ const t=document.createElement('span'); t.className='lt'; t.textContent=p.time; d.appendChild(t); }
+      if(p.indent) d.appendChild(document.createTextNode(p.indent));
       // 行首图标（一个码点；变体选择符 U+FE0F 跟着一起吞掉）
-      const cps=Array.from(rest);
-      if(cps.length && ICON_ART[cps[0]]){
-        let k=1; if(cps[1]==='️') k=2;
+      if(p.icon){
         const wrap=document.createElement('span'); wrap.className='ic';
-        const em=document.createElement('span'); em.className='em'; em.textContent=cps.slice(0,k).join('');
-        const px=document.createElement('i'); px.className='pxa '+ICON_ART[cps[0]];
+        const em=document.createElement('span'); em.className='em'; em.textContent=p.iconText;
+        const px=document.createElement('i'); px.className='pxa '+p.icon;
         wrap.appendChild(em); wrap.appendChild(px); d.appendChild(wrap);
-        rest=cps.slice(k).join(''); if(rest.charAt(0)===' ') rest=rest.slice(1);
       }
-      // 工具标签 + 动作词：只认 ASCII 方括号（`[第 17/17 步]` 这类中文开头的不吞）
-      const m2=/^(\[[A-Za-z][\w-]{0,23}\])(?:\s*([A-Za-z][A-Za-z]{1,11}:))?\s*([\s\S]*)$/.exec(rest);
-      if(m2 && (m2[2] || m2[1].toLowerCase()!=='[step]')){
-        const tk=document.createElement('span'); tk.className='tk'; tk.textContent=m2[1]; d.appendChild(tk);
-        if(m2[2]){ const cm=document.createElement('span'); cm.className='cmd'; cm.textContent=m2[2]; d.appendChild(cm); }
-        const lx=document.createElement('span'); lx.className='lx'; lx.textContent=(m2[2]?' ':'')+m2[3];
-        d.appendChild(lx);
+      if(p.tag){
+        const tk=document.createElement('span'); tk.className='tk'; tk.textContent=p.tag; d.appendChild(tk);
+        if(p.cmd){ const cm=document.createElement('span'); cm.className='cmd'; cm.textContent=p.cmd; d.appendChild(cm); }
+        d.appendChild(logLx((p.cmd?' ':'')+p.text));
       } else {
-        const lx=document.createElement('span'); lx.className='lx'; lx.textContent=rest; d.appendChild(lx);
+        d.appendChild(logLx(p.text));
       }
       frag.appendChild(d);
     }
@@ -3330,7 +3585,22 @@ function renderLog(forceScroll){ forceScroll=(forceScroll===undefined)?true:forc
   }catch(e){ if(view._lp) view._lp.textContent='(日志渲染失败: '+e.message+')'; }
 }
 
-async function loadState(){ const r=await fetch('/api/state'); const s=await r.json();
+async function loadState(){
+  let s=null;
+  try{
+    const r=await fetch('/api/state');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    s=await r.json();
+    if(!s||typeof s!=='object') throw new Error('响应不是 JSON 对象');
+  }catch(e){
+    // ★ 原先没有 try/catch：驱动死掉/重启时这个 4 秒轮询会**静默失败**，
+    //   页头一直停在最后一次的「运行中」，用户以为任务还在跑。现在明确说出读不到状态；
+    //   下一轮成功时 renderStages 会把状态行覆盖回去（能自愈，不粘死）。
+    //   ★ try 只包"取数和解析"：renderStages 自己的 bug 不该被误报成"驱动已停止"。
+    const el=$('status');
+    if(el){ el.textContent='⚠ 读不到运行状态（驱动可能已停止）—— 正在重试'; el.style.color='var(--fail)'; }
+    return;
+  }
   renderStages(s);
   if(s.log&&Array.isArray(s.log)){ logBuf=s.log.slice(-LOG_MAX).map(sanitizeLog); if(curTab==='log') renderLog(false); }
 }
@@ -3372,6 +3642,7 @@ function toggleSide(key){
 //   报「列表读不出来」—— 可**空是合法的**（⑨ 还没跑时 reports/ 和 figures/ 本来就没有
 //   东西，用户清理过工作区之后更是如此）⇒ 面板把"还没跑"说成"读不出来"，还让人去点重试。
 let _sideFetchFailed=false;
+let _figFetchFailed=false;
 function renderSidebar(){
   const el=$('files');
   if(!el) return;
@@ -3382,6 +3653,8 @@ function renderSidebar(){
   }
   // 文件名进 HTML 属性前**必须转义**：`title="..."` 里一个引号就能把后面整段甩到标签外面，
   // 而 `onclick='openFile(`...`)'` 里一个单引号就能让整条侧栏的点击全失效（一个坏名字连累全部）。
+  // 报告顺序由 `/api/files` 按阶段倒序给出（验收置顶），图按 mtime 倒序；
+  // 报告只标生成阶段，不标时间序号。
   const group=(key,title,items,ico,onclick)=>{
     if(!items||!items.length) return '';
     const open=sideIsOpen(key);
@@ -3391,8 +3664,14 @@ function renderSidebar(){
     if(!open) return head;
     return head + items.map(f=>{
       const jsAttr=esc(f.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")).replace(/\n/g,'');
-      return `<div class="file" title="${esc(f.name)}" onclick="${onclick(jsAttr)}">`
-           + `${ico} ${esc(f.name.split('/').pop())}</div>`;
+      // 报告只显示名字与生成阶段（如「⑨ 论文撰写」）；图统一由 ⑦ 渲染，不标阶段。
+      const stage=(key==='reports')
+        ? (f.stage_label || (f.stage ? (STAGE_NAME[f.stage]||f.stage) : ''))
+        : '';
+      const badge=stage ? `<span class="filestage" title="${esc(stage)}">${esc(stage)}</span>` : '';
+      const cls=key==='reports' ? 'file withstage' : 'file';
+      return `<div class="${cls}" title="${esc(f.name)}${stage?' · '+esc(stage):''}" onclick="${onclick(jsAttr)}">`
+           + `<span class="fname">${ico} ${esc(f.name.split('/').pop())}</span>${badge}</div>`;
     }).join('');
   };
   // ★ 拉到了、但两样都空：给一行**能刷新**的说明（2026-09-28 审出来的 low）。
@@ -3411,10 +3690,20 @@ function renderSidebar(){
                // 编辑这一行时别把后面那个不可见的 U+FE0F 删掉 —— 删了就退回原来那个丑样子。
                + group('figs','图',figList,'🖼️',n=>`openFigure('${n}')`);
 }
+function sortByMtime(list){
+  return (list||[]).slice().sort((a,b)=>{
+    const ta=Date.parse(a.mtime||'')||0, tb=Date.parse(b.mtime||'')||0;
+    return (tb-ta) || String(a.name).localeCompare(String(b.name),undefined,{numeric:true});
+  });
+}
 async function loadFiles(){
   const [reps,figs]=await Promise.all([fetchList('reports'),fetchList('fig')]);
-  if(reps) filesList=reps;
-  if(figs) figList=figs;
+  if(reps) filesList=reps;   // 报告顺序由 /api/files 按阶段倒序给出，前端不再按 mtime 重排
+  if(figs){
+    _figSeen=mergeFigList(figs,_figSeen);
+    figList=sortFigList(_figSeen);
+  }
+  _figFetchFailed=!figs;
   // `null` = 这一次真的没拉到；`[]` = 拉到了、就是空的（合法）。两者不能混为一谈。
   _sideFetchFailed = (!reps&&!figs);
   renderSidebar();
@@ -3424,47 +3713,163 @@ async function loadFiles(){
 //   证据：CSS 里那三条 `#view.markdown h1/h2/table` 说明**渲染器是设计里就该有的**，
 //   但全文件搜 `mdToHtml|marked|md2html` **0 命中** —— 从来没实现过；
 //   而 `openFile` 无条件 `curTab='raw'` + `textContent` ⇒ 点「报告查看」也会被立刻拽回原文，
-//   于是两个页签长得一模一样（面板在撒谎 ✗）。
+//   于是两个页签长得一模一样。
 //   现在补上：**先整体转义、再做白名单替换**（agent 写的 md 直接 innerHTML = 把仓库内容当
 //   代码执行），支持标题 / 粗体 / 行内码 / 链接 / 无序列表 / 管道表 / 围栏代码块 ——
 //   报告里实际用到的就这几种，不值得引一个 40KB 的 md 库进来。
 let curText='';                          // 当前文件原文：切页签时复用，不重发 /api/read
+let curError='';                         // 打开失败的原因（detail/HTTP 状态）：非空时 renderFile 显示错误态
 function mdEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function mdInline(s){
-  return mdEsc(s)
-    .replace(/`([^`]+)`/g,'<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+function mdAttr(s){return mdEsc(s).replace(/"/g,'&quot;');}
+function mdAssetSrc(src){
+  const s=String(src||'').trim();
+  if(/^(https?:)?\/\//i.test(s) || /^data:/i.test(s)) return s;
+  const base=(curFile||'').includes('/')?curFile.slice(0,curFile.lastIndexOf('/')+1):'';
+  return '/api/read?path='+encodeURIComponent((base+s).replace(/^\.\//,''));
+}
+function mdLinkHref(url){
+  const s=String(url||'').trim();
+  if(/^(https?:|mailto:)/i.test(s) || s.startsWith('#')) return s;
+  return '/api/read?path='+encodeURIComponent(s);
+}
+function mdMath(tex,display){
+  const src=String(tex==null?'':tex).trim();
+  if(!src) return '';
+  try{
+    if(typeof katex!=='undefined' && katex && typeof katex.renderToString==='function'){
+      return katex.renderToString(src,{displayMode:!!display,throwOnError:false,trust:false,
+        strict:'ignore',errorColor:'#d33'});
+    }
+  }catch(e){}
+  return '<span class="mathraw'+(display?' mathblock':'')+'">'+mdEsc(src)+'</span>';
+}
+function mdInline(s, parentTok){
+  const tok=[]; const stash=html=>{ tok.push(html); return '\u0000T'+(tok.length-1)+'\u0000'; };
+  s=String(s==null?'':s);
+  // 行内码/公式/图片/链接先抽走：里面的 * _ [ ] 不该再被强调规则碰。
+  s=s.replace(/`([^`]+)`/g,(m,c)=>stash('<code>'+mdEsc(c)+'</code>'));
+  s=s.replace(/\$\$([^$]+)\$\$/g,(m,tex)=>stash('<span class="mathblock">'+mdMath(tex,true)+'</span>'));
+  s=s.replace(/\$([^$\n]+?)\$/g,(m,tex)=>stash('<span class="math">'+mdMath(tex,false)+'</span>'));
+  s=s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,(m,alt,src)=>
+    stash('<img class="mdimg" loading="lazy" alt="'+mdAttr(alt)+'" src="'+mdAttr(mdAssetSrc(src))+'">'));
+  s=s.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,(m,txt,url)=>
+    stash('<a href="'+mdAttr(mdLinkHref(url))+'" target="_blank" rel="noopener">'+mdInline(txt,tok)+'</a>'));
+  s=mdEsc(s);
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+     .replace(/__([^_]+)__/g,'<strong>$1</strong>')
+     .replace(/~~([^~]+)~~/g,'<del>$1</del>')
+     .replace(/(^|[^\w])\*([^*\n]+)\*/g,'$1<em>$2</em>');
+  // 链接文字里可能还有行内码/公式/图片的 token；替换后必须再扫一遍，
+  // 否则外层 token 被换成含内层 token 的 HTML 时，内层 NUL 会直接进 DOM。
+  const resolve=(str,arr)=>{
+    let prev;
+    do { prev=str; str=str.replace(/\u0000T(\d+)\u0000/g,(m,i)=>arr[+i]||''); } while(str!==prev);
+    return str;
+  };
+  if(tok.length) s=resolve(s,tok);
+  if(parentTok) s=resolve(s,parentTok);
+  return s;
+}
+function mdSplitRow(line){
+  let s=String(line||'').trim();
+  if(s.startsWith('|')) s=s.slice(1);
+  if(s.endsWith('|')) s=s.slice(0,-1);
+  const cells=[]; let cur='', inCode=false, inMath=false;
+  for(let i=0;i<s.length;i++){
+    const ch=s[i], nx=s[i+1];
+    // `\|` 在正文里还原成 |；在 code / math 里必须原样留着（LaTeX 的范数就是 \|）。
+    if(ch==='\\'&&nx==='|'){ cur+=(inCode||inMath)?'\\|':'|'; i++; continue; }
+    if(ch==='`'){ inCode=!inCode; cur+=ch; continue; }
+    if(ch==='$' && !inCode){ inMath=!inMath; cur+=ch; continue; }
+    if(ch==='|' && !inCode && !inMath){ cells.push(cur.trim()); cur=''; continue; }
+    cur+=ch;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+function mdAlign(cell){
+  const c=String(cell||'').trim();
+  if(!/^:?-{3,}:?$/.test(c)) return '';
+  const l=c.startsWith(':'), r=c.endsWith(':');
+  return l&&r?'center':(r?'right':(l?'left':''));
+}
+function mdTable(header,aligns,rows){
+  const cell=(tag,c,i)=>'<'+tag+(aligns[i]?' style="text-align:'+aligns[i]+'"':'')+'>'+mdInline(c)+'</'+tag+'>';
+  const head='<thead><tr>'+header.map((c,i)=>cell('th',c,i)).join('')+'</tr></thead>';
+  const body=rows.length?('<tbody>'+rows.map(r=>'<tr>'+header.map((_,i)=>cell('td',r[i]||'',i)).join('')+'</tr>').join('')+'</tbody>'):'';
+  // 宽表由 wrapper 横向滚动；表格本身不再被 width:100% 挤成每列一个字符。
+  return '<div class="tablewrap"><table>'+head+body+'</table></div>';
 }
 function mdToHtml(src){
-  const out=[]; let inCode=false,inTable=false,inList=false;
-  const closeTable=()=>{ if(inTable){out.push('</tbody></table>');inTable=false;} };
-  const closeList =()=>{ if(inList){out.push('</ul>');inList=false;} };
-  for(const line of String(src).replace(/\r\n?/g,'\n').split('\n')){
-    if(/^\s*```/.test(line)){ closeTable(); closeList();
-      out.push(inCode?'</code></pre>':'<pre><code>'); inCode=!inCode; continue; }
-    if(inCode){ out.push(mdEsc(line)); continue; }
-    const h=line.match(/^(#{1,6})\s+(.*)$/);
-    if(h){ closeTable(); closeList(); const n=Math.min(h[1].length+1,6);
-      out.push('<h'+n+'>'+mdInline(h[2])+'</h'+n+'>'); continue; }
-    if(/^\s*\|.*\|\s*$/.test(line)){
-      if(/^[\s|:-]+$/.test(line)) continue;                 // 表格分隔行 |---|---|
-      if(!inTable){ out.push('<table><tbody>'); inTable=true; }
-      const cells=line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>c.trim());
-      out.push('<tr>'+cells.map(c=>'<td>'+mdInline(c)+'</td>').join('')+'</tr>');
+  const lines=String(src==null?'':src).replace(/\r\n?/g,'\n').split('\n');
+  const out=[]; let para=[]; let i=0;
+  // 中文硬折行不插空格；英文/中英混排仍按空格拼接。
+  const joinPara=(ls)=>ls.reduce((acc,line)=>{
+    if(!acc) return line;
+    const a=acc[acc.length-1], b=line[0]||'';
+    const cjkA=/[一-鿿]$/.test(acc), cjkB=/^[一-鿿]/.test(line);
+    return acc + ((cjkA&&cjkB)?'':' ') + line;
+  },'');
+  const flush=()=>{ if(para.length){ out.push('<p>'+mdInline(joinPara(para))+'</p>'); para=[]; } };
+  while(i<lines.length){
+    const line=lines[i];
+    if(!line.trim()){ flush(); i++; continue; }
+    let fm=line.match(/^\s*```([\w-]*)\s*$/);
+    if(fm){
+      flush(); const lang=fm[1]; const code=[]; i++;
+      while(i<lines.length && !/^\s*```\s*$/.test(lines[i])){ code.push(lines[i]); i++; }
+      if(i<lines.length) i++;
+      out.push('<pre><code'+(lang?' class="lang-'+mdAttr(lang)+'"':'')+'>'+mdEsc(code.join('\n'))+'</code></pre>');
       continue;
     }
-    closeTable();
-    const li=line.match(/^\s*[-*+]\s+(.*)$/);
-    if(li){ if(!inList){out.push('<ul>');inList=true;} out.push('<li>'+mdInline(li[1])+'</li>'); continue; }
-    closeList();
-    out.push(line.trim()?'<p>'+mdInline(line)+'</p>':'');
+    let hm=line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
+    if(hm){ flush(); const n=hm[1].length; out.push('<h'+n+'>'+mdInline(hm[2])+'</h'+n+'>'); i++; continue; }
+    if(/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)){ flush(); out.push('<hr>'); i++; continue; }
+    if(/^\s*>\s?/.test(line)){
+      flush(); const q=[];
+      while(i<lines.length && /^\s*>\s?/.test(lines[i])){ q.push(lines[i].replace(/^\s*>\s?/,'')); i++; }
+      out.push('<blockquote>'+q.map(x=>x.trim()?('<p>'+mdInline(x)+'</p>'):'').join('')+'</blockquote>');
+      continue;
+    }
+    // 管道表：当前行含 |，下一行是 |---|:---:| 分隔（无外框表格也认）。
+    if(line.includes('|') && i+1<lines.length &&
+       /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i+1])){
+      flush(); const header=mdSplitRow(line); const aligns=mdSplitRow(lines[i+1]).map(mdAlign); i+=2;
+      const rows=[];
+      while(i<lines.length && lines[i].includes('|') && lines[i].trim()){ rows.push(mdSplitRow(lines[i])); i++; }
+      out.push(mdTable(header,aligns,rows)); continue;
+    }
+    let lm=line.match(/^\s*([-*+]|\d+\.)\s+(.*)$/);
+    if(lm){
+      flush(); const ordered=/\d+\./.test(lm[1]); const items=[];
+      while(i<lines.length){
+        // 列表项之间夹空行（样张报告很常见）时继续同一张列表，别拆成多个 <ul> 拉开大缝。
+        if(!lines[i].trim()){
+          let j=i; while(j<lines.length && !lines[j].trim()) j++;
+          const nx=lines[j]||'';
+          const same=ordered?/^\s*\d+\.\s+/.test(nx):/^\s*[-*+]\s+/.test(nx);
+          if(same){ i=j; continue; }
+          break;
+        }
+        const m=lines[i].match(/^\s*([-*+]|\d+\.)\s+(.*)$/); if(!m) break;
+        let body=m[2]; let task='';
+        const tm=body.match(/^\[([ xX])\]\s+(.*)$/);
+        if(tm){ task='<input type="checkbox" disabled'+(tm[1].toLowerCase()==='x'?' checked':'')+'> '; body=tm[2]; }
+        items.push('<li>'+task+mdInline(body)+'</li>'); i++;
+      }
+      const tag=ordered?'ol':'ul';
+      out.push('<'+tag+'>'+items.join('')+'</'+tag+'>'); continue;
+    }
+    // 普通段落：连续非空行合成一段（中文报告多是硬折行，别一行一个 <p>）。
+    para.push(line.trim()); i++;
   }
-  closeTable(); closeList();
-  if(inCode) out.push('</code></pre>');
+  flush();
   return out.join('\n');
 }
 function renderFile(){
+  // 打不开的文件走错误态：`curError` 由 openFile 写入（detail / HTTP 状态），
+  // 绝不能让 `curText=''` 把查看区清成空白 —— 用户会以为"点了没反应"。
+  if(curError){ view.className=''; view.innerHTML='<div class="fileerr">⚠ '+esc(curError)+'</div>'; return; }
   const isMd=!!curFile&&curFile.toLowerCase().endsWith('.md');
   if(curTab==='md'&&isMd){ view.className='markdown'; view.innerHTML=mdToHtml(curText); }
   else { view.className=''; view.textContent=curText; }
@@ -3472,14 +3877,31 @@ function renderFile(){
 async function openFile(name,img){
   exitLogPane();
   curFile=name;
-  if(img){ curTab='fig'; markTabs('fig'); view.className='';
-    view.innerHTML=`<img class="grid" src="/api/read?path=${encodeURIComponent(name)}" style="max-width:100%"/>`; return; }
-  const r=await fetch('/api/read?path='+encodeURIComponent(name)); const d=await r.json();
+  if(img){ _figLoadToken++; curTab='fig'; markTabs('fig'); view.className='figview';
+    const item=(figList||[]).find(f=>f.name===name)||null;
+    curError='';
+    view.innerHTML=figCard(name,true,item); return; }
+  let r=null, d=null, why='';
+  try{
+    r=await fetch('/api/read?path='+encodeURIComponent(name));
+    // 404 的响应体是 `{detail}`（没有 text），非 JSON 时也不该把后面的逻辑炸掉。
+    try{ d=await r.json(); }catch(_){ d=null; }
+  }catch(e){ why=(e&&e.message)||'网络错误'; }
   // ★ `await` 期间 SSE 可能**又建了一个**日志面板（`renderLog` → `logPane()`），而下面
   //   写 `view.innerHTML` / `view.textContent` 会把那个节点从 DOM 里摘掉、却**不清
   //   `view._lp`** ⇒ 之后 `logPane()` 以为它还在、直接返回那个孤儿 ⇒ 运行日志页签**
   //   永久空白**、"↓ 回到最新"也一起消失 ✗（2026-09-28 审出来的）。所以再清一次。
   if(view._lp) exitLogPane();
+  // ★ 必须看 `r.ok`：原先直接 `curText=d.text||''`，/api/read 返回 404 `{detail}` 时
+  //   这行把 curText 清成空串，renderFile 渲染一份空 markdown ⇒ 页面整块空白。
+  //   失败一律进错误态（带 detail / HTTP 状态），不要再静默清屏。
+  if(!r||!r.ok||!d||typeof d!=='object'){
+    why=why||(d&&(d.detail||d.error))||(r?('HTTP '+r.status):'请求失败');
+    curText=''; curError='打不开 '+name+'：'+why;
+    if(curTab!=='md') curTab='md';
+    markTabs(curTab); renderFile(); return;
+  }
+  curError='';
   curText=d.text||'';
   // ⚠️ 直接改 `curTab`，**不能**调 `setTab(...)`：setTab 的 'md' 分支会回调 openFile，
   // 而 openFile 又调 setTab —— 无终止条件，点一次报告就会无限循环发 /api/read
@@ -3494,11 +3916,85 @@ async function openFile(name,img){
   renderFile();
 }
 function markTabs(t){ document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===t)); }
-// 点侧栏的一张图：直接大字显示这一张（不进图片网格，免得"点的是哪张"看不出来）
+// 图片标题：文件名 → 人话；未收录的退回文件名。只影响图片页的 caption，不动侧栏。
+const FIG_TITLES={
+  'fig1_analysis_flow.png':'图 1 · 分析流程图',
+  'fig2_geometry.png':'图 2/3 · 药材几何与传热传质耦合结构',
+  'fig4_temperature_moisture.png':'图 4 · 问题1的温度场与水分浓度场',
+  'fig5_dry_front.png':'图 5 · 问题2的含水率场与干前沿推进',
+  'fig6_temperature_radial.png':'图 6 · 问题2的温度场与径向温差时程',
+  'fig8_judgement_zero.png':'图 8 · 问题3的判据函数与零点',
+  'fig9_late_moisture.png':'图 9 · 问题3末段的含水率场与干前沿',
+  'fig11_material_coord.png':'图 11 · 问题4在材料坐标下的含水率场',
+};
+// 图按修改时间倒序（2026-10-20 用户要求：最新生成的放最上面）；旧版按 figN 自然序。
+function sortFigList(list){ return sortByMtime(list); }
+// 会话内“见过的图”：/api/files 只列盘上现有的 png；某张暂时不在列表里时，
+// 用上次见过的名字留一个缺图槽，别让后面的图往前挤（用户 2026-10-18 的原话）。
+let _figSeen=[];
+let _figLoadToken=0;
+function mergeFigList(figs,seen){
+  const now=new Set((figs||[]).map(f=>f.name));
+  const out=(figs||[]).slice();
+  for(const s of seen||[]) if(!now.has(s.name)) out.push({...s,missing:true});
+  return out;
+}
+function figTitle(name){
+  const base=String(name||'').split('/').pop();
+  return FIG_TITLES[base]||base;
+}
+// 固定 16:10 槽 + 缺图占位：图片 404 或从列表里暂时消失时，卡片和槽位仍在，网格不重排。
+function figCard(name,single,opt){
+  const title=figTitle(name), base=String(name||'').split('/').pop();
+  const missing=!!(opt&&opt.missing);
+  const click=single?'':' onclick="openFigure(this.dataset.name)"'
+    +' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openFigure(this.dataset.name)}"'
+    +' role="button" tabindex="0"';
+  const src='/api/read?path='+encodeURIComponent(name)
+    +((opt&&opt.mtime)?'&v='+encodeURIComponent(opt.mtime):'');
+  const thumb=missing
+    ? `<div class="figthumb figmissing"><div class="missing">🖼️<span>图片缺失</span><small>${esc(base)}</small></div></div>`
+    : `<div class="figthumb"><img loading="lazy" alt="${esc(title)}" src="${src}" onerror="figMissing(this)">`
+      +`<div class="missing">🖼️<span>图片缺失</span><small>${esc(base)}</small></div></div>`;
+  return `<figure class="figcard${single?' single':''}" data-name="${esc(name)}"${click}>${thumb}`
+    +`<figcaption class="figcap"><span class="figtitle"><b title="${esc(title)}">${esc(title)}</b></span>`
+    +`<span class="figfile" title="${esc(name)}">${esc(base)}</span></figcaption></figure>`;
+}
+function figMissing(img){
+  // 第一次 404 可能是重编译/换图期间的瞬时态：换一个 v= 再试一次，第二次才落占位。
+  if(!img.dataset.retry){
+    img.dataset.retry='1';
+    const u=img.src;
+    img.src=u+(u.includes('?')?'&':'?')+'retry='+Date.now();
+    return;
+  }
+  const p=img.parentElement; if(p) p.classList.add('figmissing');
+  img.style.display='none';
+}
+function renderFigGrid(){
+  view.className='figview';
+  if(!figList.length){
+    view.innerHTML='<div class="figempty">还没有图 —— ④ 编码计算 / ⑦ 技术路线图 跑完后会列在这里。'
+      +'<button onclick="setTab(\'fig\')">刷新</button></div>';
+    return;
+  }
+  const missing=figList.some(f=>f.missing);
+  view.innerHTML='<div class="figgrid">'+figList.map(f=>figCard(f.name,false,f)).join('')+'</div>'
+    +(missing?'<div class="figempty"><button onclick="clearMissingFigs()">清除缺失图</button></div>':'');
+}
+function clearMissingFigs(){
+  _figSeen=(_figSeen||[]).filter(f=>!f.missing);
+  figList=(figList||[]).filter(f=>!f.missing);
+  renderFigGrid();
+  renderSidebar();   // 侧栏的「图」组与计数也要同步，否则清掉后左侧还留着缺图行
+}
+// 点侧栏的一张图：直接显示这一张（带「返回全部」；单图也用同一个卡片，样式不漂）
 function openFigure(name){
-  exitLogPane(); curFile=name; curTab='fig'; markTabs('fig'); view.className='';
-  view.innerHTML=`<div style="margin-bottom:6px;color:var(--dim)">${name}</div>`
-    +`<img class="grid" src="/api/read?path=${encodeURIComponent(name)}" style="max-width:100%"/>`;
+  exitLogPane(); curFile=name; curError=''; curTab='fig'; markTabs('fig'); view.className='figview';
+  _figLoadToken++;   // 取消可能还在 pending 的网格回调，别把单图覆盖成网格
+  const item=(figList||[]).find(f=>f.name===name)||null;
+  view.innerHTML='<div class="figbar"><button onclick="setTab(\'fig\')">← 全部图片</button>'
+    +'<span>'+esc(name)+'</span></div>'+figCard(name,true,item);
 }
 function setTab(t){ curTab=t; markTabs(t);
   if(t!=='log') exitLogPane();
@@ -3507,19 +4003,36 @@ function setTab(t){ curTab=t; markTabs(t);
   if(t==='md'){
     if(curFile) renderFile();
     else { view.className='markdown';
-           view.innerHTML='<i style="color:var(--dim)">在左侧点一个报告查看（markdown 已粗渲染）</i>'; }
+           view.innerHTML='<i style="color:var(--dim)">在左侧点一个报告查看</i>'; }
   }
-  else if(t==='fig'){ view.className=''; view.innerHTML='<i style="color:var(--dim)">加载图片…</i>';
-    loadFiles().then(()=>{ if(curTab!=='fig') return;   // 等列表回来再渲染，否则第一次切过去是空
-      view.innerHTML=figList.map(f=>`<img class="grid" src="/api/read?path=${encodeURIComponent(f.name)}"/>`).join('')||'(无图)'; }); }
+  else if(t==='fig'){
+    const tok=++_figLoadToken;
+    view.className='figview'; view.innerHTML='<i style="color:var(--dim)">加载图片…</i>';
+    loadFiles().then(()=>{ if(curTab!=='fig'||tok!==_figLoadToken) return;   // 等列表回来再渲染；期间切走/点单图就作废
+      if(_figFetchFailed && !figList.length){
+        view.innerHTML='<div class="figempty">图片列表读不出来（/api/files 没响应）。'
+          +'<button onclick="setTab(\'fig\')">重试</button></div>';
+        return;
+      }
+      renderFigGrid(); }); }
   else if(t==='pdf'){ loadPDF(); }
   else if(t==='log'){ renderLog(); }
   else { view.className=''; }
 }
 async function loadPDF(){
   view.className=''; view.innerHTML='<i style="color:var(--dim)">加载论文 PDF…</i>';
-  const r=await fetch('/api/pdf'); const d=await r.json();
-  if(!d.pdfs||!d.pdfs.length){ view.innerHTML='<i style="color:var(--dim)">尚无论文 PDF（跑完 9Paper-writing+15Verification 编译后出现）</i>'; return; }
+  let d=null;
+  try{
+    const r=await fetch('/api/pdf'); d=await r.json();
+    if(!r.ok) throw new Error((d&&(d.detail||d.error))||('HTTP '+r.status));
+  }catch(e){
+    // ★ 原先没有 catch：驱动停止/接口挂掉时 fetch 一直 reject ⇒ 页面永远停在
+    //   「加载论文 PDF…」。换成错误态 + 重试入口，别让 UI 假装还在加载。
+    view.innerHTML='<div class="fileerr">⚠ 论文 PDF 读不出来：'+esc((e&&e.message)||'请求失败')
+      +'<br><button onclick="setTab(\'pdf\')">重试</button></div>';
+    return;
+  }
+  if(!d||!d.pdfs||!d.pdfs.length){ view.innerHTML='<i style="color:var(--dim)">尚无论文 PDF（跑完 9Paper-writing+15Verification 编译后出现）</i>'; return; }
   const p=d.pdfs[d.pdfs.length-1];
   view.innerHTML=`<div style="margin:6px 0"><a target="_blank" href="/api/read?path=${encodeURIComponent(p.name)}">在新标签打开 ${p.name}</a></div>`+
     `<object data="/api/read?path=${encodeURIComponent(p.name)}" type="application/pdf" style="width:100%;height:calc(100% - 40px)">PDF 预览不可用，点上面链接打开</object>`;
@@ -3580,7 +4093,18 @@ $('cleanup').onclick=async()=>{
   if(!r.ok){ alert('清理失败：'+(d.detail||r.status)); return; }
   alert(d.moved && d.moved.length ? ('已移入：'+d.moved.join('、')+'\n→ '+d.dest)
                                   : '没有可清理的残留');
-  loadState();
+  // ★ 清理把 reports/ figures/ 这些**搬走**了：原先只 `loadState()` ⇒ 侧栏还列着旧报告，
+  //   点开就是 /api/read 404（现在至少显示错误态，但那份文件根本不该还挂在侧栏上）。
+  //   所以同时刷新列表、清掉正在看的文件/内容；`_figSeen` 也要清 —— 它是"会话内见过的图"
+  //   缓存，清理后继续留着会变成一串"图片缺失"的幽灵槽。
+  curFile=null; curText=''; curError='';
+  filesList=[]; figList=[]; _figSeen=[]; _figLoadToken++;   // 作废还在 pending 的图片网格回调
+  _sideFetchFailed=false; _figFetchFailed=false;
+  if(curTab!=='log'){
+    if(view._lp) exitLogPane();
+    view.className=''; view.innerHTML='<i style="color:var(--dim)">已清理 —— 左侧列表已刷新</i>';
+  }
+  await loadState(); await loadFiles();
 };
 $('dc_retry').onclick    =()=>decide('retry');
 $('dc_confirm').onclick  =()=>decide('confirm');   // ⓪ 读题：收集分类表/题面/更正说明并提交
@@ -3712,7 +4236,7 @@ $('dv_wipe').onclick=async()=>{
     +'两个「最新」里的内容、产物/cache 与 产物/其他产物、runtime/quality 的全部回执与黄灯。\n\n'
     +'会留：request/（你传的题面与附件）、data/、框架本体。\n\n'
     +'这一步**不可恢复**（不是归档、不进 cache）。')) return;
-  const word=prompt('确认删除：请原样输入「删除本题」四个字（不加字、不改字）。');
+  const word=prompt('确认删除：请原样输入「删除本题」四个字。');
   if(word===null) return;
   $('dv_msg').textContent='删除中…';
   const r=await fetch('/api/wipe-problem',{method:'POST',
@@ -3740,7 +4264,7 @@ $('dv_wipe_all').onclick=async()=>{
     +'      runtime/quality（回执、黄灯、读题快照，以及标为「不动它」的原件副本）。\n\n'
     +'会留：框架与脚本（lib/ skills/ docs/ regression/ config/）、.env 与本机配置、2026A试跑示例/。\n\n'
     +'删完**要重新上传赛题**才能再跑。这一步**不可恢复**（不是归档、不进 cache）。')) return;
-  const word=prompt('确认删除全部：请原样输入「删除全部」四个字（不加字、不改字）。');
+  const word=prompt('确认删除全部：请原样输入「删除全部」四个字。');
   if(word===null) return;
   $('dv_msg').textContent='删除中…';
   const r=await fetch('/api/wipe-all',{method:'POST',
@@ -3845,11 +4369,26 @@ $('cf_back').onclick=()=>{ startMain(); splHide(); };
 $('brand').onclick=()=>{ if(_inMain) splShow('config'); };   // 主界面标题 → 回展示页
 $('splash_brand').onclick=()=>{ if(_mainStarted) splHide(); };  // 展示页标题 → 回主界面
 
+// SSE 连接状态（页头 #conn）：驱动死掉时 EventSource 会触发 onerror，浏览器自动重连；
+// 重连成功再触发 onopen。没有这个指示，页头会一直挂着最后一次的状态（如「运行中」），
+// 用户分不清"任务还在跑"还是"驱动已经没了"。
+let _connOk=null;   // 只在状态真变时动 DOM：onmessage 每条都会调 setConn(true)
+function setConn(ok){
+  const el=$('conn'); if(!el) return;
+  if(_connOk===ok) return;
+  _connOk=ok;
+  el.textContent=ok?'● 已连接':'● 连接断开（自动重连中）';
+  el.title=ok?'与驱动的实时连接正常'
+             :'与驱动的连接已断开 —— 浏览器正在自动重连；恢复后这里会自动变回「已连接」';
+  el.style.color=ok?'var(--ok)':'var(--fail)';
+}
 function startMain(){
   if(_mainStarted){ _inMain=true; return; }
   _mainStarted=true; _inMain=true;
   const es=new EventSource('/api/stream');
-  es.onmessage=e=>{ const m=JSON.parse(e.data);
+  es.onopen=()=>setConn(true);
+  es.onerror=()=>setConn(false);
+  es.onmessage=e=>{ setConn(true); const m=JSON.parse(e.data);
     if(m.evt==='log'){appendLog(m.data);}
     if(m.evt==='state'){renderStages(m.data);}
     if(m.evt==='end'){loadState();}
@@ -3870,7 +4409,7 @@ function showGhCard(openTab){
   try{ window.open(GH_URL,'_blank','noopener'); }catch(e){}
 }
 $('ghbadge').onclick=()=>showGhCard(true);
-/* ---- 🎨 主题切换（皮肤）----
+/* ---- 🎨 主题切换 ----
    默认「手绘」（用户 2026-10-16 指定）；「深色」= 页面原来那套皮，**原样保留**（第五个画风）。
    选哪套记进 localStorage（与侧栏展开状态同一处置）；<head> 里的预绘脚本先把它套到
    `<html data-theme=…>` 上再让样式生效，所以刷新页面不会先闪一下另一套皮。 */
@@ -3891,7 +4430,7 @@ function setTheme(name,asDefault){
         document.documentElement.dataset.theme=name; }catch(e){}
   if(asDefault){ try{ localStorage.setItem('nma_theme_default',name); }catch(e){} }
   const b=$('theme_btn'); if(b) b.title='切换主题（当前：'+_themeCN(name)+'）——刷新后回到默认主题';
-  const d=$('dtheme_btn'); if(d) d.title='选择默认主题（每次进入先显示它）——当前默认：'+_themeCN(_themeDefault());
+  const d=$('dtheme_btn'); if(d) d.title='选择默认主题——当前默认：'+_themeCN(_themeDefault());
 }
 const _tb=$('theme_btn');
 if(_tb) _tb.onclick=()=>{                       // 图标钮：循环切，**不落盘**（临时看效果用）
@@ -3905,7 +4444,7 @@ function themeMenu(){
   if(!p){ p=document.createElement('div'); p.id='dtheme_pop'; document.body.appendChild(p);
     document.addEventListener('click',e=>{ if(!p.contains(e.target)) p.style.display='none'; }); }
   const cur=_themeDefault();
-  p.innerHTML='<div class="dt-head">默认主题（每次进入先显示它）</div>'
+  p.innerHTML='<div class="dt-head">默认主题</div>'
     +THEMES.map(t=>'<div class="dt-row'+(t[0]===cur?' on':'')+'" data-t="'+t[0]+'">'
       +(t[0]===cur?'✓ ':'　')+t[1]+'</div>').join('');
   p.querySelectorAll('.dt-row').forEach(r=>r.onclick=(e)=>{ e.stopPropagation();
@@ -3929,7 +4468,9 @@ const ICON_ART={'▶':'px-tplay','⏸':'px-pause','⏹':'px-stop','⬆':'px-up',
   '🔶':'px-diamond','🛠':'px-tterm','⏱':'px-clock','⏳':'px-clock','✅':'px-tcheck','✓':'px-tcheck',
   '❌':'px-warn','⚠':'px-warn','🔧':'px-plug','🔌':'px-plug','📝':'px-note','💬':'px-note',
   '📄':'px-tdoc','📕':'px-book','🖼':'px-pic','📸':'px-tcam','✍':'px-tpen','🧩':'px-tgem',
-  '♻':'px-redo','🧨':'px-warn','🐙':'px-git','🎬':'px-tplay'};
+  '♻':'px-redo','🧨':'px-warn','🐙':'px-git','🎬':'px-tplay',
+  // 2026-10-18：server 真实日志行首还有这 6 个，缺映射时整行会掉进 .lx，主题配色吃不到。
+  '✗':'px-warn','🔴':'px-warn','🟢':'px-tcheck','↪':'px-redo','📥':'px-tbox','ℹ':'px-note'};
 function _icEl(em){
   const cls=ICON_ART[em]; if(!cls) return null;
   const wrap=document.createElement('span'); wrap.className='ic';

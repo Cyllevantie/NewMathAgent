@@ -86,7 +86,8 @@ except Exception as e:
 # 5) python 编译
 try:
     import py_compile
-    for f in ["server.py", "content_quality.py", "workflow_quality.py", "attest.py", "healthcheck.py"]:
+    for f in ["server.py", "content_quality.py", "workflow_quality.py", "attest.py",
+              "healthcheck.py", "check_innovation.py"]:
         py_compile.compile(str(ROOT / "lib" / "web" / f), doraise=True)
     ck(True, "lib/web/*.py 全部编译通过")
     # 交付包模块：忘了建/写坏时这里直接红，而不是等到收口打包才发现。

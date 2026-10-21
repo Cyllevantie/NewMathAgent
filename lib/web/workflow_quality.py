@@ -170,7 +170,7 @@ def read_verdict(report, stage_id, input_digest, *, allow_v2=False):
             #   比如一次暂停让 ⑩ 停在骨架上（报告占位行写了 REVISE_HARD、侧车 UNVERIFIED）
             #   ⇒ 下次续跑就会被判「裁决冲突」⇒ 整链停机；而它的 fix 文案是
             #   「使报告末尾裁决行与侧车一致」—— 人改了占位行也还是没判定过，链照样停。
-            #   所以跳过这条：让 `read_verdict` 落到下面的结构化校验，交 UNVERIFIED（= 未完成）
+            #   所以跳过这条：让 `read_verdict` 落到下面的结构化校验，交 UNVERIFIED
             #   ⇒ 驱动走"整段重跑"那条路（`_protocol_repair` 只认 verdict_malformed ⇒ 不会
             #   只补侧车把没判过的报告洗成通过）。
             if (written["status"] != "UNVERIFIED" and data["status"] != "UNVERIFIED"

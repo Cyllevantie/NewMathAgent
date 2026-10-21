@@ -1,11 +1,14 @@
 """Physical page counts, current-PDF binding, and release gate fault injection."""
 import copy
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from lib.publication.checks import bind_map, classify, effective_policy, inspect, sha
+from lib.publication.checks import (A4_TOLERANCE_MM, appendix_pdf_issues, bind_map, classify,
+                                    effective_policy, inspect, sha)
 from lib.visualization.evidence import write_json
 
 POLICY = {"schema_version": 1, "max_counted_pages": 30, "target_counted_pages": 28,
@@ -450,6 +453,92 @@ class BoundaryPageTests(unittest.TestCase):
         write_json(self.root / "spec.json", self._pdf(shared=True))
         with self.assertRaises(ValueError):
             bind_map(self.root, self.root / "spec.json")
+
+
+def write_appendix_pdf(root, width=595.276, height=841.89, fitz=None):
+    """写 `paper_appendix/main.pdf`（默认 A4 单页）。"""
+    (root / "paper_appendix").mkdir(parents=True, exist_ok=True)
+    doc = fitz.open()
+    doc.new_page(width=width, height=height)
+    doc.save(root / "paper_appendix/main.pdf")
+    doc.close()
+
+
+class AppendixPdfTests(unittest.TestCase):
+    """附录 PDF 是**另一个工程、另一个 PDF**：主 PDF 的 A4/大小判据覆盖不到它。
+
+    `inspect()` 只打开 `paper/main.pdf`。附录排成 Letter、或超过 20MB，此前的任何
+    机械判据都不会报 —— 一路绿到交付。这一族把两条判据钉住，并保留"缺库就跳过"的口径。
+    """
+
+    def setUp(self):
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            self.skipTest("Requires PyMuPDF")
+        self.fitz = fitz
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def _policy(self, **extra):
+        write_json(self.root / "config/publication.json",
+                   {"schema_version": 1, "paper_size_mm": [210, 297],
+                    "max_pdf_bytes": 20_000_000, **extra})
+
+    def test_an_a4_appendix_passes(self):
+        self._policy()
+        write_appendix_pdf(self.root, fitz=self.fitz)
+        self.assertEqual(appendix_pdf_issues(self.root), [])
+
+    def test_a_letter_sized_appendix_is_flagged(self):
+        """负对照：A4 容差与主 PDF 同一把尺子（0.5mm），Letter 差 6mm。"""
+        self._policy()
+        write_appendix_pdf(self.root, width=612, height=792, fitz=self.fitz)
+        issues = appendix_pdf_issues(self.root)
+        self.assertEqual(len(issues), 1, issues)
+        self.assertIn("附录", issues[0])
+        self.assertIn("A4", issues[0])
+        # 容差常量本身也要与主 PDF 共用 —— 这里钉住小数位（0.5mm），防两处各写一个数
+        self.assertEqual(A4_TOLERANCE_MM, 0.5)
+
+    def test_an_oversized_appendix_is_flagged(self):
+        self._policy(max_pdf_bytes=10)
+        write_appendix_pdf(self.root, fitz=self.fitz)
+        issues = appendix_pdf_issues(self.root)
+        self.assertTrue(any("上限" in i and "附录" in i for i in issues), issues)
+
+    def test_a_missing_appendix_is_not_checked(self):
+        self._policy()
+        self.assertEqual(appendix_pdf_issues(self.root), [])
+
+    def test_without_pymupdf_it_skips_instead_of_failing(self):
+        """环境缺库 ≠ 附录不合格：返回空清单（与 `inspect` 的 UNVERIFIED 区分开）。"""
+        self._policy()
+        write_appendix_pdf(self.root, width=612, height=792, fitz=self.fitz)
+        with mock.patch.dict(sys.modules, {"pymupdf": None}):
+            self.assertEqual(appendix_pdf_issues(self.root), [])
+
+
+class AppendixWordingTests(unittest.TestCase):
+    """`require_appendix` 的报错文案：附录登记的是**支撑材料清单**，源码散装提交。
+
+    旧文案写「登记支撑文件清单与完整源程序」—— 与现行提交口径冲突（源码以 .py 平铺，
+    不排进论文附录）。判据本身照旧要拦「正文之后没有附录」。
+    """
+
+    def test_the_error_asks_for_support_material_not_full_source(self):
+        policy = dict(POLICY, require_appendix=True)
+        mapping = {"schema_version": 1, "spans": [span("body", 1, 2)]}
+        with self.assertRaises(ValueError) as cm:
+            classify(2, mapping, policy)
+        message = str(cm.exception)
+        self.assertIn("支撑材料清单", message)
+        self.assertIn("散装 .py", message)
+        self.assertNotIn("完整源程序", message)
+        # 反向对照：补上附录就放行 —— 上面失败是因为缺附录，不是文案把判据改坏了
+        ok = {"schema_version": 1, "spans": [span("body", 1, 1), span("appendix", 2, 2)]}
+        self.assertEqual(classify(2, ok, policy)["counts"]["appendix"], 1)
 
 
 class PdfBindingTests(unittest.TestCase):

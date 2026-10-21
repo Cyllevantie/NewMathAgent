@@ -31,6 +31,9 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 - `reports/RESULTS_REPORT.md`（5coding 产出，逐子问题的结论、结果文件、图）。
 - `reports/RESULT_AUDIT_REPORT.md`（5Result-credibility-audit 产出：哪些结论可信、哪些已标为可疑）。
 - `reports/ANALYSIS_MODELING_REPORT.md` 中的关键参数与约束。
+- `reports/INNOVATION_LEDGER.json`（② 的设计台账，只读）。
+- `reports/INNOVATION_MEASUREMENT.json`（④ 的实测值，只读）。
+- `reports/INNOVATION_AUDIT.json`（⑤ 的独立复核结论，只读）。
 
 ## 必须产出
 
@@ -40,6 +43,18 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 - 敏感参数清单（按影响大小排序，注明取值依据与不确定性来源）
 - 给 9Paper-writing 的「灵敏度分析」节与「讨论/局限」节的可直接引用素材（数值 + 一句话解读）
 - 明确标记：哪些结论强稳健（换口径/扰动均不变）、哪些对某参数敏感（写作时必须披露并解释）
+- **`reports/INNOVATION_ROBUSTNESS.json`**：每个 `core=true` 的 adopted 项至少做 2 类
+  扰动/重抽样/口径对照，写
+  `{"schema_version":1,"items":{"INN-1":{"robustness":{"survives":true/false,"evidence":"...","checks":[{"what":"...","result":"..."}]}}}}`；
+  任何计划写进论文 2.5 的 supporting 项也要有 `survives=true`。不稳时在同一条目里写
+  `claim_scope`，把结论限定到实际成立的范围内。
+  **若 `survives=false`，不能继续保留 `core=true`**：在 sidecar 里写 `core=false`
+  （supporting/关键处理）或 `status=downgraded` + `downgrade_reason`；**不要改设计台账**
+  （`INNOVATION_LEDGER.json` 是 ② 的字段）。否则 ⑨ 的 write 检查会拒绝它。
+  **主答案护栏**：若该项让主答案偏离基线超过 `primary_guard.allowed_relative_change`，
+  稳健性检验必须包含“这个偏离在扰动下是否仍存在、是否有独立证据支持”；只是“扰动后仍然偏离”
+  不构成证据。没有独立证据 → 该项应已在 ④ 被降级；若仍 `adopted`，回 ④ 补降级，不要在本阶段
+  用 `survives=false` 替它洗白。
 
 ## 稳健性检验维度（按子问题类型选用）
 
@@ -76,6 +91,24 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 4. 计算统一记录 seed 与随机状态，保证可复现。
 5. **先读 `reports/RESULT_AUDIT_REPORT.md`**（本阶段排在 5Result-credibility-audit 之后）：它已经判过「这份结果可不可信」，并把可疑点写在其中。按它标记的可疑点重点打，不要把扰动档数平均撒在所有结论上。
    若在本阶段发现新的可信度怀疑（指标异常乐观、疑似泄漏、口径存疑），按文末「动态交回规则」交回 5Result-credibility-audit 或对应阶段 —— **不要再往报告里写"待审计项"一栏等它来看**，它已经跑过了。
+6. 对设计台账里每个 `core=true` 的 adopted 项，把 `robustness` 块写进
+   **`reports/INNOVATION_ROBUSTNESS.json`**（不要改设计台账），然后跑
+   `python lib/web/check_innovation.py --stage robustness`。若 core 项在扰动下不稳（`survives=false`），
+   不要硬说稳健：写 `claim_scope` 并在 `ROBUSTNESS_REPORT.md` 明写“该创新只在 X 条件下成立”；
+   同时在 sidecar 里把该项 `core=false`（或 `status=downgraded` + 原因），不要保留 `core=true`——
+   否则 ⑨ 的 write 检查会拒绝它。
+
+### 场景面板（2–3 个子 agent，按结论/扰动拆）
+
+只在有 **≥2 组独立结论**或 **≥3 类扰动**时开；否则单 agent 顺序跑。
+开工先按 `../_references/stage_discipline.md` 八建 `.fma_panel_lock`，收齐后删锁再写正式报告。
+
+- 拆分建议：A 参数扰动（±20%、档位、边界值）、B 重抽样/留一/口径对照、C 极端情景/失效边界；
+- 每个子 agent 先读 `reports/RESULT_AUDIT_REPORT.md` 的可疑点，只打自己那组，不要重复审计；
+- 子 agent 只在 `_tmp/robust/<lens>/` 写脚本与结果表，**不写 `code/`、`results/`、`figures/data`**；
+  计算统一记录 seed、参数档与口径，返回 `数值表 + 结论是否改变 + 敏感度`；
+- 主 agent 收齐后统一口径、去重、合并成正式报告；发现新的可信度问题仍按「动态交回规则」处理；
+- 子 agent 不可用，或扰动只涉及 1–2 个参数 → 主 agent 顺序跑，不要为并行而拆。
 
 ## 阶段边界
 

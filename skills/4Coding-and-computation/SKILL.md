@@ -1,10 +1,10 @@
 ---
 name: 4Coding-and-computation
-description: "数学建模编程实现与数据图表生成阶段。根据 ANALYSIS_MODELING_REPORT.md 编写可复现代码、运行求解、验证约束、输出 RESULTS_REPORT.md 并生成论文可用的数据驱动图表 PDF。"
+description: "数学建模编程实现与数据交付阶段。根据 ANALYSIS_MODELING_REPORT.md 编写可复现代码、运行求解、验证约束、输出 RESULTS_REPORT.md，并把每张数据图的只读数据包、图 spec 与 figure lock 交给 7Route-diagram 渲染。"
 allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebFetch
 ---
 
-# 编程实现与数据图表生成
+# 编程实现与数据交付
 
 > 通用执行纪律（增量返修 / 缩比预估 / 分段落盘 / 方法标记 / 返修只动清单内）见 `../_references/stage_discipline.md`。
 > 本阶段适用：一（增量返修，含 1.1 探针复用）、二（缩比预估）、三（分段落盘）、四（方法标记）、五（返修只动清单内）。
@@ -20,9 +20,170 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 
 本阶段：`python -m lib.result_contract build`（产出结构化结果与独立校验）；报错信息即规范，需要细节才读 docs/RESULT_CONTRACT.md。
 
-## 通用绘图协议
+## 计算后端：CPU 串行 / CPU 并行 / GPU（先量测再选）
 
-按 `python -m lib.visualization` 的规范：先写 FIGURE_PLAN，再从公共绘图库选型；导出、登记全部来源、目检后单独记录复核。完成条件为 `python -m lib.visualization audit` 通过，且 RESULTS_REPORT 引用图表对应真实结果。
+> 详细规则与代码模板见 `references/compute-backends.md`；开工先跑
+> `python skills/4Coding-and-computation/scripts/detect_compute.py --problem <形态> --batch <规模>`。
+> 它只探测 CPU/内存/GPU 与 `torch/cupy/jax` 是否真的可用，不安装、不启动训练。
+
+- **1D 径向 PDE / 三对角时间推进**：CPU 串行。GPU 的 kernel 启动、小数组和顺序依赖
+  会让它更慢；A 题主流程十几分钟，不要为它引入 GPU。
+- **独立实验**（多问、参数扫描、Monte Carlo、PSO 重启、收敛实验）：CPU 多进程
+  `ProcessPoolExecutor`，`max_workers` 按逻辑核与**峰值内存**取，不是越多越好；
+  2D 轴对称稀疏 LU 默认 ≤3 路（实测 12 路全部 `MemoryError`）。
+- **GPU**：只用于大型稠密线性代数/响应面，或批量足够大且目标函数已整体向量化的
+  Monte Carlo/PSO；先用 10% 缩比基准测 CPU vs GPU，**≥2×** 才保留 GPU 内核，并必须有 CPU fallback。
+  不要为了“用 GPU”预装大型深度学习环境；SciPy/SuperLU 不会自动上 GPU。
+- **单一交付写者**：并行 worker 只写 `_tmp/` 或按任务分开的临时结果，主进程最后串行合并、
+  写 `code/`/`results/`/`figures/data`；不要多个 worker 同时写正式产物。
+- 下面「默认不并行」说的是**方法对照的子 agent**（避免多个写者改 `code/`），
+  不是禁止数值程序内部用多进程/GPU。
+
+## 数值方法对照（按需，不默认）
+
+**默认不并行**：④ 是单一数据源，`code/`、`results/`、`figures/data` 只能有一个写者。
+只有同时满足下面两条时才开方法对照：
+
+1. ② 选定的数值路线存在 **≥2 个可行离散/求解方案**（如固定网格 vs 材料坐标、半隐式 vs 全隐式、
+   Brent vs 二分、直接法 vs 迭代法）；
+2. 选择会**显著影响**精度、成本或稳健性，且看论文/报告无法直接定夺。
+
+做法：
+
+- 用 2–3 个子 agent，在 `_tmp/method_bakeoff/<name>/` 各写一个**最小原型**，跑同一个缩比问题、
+  同一套指标（误差/收敛阶、耗时/内存、参数与网格扰动下的稳健性）；
+- 子 agent **只写 `_tmp/method_bakeoff/`**，不写 `code/`、`results/`、`figures/data`、`*.lock.json`；
+- 主 agent 看结果选 1 个，写进 `code/`，在 `RESULTS_REPORT.md` 记一行「方法对照与选择理由」
+  （候选、指标、为什么选它）；
+- 方法唯一、或对照只会重复教科书的结论 → 直接实现，不要为对照而对照。
+
+独立复算的「影子计算」优先放 ⑤/⑮ 的审计里，不在 ④ 里重复做。
+
+## 创新台账：baseline vs intervention 必须真跑
+
+② 的 `reports/INNOVATION_LEDGER.json` 里每个 `status=adopted` 项都预注册了
+`claim / predicted_delta / test / kill_if`。本阶段的任务不是“让 delta 出现”，而是**按预注册的
+test 真跑 baseline 与 intervention，把结果如实写进自己的 sidecar**。
+
+1. 读设计台账；对每条 adopted：
+   - `baseline` 用 `baseline_id` 对应的基线方案跑一遍；
+   - `intervention` 只改该候选声明的那一处（方程/边界/判据/状态量），其余口径、网格、
+     时间步、参数、随机种子与 baseline 完全一致；否则 delta 不可归因。
+   - 两边都走同一套结果导出与校验；结果文件写到 `results/`，不得只写 `_tmp/`。
+2. 在主 agent（单写者）里把实测值写进 **`reports/INNOVATION_MEASUREMENT.json`** 的
+   `items[<id>].measurement`（不要改设计台账）：
+   ```json
+   {"schema_version": 1,
+    "items": {"INN-1": {"measurement": {
+     "kind": "quantitative",
+     "baseline_value": 50.8333,
+     "intervention_value": 52.4,
+     "delta": 1.5667,
+     "delta_unit": "h",
+     "relative": 0.0308,
+     "source": "results/innovation_checks.json",
+     "passed": true,
+     "note": "预测 R(t) 最大相对误差 2.1%",
+     "primary": {
+       "metric": "t_dry",
+       "baseline_value": 50.8333,
+       "intervention_value": 52.4,
+       "relative_change": 0.0308,
+       "guard_passed": true,
+       "independent_evidence": ""
+     }
+   }}}}
+   ```
+   - **必须同时报主答案**（`primary`）：baseline 与 intervention 下同一个主答案的值、
+     相对变化、是否在 `primary_guard` 内。不能只报一个对创新有利的次要指标。
+   - `delta` 必须等于 `intervention_value - baseline_value`（同一单位）；`primary.relative_change`
+     必须等于 `(intervention-baseline)/|baseline|`。检查器会重算，自报一个对不上的数会被打回。
+   - 主答案超出护栏时，`guard_passed=false`，并在 `independent_evidence` 写独立证据
+     （实验/文献/题面给定值/多模型一致/解析极限）；**没有证据就不要写 `true`**，
+     按“创新不成立/模型没闭合”处理：把该项改 `downgraded`，写清原因。
+   - 定性结果（如“证明最大值只在中心/表面”）用 `kind="qualitative"` + `evidence` + `passed`，
+     不要硬编一个数；`primary` 仍要写能对照的主答案。
+   - `source` 必须指向真实结果文件；⑤ 会按它复算。
+3. 若 test 失败、测不出，或**主答案偏离护栏且没有独立证据**：
+   - 在 measurement sidecar 里给该项加 `status="downgraded"` 与 `downgrade_reason`；
+     不要改设计台账里的 `status`（那是 ② 的字段）；
+   - **不许**改 `predicted_delta` / `test` 去迎合结果，也不许把失败项继续叫“创新”；
+   - 负结果可以写进 `RESULTS_REPORT.md` 的“与建模报告的一致性说明”，由 ⑨ 放到局限/讨论。
+   - 主答案偏离不是“更精细”，先查能量/边界/口径是否闭合；没有证据就按失败处理。
+4. 在 `RESULTS_REPORT.md` 增一张「创新增量核验」表：
+   `ID / baseline / intervention / delta / 单位 / 主答案 baseline / 主答案 intervention /
+   主答案相对变化 / 护栏 / 来源文件 / 是否通过`。主答案列不能空着——它是判断“创新有没有
+   把模型带偏”的第一证据。题定结果表与主结论仍以 baseline 为准；intervention 只作为
+   增量对照并列，除非 ③ 已批准“主答案变更 + 独立证据”。
+5. 收尾自检：
+   ```bash
+   python lib/web/check_innovation.py --stage code
+   ```
+
+并行/多进程时，worker 只写自己的临时结果；`INNOVATION_MEASUREMENT.json` 与
+`RESULTS_REPORT.md` 只由主 agent 串行写，避免多个写者把 `measurement` 覆盖掉。
+
+## 数据图交付协议（与 ⑦ 解耦）
+
+数据图先读 `../figure-studio/SKILL.md`。本阶段**只交数据层，不画布**：
+每张主图写 FigureBrief，然后用 `studio.save_bundle(...)` 落三件——
+`figures/data/<id>.npz`、`figures/spec/<id>.json`、`figures/<id>.lock.json`。
+成品 PDF/SVG/PNG、`figures/make_figures.py`、`figures/source_data/*`、`figures/<id>.meta.json`
+全部由 `7Route-diagram` 渲染和写。
+
+1. 解析模板语言与画布（CUMCM → 中文、160 mm、微软雅黑）：
+
+   ```powershell
+   python skills/figure-studio/scripts/resolve_context.py --write
+   ```
+
+2. 每张主图写 `reports/FIGURE_BRIEF.json`（或 `reports/figure_briefs/<id>.json`），
+   至少写 claim、数据字段/单位/n、面板 role/recipe、区间定义、退路；校验：
+
+   ```powershell
+   python skills/figure-studio/scripts/check_brief.py reports/FIGURE_BRIEF.json --context reports/FIGURE_CONTEXT.json
+   ```
+
+3. 把**图要用的数组**原样存进 bundle，不在这里做“为了好看”的裁剪/平滑/抽稀；
+   claim 的数字、面板字段、统计口径一次性写进 spec：
+
+   ```python
+   import sys
+   sys.path.insert(0, "skills/figure-studio/scripts")
+   import studio
+   ctx = studio.context(".")
+   studio.save_bundle(
+       ".", "q3_dryfront", {"r": r, "t": t, "C": C}, ctx,
+       claim="干前沿由表面推进到中心，表面与中心达标相差约 46 h。",
+       sources=["results/q3.json", "code/q3.py"],
+       panels=[{"id": "a", "role": "hero", "recipe": "field_contour",
+                "fields": ["r", "t", "C"],
+                "field_mapping": {"x": "r", "y": "t", "z": "C"},
+                "claim": "干前沿随时间向内推进。",
+                "options": {"quantity": "moisture", "level": 0.15}}],
+       statistics={"interval": {"kind": "none", "method": "不适用"},
+                   "test": {"kind": "none", "p_values": False},
+                   "unit": "每条曲线是一个确定性模拟时刻", "paired": False},
+   )
+   ```
+
+   字段名就是 ⑦ 能用的名字；`field_mapping` 必须覆盖 recipe 的 `required_fields`
+   （`assets/recipes.json`）。同一张图的所有数组放同一个 bundle，不要跨文件引用。
+
+4. 交付前跑数据锁与 FigureBrief 两道检查：
+
+   ```powershell
+   python skills/figure-studio/scripts/figure_lock.py verify --root .
+   python skills/figure-studio/scripts/check_brief.py reports/FIGURE_BRIEF.json --context reports/FIGURE_CONTEXT.json
+   ```
+
+   `figure_lock` 应 PASS（旧图迁移期的 `[lock:advisory]` 不算失败）。**不要**在这里跑
+   `python -m lib.visualization audit` —— 那是 ⑦ 渲染完之后的检查；④ 交完数据层就结束。
+
+**边界**：FigureBrief 里的 claim/数值/统计口径属于本阶段；⑦ 只能改图面与构图（recipe、
+layout、配色、caption 文字），不能改字段映射、统计口径、claim 或 bundle。
+如果 recipe 与数据契约不匹配（如没有配对 ID、没有真实区间），在本阶段就降级并写清退路，
+不要到 ⑦ 才发现。
 
 ## 数学建模规范参考
 
@@ -30,7 +191,11 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 
 ## 阶段边界
 
-- 本阶段负责：代码、实验运行、结果、结果表、数据驱动图表。
+- 本阶段负责：代码、实验运行、结果、结果表、数据图的数据包/spec/lock（`figures/data`、
+  `figures/spec`、`figures/*.lock.json`）与 FigureBrief，以及
+  `reports/INNOVATION_MEASUREMENT.json`（baseline/intervention 与主答案护栏）。
+- 本阶段**不负责画布**：成品 PDF/SVG/PNG、`figures/make_figures.py`、`figures/source_data/*`、
+  `figures/<id>.meta.json` 全部由 `7Route-diagram` 渲染和写。
 - 本阶段不负责：技术路线图、算法流程图、系统架构图、概念示意图。这些交给 `7Route-diagram`。
 - 本阶段不写论文正文，只为 `9Paper-writing` 提供可信数值和图表资产。
 
@@ -77,38 +242,45 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 
 所有数据和图表结果都必须出现在 `reports/RESULTS_REPORT.md` 中引用
 
-### Step 4: 生成数据驱动图表
+### Step 4: 交付数据图 bundle / spec / lock
 
-根据 `reports/ANALYSIS_MODELING_REPORT.md` 和 `reports/RESULTS_REPORT.md` 规划图表，生成 PDF 到 `figures/`。
+根据 `reports/ANALYSIS_MODELING_REPORT.md` 和 `reports/RESULTS_REPORT.md` 规划图，按
+`../figure-studio/SKILL.md` 的 3.1 节把每张主图拆成：
 
-> **分工**：本阶段负责数据图的首次生成，以及数据/口径变更后的重画
-> （`sources` 的 npz 变了、claim 的语义要改、色标口径要按新判据定 —— 这些是 ④ 的活）。
-> 而"图画得好不好"（图例位置、遮挡、档界读得出读不出、标注被裁、caption 数字写错）
-> 由 ⑦技术路线图在后续轮次就地优化，不再回退本阶段 —— 那是纯图片面的活，一行数值都不动。
-> 所以：本阶段交出的图不必一次就尽善尽美，但**数值、claim 语义、`sources` 必须是对的**。
+```text
+figures/data/<id>.npz       # 图要用的数组，原样
+figures/spec/<id>.json      # recipe + fields/field_mapping + claim/stats + layout
+figures/<id>.lock.json      # bundle/spec 语义/source/claim 的哈希
+```
 
-> **画图脚本住 `figures/`，不住 `code/`** —— 数据图脚本命名为 `figures/make_figures.py`
-> （登记进 `figures/manifest.json` 的 `script` 字段时也写这个相对路径）。
-> `code/` 在 ⑤⑥⑦⑧ 的输入指纹里，而图的内容不含任何数值结论 ——
-> 脚本放进 `code/` 之后，改一行画图代码（换个配色、调个字号）就会连锁触发 ⑤⑥ 重跑，
-> 白烧几十分钟；放 `figures/` 就没这个连锁（`figures/` 刻意不进任何阶段的输入指纹）。
-> 脚本写到 `code/make_figures.py`、`figures/manifest.json` 里登记的也是它，会被
-> `regression/test_stale_noise.py` 的 `test_the_data_figure_script_lives_under_figures`
-> 抓到（它只在 ④ 跑完、`figures/` 存在时才判）。
+> **分工**：本阶段负责数据、claim、统计口径、字段映射和数据锁；⑦ 负责画布与构图。
+> 数据/口径变更（`sources` 的 npz 变了、claim 语义要改、色标口径要按新判据定）由本阶段
+> **重出 bundle + lock**；图画得好不好（图例、遮挡、档界、标注、caption 文字）由 ⑦ 就地改，
+> 不再回退本阶段。本阶段交出的数据层不必一次就尽善尽美，但**数值、字段、claim、统计口径
+> 必须是对的**。
 
-典型图表：
+> **不要写 `figures/make_figures.py`，也不要生成 PDF/PNG。** 渲染脚本归 ⑦；
+> 它住在 `figures/` 而不是 `code/`，改配色不会连锁触发 ⑤⑥ 重跑。
+> 本阶段若把绘图代码写进 `code/`，或在 `figures/` 里直接画成品，都会破坏这条解耦：
+> 前者把“改一行配色”变成“改了数值代码”，后者让 ⑦ 没有可改的渲染层。
+> 数据包与 spec 落在 `figures/` 下，但它们**不含像素**，不会触发 ⑤⑥ 的输入指纹。
+
+图型选择仍由本阶段在 spec 里声明（⑦ 可以换图型，但不能换字段/claim）。典型图表：
 
 - 预测类：真实值-预测值对比、误差分布、指标对比。
 - 优化类：收敛曲线、成本对比、资源利用率、方案前后对比。
 - 评价类：综合得分排序、雷达图、热力图、敏感性曲线。
 - 数据理解：分布图、趋势图、相关性图、箱线图。
 
-图表要求：
+spec 要求（画布由 ⑦ 执行）：
 
-- PDF 矢量输出，适合论文。
-- 不在图内写大标题，标题交给论文 caption（LaTeX 的 `\caption{}`）。
-- 中文论文图表使用中文坐标轴和图例；英文论文使用英文。
-- 不生成流程图/架构图/路线图。
+- 每个面板写清 `fields` / `field_mapping` / `claim`；字段映射必须覆盖 recipe 的
+  `required_fields`。中文模板的坐标轴/图例词由 `studio` 的 labels 提供，不在 spec 里
+  手写英文解释句。
+- 图上不放大标题，标题交给论文 caption（LaTeX 的 `\caption{}`）；spec 里的 `title`
+  只作面板短标题。
+- 不把流程图/架构图/路线图塞进数据图 spec；那类走 ⑦（`skills/7Route-diagram/references/route-diagram.md`）。
+- 宽高按模板：CUMCM 全宽 160 mm、半栏 80 mm；英文 183/88 mm。spec 里写宽度，⑦ 按它排版。
 
 **别把每张图都画成折线**（典型错误：12 张图里 11 张是 trend/comparison，
 热力图/等高线一张没有）。先问"我要画的量在几个维度上有结构"：
@@ -134,60 +306,21 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 （两个参数 → 一个指标）、三维轨迹、多变量关系、优化地形。这类内容硬压成折线或热力图，
 会把"两个参数怎么共同影响结果"这层信息丢掉。
 
-用三维必须配齐三件事（`config/visualization.json` 的 `_three_d_note` 也记着）：
-
-1. 视角可读 —— 别用看不穿的等轴投影把遮挡糊住；该转的角度要转对。
-2. 查遮挡 —— 前后哪一块盖住哪一块，得说清。
-3. 投影有歧义就配一张二维图 —— 切片、投影或等高线，跟三维图并排（`\paperfigurepair`）。
-
-**三维数据曲面用 `charts.surface3d()`，不要手写 `ax.plot_surface`**。
-这个家族不是"封装一下"，它修的是两个每题都会重犯的缺陷，默认值在
-`config/visualization.json` 的 `surface`、理由在 `_surface_note`：
-
-① 淡色低值平台会糊在白底上（典型：米色背景配白线看不清）—— 地表/浓度场这类曲面
-   的低值区常是一大片平台，而感知均匀色阶的低端多是淡色（`YlGnBu` 的浅黄、`viridis` 的暗紫），
-   一大片淡色铺在白底上就看不出形状了。细网格边（`edgecolor`+`linewidth`）让起伏与走向重新可见，
-   `rcount` 抽稀行数（全画会密成一片灰）。
-② mplot3d 默认把盒子缩在面板正中，四周大片空白 —— 这就是"三维图特别丑"的另一半原因。
-
-判据线/阈值线用 `level=`（如 `level=0.15` 画"C = 0.15 与曲面的交线"）——
-它不是 `ax.contour`：mplot3d 的等值线集合会被曲面本身遮住（画了、层数也在，眼睛看不见），
-本函数改为逐列求交连成三维折线。三维盒子的长宽比是数据决定的，要改就显式传
-`box_aspect=`（不给则完全不动轴）。视角默认 `elev 25 / azim 45`，可用 `view=` 覆盖。
+用三维时在 spec 里声明 `recipe: surface3d`（或 `surface3d-response`）与
+`options.view`/`options.level`；渲染由 ⑦ 用 `charts.surface3d()` 执行，并配一张二维
+投影/切片（`projection` 面板或另开一栏）。**③ 维没有真实变量含义时不要为了好看选 3D**：
+空间结构、响应面、三维轨迹、多变量关系、优化地形才算。视角可读、遮挡交代、投影配图
+这三条是 ⑦ 的验收项，④ 只需在 spec 里把“为什么是三维”写进面板 claim。
 
 现成工具：`visualization.geometry.orthographic()`（Nx3 → 二维视平面）与
 `sphere_section()`；画法与验收标准见 `docs/GEOMETRY.md`。
 `config/visualization.json` 的 `chart_mix` 记着这条口径与每问的下限
 （每问 ≥2 张数据图，且至少一张不是折线）。
 
-**图例与配色（两道机器闸门，改不动就过不了复核）**：
-
-- **图例必须有底色** —— `charts.style()` 全局已设 `legend.frameon: True`。别改回 False：
-  图例一旦落在曲线区上，曲线会从标签文字里穿过去，标签就读不出来了（如 `q1_profiles`）。
-- 图例别压在稠密数据上 —— `export()` 会算出图例框内有几个采样点属于可见曲线，
-  超阈值就进 `auto_issues`，而 `evidence.review()` 拒绝复核带 auto_issues 的图。
-  报出来就把 `loc` 挪到空的地方，或缩掉曲线区间。
-- **一条线一个颜色**：`config/visualization.json` 的 palette 有 8 色、linestyles 与之并行循环。
-  **单图序列不要超过 8 条** —— 超了颜色会回绕、两条线同色，`_palette_note` 里写了"必须拆面板"。
-- 连续量的色阶按物理量选，不按审美选 —— 传 `quantity=`（`heatmap` / `response` /
-  `surface3d` 都收），色阶由 `config/visualization.json` 的 `quantity_cmap` 登记处给：
-  `quantity="temperature"` → `inferno`（热=亮）、`quantity="moisture"` → `YlGnBu`（湿=深蓝）。
-  **别自己写死 `cmap="viridis"`**：同一批交付里 8 个连续量面板全成了同一种蓝→黄色，
-  且温度场用 viridis 时冷=亮黄、热=暗紫——语义与直觉相反，读者得读数值才知道哪边热。
-  表里没有的量：往 `quantity_cmap` 加一行（**必须写清哪一端是"大"**），别在脚本里就地编 ——
-  就地编会让同一个量在两张图上换色。用 `quantity=` 还顺带满足"颜色语义跨小问一致"。
-- **手写 `ax.plot` 时必须显式给 `linestyle`** —— 一个容易踩的陷阱
-  （如 `fig_geometry` 的圆柱"断成虚线"）：`charts.style()` 的 `axes.prop_cycle`
-  同时含颜色与线型，所以每调用一次 `ax.plot(...)` 就吃掉循环里的下一个线型 ——
-  只给 `color=` 不够，第二条自动变虚线、第三条变点线，而 `rcParams` 里明明写着实线。
-  示意图/几何图这类线的连续性有含义的图尤其致命（圆柱母线断成一节节）。
-  走 `schematic.Scene` 的图元不受影响（它内部显式传了 `linestyle`）。
-- 注记别互相压 —— `export()` 现在会两两比对显式注记的框（`quality.texts_overlap`），
-  重叠占较小那个框 ≥ 55% 即进 `auto_issues`（挡复核），30–55% 只打印提醒。
-  例（`fig_geometry`）：标签间距取 4.6 时「对流传质／水分出」第二行压到下方四行首行。
-  它按面积判，所以"挤但没压"（净空只剩几像素）它不报 ——
-  别把它的沉默当成"排版没问题"，余量仍靠目检。
-- 位图另有分辨率下限（800×480 px）与"近似纯色"检查，空白图会被挡下。
+**渲染细节由 ⑦ 按 `figure-studio` 执行**：图例底色/不压数据、8 色序列、连续量 `quantity=`
+色阶、线型不误用、注记不重叠、位图分辨率 —— 都是画布层的事。④ 只需在 spec 里声明
+`quantity`/`level`/`series`/`view`，不要把渲染参数硬编码进数据层，也不要为了图好看
+在 bundle 里改数值（裁剪、平滑、抽稀都要在图注写清，并交给 ⑦ 在渲染层做）。
 
 **换了配色，就要在 `reports/FIGURE_PLAN.md` 里点名受影响的非数据图资产**
 
@@ -206,7 +339,9 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 一个 4:3、一个 16:9 并排放会一高一矮。同构的两张图（如两个时刻、两种口径）
 优先做成一对，别各发一张整栏的。
 
-图表可以由主程序或独立脚本生成，不强制固定脚本名。无论采用哪种方式，都必须保存图表对应的数据来源和生成记录。
+本阶段不生成成品图。数据来源与字段记录由 `figures/data/<id>.npz` + `figures/spec/<id>.json`
++ `figures/<id>.lock.json` 承担；生成记录（PDF/SVG/PNG、source data、meta）由 ⑦ 在渲染时写。
+若本阶段需要临时看一眼数据形状，把诊断图渲染到 `tmp/`，不要写进 `figures/` 的登记路径。
 
 
 ## 项目运行环境

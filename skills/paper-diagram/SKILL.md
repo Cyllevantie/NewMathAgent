@@ -1,6 +1,6 @@
 ---
 name: paper-diagram
-description: 制作与修改可编辑的 draw.io / diagrams.net 示意图（.drawio XML），产出 .drawio + PNG/PDF。三条路径：套用内置模板（五带技术路线图、三阶段问题驱动路线图、三栏研究框架图、三栏阶段流程图、横版任务流水线图）、从零手写 XML、高保真复刻参考图。当用户要求技术路线图、全文概览、研究框架图、论文流程图、算法流程图、模型/系统架构图、方法示意图、把论文或课题做成一张图、答辩用图，或要求画 drawio 图、照着某张图重画成可编辑矢量图、修图（文字溢出/箭头错乱/配色不一致/排版对不齐）时使用。画折线图热图等数据图表请改用绘图类技能。
+description: 制作与修改可编辑的 draw.io / diagrams.net 示意图（.drawio XML），产出 .drawio + PNG/PDF。两条路径：从零手写 XML、高保真复刻参考图；另含版式校验、预览与导出。技术路线图 / 大流程图不再使用本 skill 的线性模板，改按 7Route-diagram 的 route-diagram 规范（问题路由树 / X 问泳道）。当用户要求模型/系统架构图、算法流程图、方法示意图、把论文或课题做成一张图、答辩用图，或要求画 drawio 图、照着某张图重画成可编辑矢量图、修图（文字溢出/箭头错乱/配色不一致/排版对不齐）时使用。画折线图热图等数据图表请改用绘图类技能。
 allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob
 ---
 
@@ -12,38 +12,17 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob
 
 | 情况 | 路径 | 入口 |
 |---|---|---|
-| 全文脉络、研究框架、执行流程，或课题的任务分解 | A 套模板 | 下方模板索引 |
-| 其他示意图：算法流程、模型架构、实验设计、机制示意… | B 从零手写 XML | `references/authoring.md` |
+| 模型架构、算法流程、实验设计、机制示意等其他示意图 | B 从零手写 XML | `references/authoring.md` |
 | 给了参考图，要照着重画成可编辑矢量图 | C 高保真复刻 | `references/replication.md` |
 
-三条路的 XML 写法一致，产物可互相接着改；区别只在流程纪律的严格程度。
+两条路的 XML 写法一致，产物可互相接着改；区别只在流程纪律的严格程度。
 
-## A. 套模板
+## A. 线性路线图模板（停用）
 
-| 模板 id | 版式 | 适合表达 | 说明 |
-|---|---|---|---|
-| `roadmap-5band` | 954×1296 竖版，五条点线带 + 左旗标 + 右竖排标签 | 提出问题 → 数据与指标 → 方法与机制 → 结果对比 → 评价推广 | `references/roadmap-5band.md` |
-| `roadmap-3phase` | 980×1260 竖版，三阶段主流程 + 两个点划线容器 + 右侧问题导轨 | 数据与指标 → 两组建模预测 → 情景与路径规划 | `references/roadmap-3phase.md` |
-| `framework-3col` | 1026 宽三栏，左阶段链 / 中内容块 / 右方法清单，高度自适应 | 研究内容全景：每个阶段对应哪些研究内容、用什么方法 | `references/framework-3col.md` |
-| `stageflow-3col` | 1000 宽三栏，中栏每块标题条 + 独立语义层级，高度自适应 | 研究/系统的执行流程：阶段推进、决策分支、成果分发 | `references/stageflow-3col.md` |
-| `taskflow-land` | 横版 1360 宽，若干任务块，块内流水线 + 每步挂做法细节 | 课题拆成「任务一…任务四」，每步要写清方法与结论；适合 16:9 | `references/taskflow-land.md` |
-
-1. 读模板说明的两节：语义约定（哪些槽位并列、哪些汇流、哪两组必须可对比）与字数预算。语义放错比字数超框严重。
-2. 从用户材料抽内容，**不要编**；有源文件（`.tex`/`.md`/代码）时逐个核对数值，术语用原文。
-3. 复制 `assets/<template_id>/example.json` 改写，`"\n"` 手动断行。
-4. 渲染（写文件前逐槽校验字数，超框报出具体预算）：
-
-```bash
-python3 scripts/roadmap_5band.py content.json -o out.drawio     # roadmap-5band
-python3 scripts/roadmap_3phase.py content.json -o out.drawio    # roadmap-3phase
-python3 scripts/framework_3col.py content.json -o out.drawio    # framework-3col
-python3 scripts/stageflow_3col.py content.json -o out.drawio    # stageflow-3col
-python3 scripts/taskflow_land.py  content.json -o out.drawio    # taskflow-land（横版）
-```
-
-五个模板默认输出灰白论文版；需要原彩色演示风格时统一加 `--theme color`。
-
-新增模板见 `references/adding-templates.md`。
+`roadmap-5band`、`roadmap-3phase`、`framework-3col`、`stageflow-3col`、`taskflow-land`
+五个线性模板**不再用于技术路线图 / 大流程图**。`fig_roadmap` 按
+`../7Route-diagram/references/route-diagram.md` 的「问题路由树」或「X 问泳道」生成。
+旧脚本与资产保留在 `scripts/`、`assets/` 下，仅供历史兼容；新图不要调用。
 
 ## B. 从零手写 XML
 
@@ -87,17 +66,16 @@ python3 scripts/preview_html.py fig.drawio      # 浏览器预览，无需 drawi
 |---|---|
 | `authoring.md` | 手写示意图：骨架、样式串、字宽预算、连接器 |
 | `icons.md` | 需要图标、旗标、块箭头、弯箭头等特殊图元 |
-| `roadmap-5band.md` | 用五带路线图模板 |
-| `roadmap-3phase.md` | 用三阶段问题驱动路线图模板 |
-| `framework-3col.md` | 用三栏研究框架模板（内容全景）|
-| `stageflow-3col.md` | 用三栏阶段流程模板（执行流程）|
-| `taskflow-land.md` | 用横版任务流水线模板 |
-| `adding-templates.md` | 新增一个模板 |
+| `../7Route-diagram/references/route-diagram.md` | 技术路线图 / 大流程图：问题路由树、X 问泳道、自检回路 |
+| `adding-templates.md` | 新增一个**非路线图**模板 |
 | `replication.md` | 复刻参考图：标定方法、四件产物、迭代闭环 |
 | `self-check.md` | 九区盘点、红队复审、自评分卡、交付清单 |
 | `preflight-rules.md` | 静态检查在查什么、误报如何绕开 |
 
 ## 不适用
 
+- 技术路线图 / 大流程图 → 用 `../7Route-diagram/references/route-diagram.md`（问题路由树 / X 问泳道）；
+- 物理立体 / 3D 剖切示意图 → 用 `../7Route-diagram/references/physical-3d.md`
+  （Route A `style3d.py` / Route B `solid3d.py`），不要用 draw.io 硬画；
 - 折线图、热图、统计图等数据图表 → 用绘图类技能；
 - 需要 LaTeX 排版的公式推导链 → 用 TikZ 或写进正文。

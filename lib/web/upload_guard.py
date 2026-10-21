@@ -24,7 +24,7 @@ MAX_FILE_BYTES = 64 * 1024 * 1024     # 单件 64 MiB
 MAX_REL_LEN = 240                     # 整条相对路径（Windows MAX_PATH 余量）
 MAX_SEG_LEN = 100                     # 单段
 
-# 系统/编辑器自动生成的垃圾，浏览器目录上传时一定会带出来 —— 跳过并**记日志**（不静默）。
+# 系统/编辑器自动生成的垃圾，浏览器目录上传时一定会带出来 —— 跳过并**记日志**。
 SKIP_NAMES = {"thumbs.db", "desktop.ini", ".ds_store"}
 
 # Windows 保留设备名：**带扩展名也算**（`con.txt` 在 Windows 上照样打不开）

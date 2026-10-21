@@ -78,7 +78,7 @@
     {"kind": "abstract", "first": 1, "last": 1, "title": "摘要"},
     {"kind": "body", "first": 2, "last": 25, "title": "正文"},
     {"kind": "references", "first": 26, "last": 26, "title": "参考文献"},
-    {"kind": "appendix", "first": 27, "last": 32, "title": "支撑材料清单、完整代码与补充结果"}
+    {"kind": "appendix", "first": 27, "last": 32, "title": "支撑材料清单与补充结果"}
   ]
 }
 ```

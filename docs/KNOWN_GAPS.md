@@ -345,15 +345,20 @@ F-5 抽稀+去边线）让 ④ 回退一轮，连带 ⑤结果可信度审计 37
 
 怎么关掉的：
 
-1. 授权（三处 SKILL，驱动一行没改 —— ⑧ 的 `FAIL->drawio` 本来就把回执交给 ⑦）：
-   - `skills/7Route-diagram/SKILL.md`「阶段边界」：数据图的首次生成归 `4Coding-and-computation`；
-     画法与图注文字的后续优化归 ⑦，白名单 = `legend(loc=)`/`bbox=`/`xlim`·`ylim`/`clip_on`/
-     色标档界 `levels`/`gamma`/字号/线宽/`edgecolor`/抽稀 `ccount`·`rcount`/caption 与 claim 里按现算改正的数字；
-     **仍然不许**：`code/`、`results/`、`*.npz`、`sources`、claim 的语义、报告数值结论、重跑模型。
-   - **三条硬判据**（缺一 ⇒ 说明要动数值/口径 ⇒ 才走交回）：① `code/`·`results/`·`*.npz`·`sources`
-     逐字节相同；② 重渲 + 重新登记 + 重新目检；③ `python -m lib.visualization audit` PASS。
-   - `skills/8Figure-gate/SKILL.md` 的两处去向：画法类由 ⑦ 就地改，只有数值或口径来源才交回 ④。
-   - `skills/4Coding-and-computation/SKILL.md` 写明分工，并说明"本阶段交出的图不必一次尽善尽美"。
+1. 授权（三处 SKILL；④/⑦ 解耦后边界进一步收紧）：
+   - `skills/4Coding-and-computation/SKILL.md`：④ 只交 `figures/data` + `figures/spec` +
+     `figures/*.lock.json`（`studio.save_bundle`），**不写画布、不写 `make_figures.py`、不导出 PDF/PNG**。
+   - `skills/7Route-diagram/SKILL.md`「阶段边界」：⑦ 是**唯一渲染者**（`figures/make_figures.py`
+     + 成品 + source data + meta）。可改 recipe/`options`/layout/配色/标题/caption；
+     **不许**改 `figures/data`、spec 的 `fields`/`field_mapping`/`claim`/`statistics`、`*.lock.json`、
+     `code/`、`results/`、`*.npz`、`sources`、claim 语义、报告数值结论、重跑模型。
+   - **四条硬判据**（缺一 ⇒ 说明要动数值/口径 ⇒ 才走交回）：
+     ① `figures/data`·`figures/spec`·`*.lock.json`·`code/`·`results/`·`*.npz`·`sources` 逐字节相同；
+     ② 重渲 + 重新登记 + 重新目检；③ `python -m lib.visualization audit` PASS；
+     ④ `python skills/figure-studio/scripts/figure_lock.py verify --root .` PASS。
+   - `skills/8Figure-gate/SKILL.md` 的三处去向：画法/契约（`[lock:contract]`）由 ⑦ 就地改；
+     数据层 `[lock:data]` 由驱动直接回 ④；每条 issue 必须带 `figure_id`，⑦ 只重渲被点名的图。
+   - 未打回但可优化的项写入 `reports/FIGURE_POLISH_QUEUE.json`；不阻塞链，⑦ 下次运行时按图处理。
 2. 守卫：`regression/test_stale_noise.py::FigurePolishAuthorityTests`（4 条）钉住上面这些措辞
    —— 授权只写在文本里，文本被改回去 = 结构被改回去。
 3. 代价对比：旧边界一次"画法类"交回 = ④ 41 min + ⑤⑥ 58 min + ⑦⑧ 72 min ≈ 2h51m；
