@@ -31,7 +31,7 @@ class HookLockTests(unittest.TestCase):
     def tearDown(self):
         self._td.cleanup()
 
-    def _run(self, tool, tool_input, locked=True):
+    def _run(self, tool, tool_input, locked=True, stage=None):
         lock = self.root / ".fma_panel_lock"
         if locked:
             lock.write_text("sentinel", encoding="utf-8")
@@ -42,6 +42,10 @@ class HookLockTests(unittest.TestCase):
               "session_id": "hook-lock-test"}
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
+        if stage:
+            env["FMA_STAGE"] = stage
+        else:
+            env.pop("FMA_STAGE", None)
         p = subprocess.run(
             [sys.executable, str(self.root / "runtime" / "hooks" / "fma_hook.py")],
             input=json.dumps(ev, ensure_ascii=False), capture_output=True,
@@ -118,6 +122,34 @@ class HookLockTests(unittest.TestCase):
 
     def test_no_lock_allows_bash_write(self):
         rc, _err = self._run("Bash", {"command": "cp _tmp/a.py code/a.py"}, locked=False)
+        self.assertEqual(rc, 0)
+
+    # —— 阶段内禁止 git：② 曾用 `git show HEAD:2026A试跑示例/...` 捞回已删归档 ——
+    def test_stage_git_is_blocked(self):
+        for cmd in (
+            "git show HEAD:2026A试跑示例/其余文件/内部报告/ANALYSIS_MODELING_REPORT.md",
+            "cd . && git log -1 --oneline",
+            "git cat-file -p HEAD:.env",
+            "git ls-tree -r --name-only HEAD | grep 2026A",
+            'bash -c "git show HEAD:2026A试跑示例/core.py"',
+            'python -c "import subprocess; subprocess.run([\'git\',\'show\',\'HEAD:x\'])"',
+        ):
+            with self.subTest(cmd=cmd):
+                rc, err = self._run("Bash", {"command": cmd}, locked=False, stage="analysis")
+                self.assertEqual(rc, 2, cmd)
+                self.assertIn("禁止使用 git", err)
+        rc, err = self._run("PowerShell", {"command": "git show HEAD:x"}, locked=False,
+                            stage="analysis")
+        self.assertEqual(rc, 2)
+        self.assertIn("禁止使用 git", err)
+
+    def test_main_agent_git_is_allowed(self):
+        rc, _err = self._run("Bash", {"command": "git status --short"}, locked=False)
+        self.assertEqual(rc, 0)
+
+    def test_stage_non_git_read_is_allowed(self):
+        rc, _err = self._run("Bash", {"command": "grep -n git reports/x.md"}, locked=False,
+                             stage="analysis")
         self.assertEqual(rc, 0)
 
 

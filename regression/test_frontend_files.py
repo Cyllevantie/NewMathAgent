@@ -88,6 +88,32 @@ class FileListTests(unittest.TestCase):
         self.assertIn("renderSidebar();   // 侧栏的「图」组与计数也要同步", html)
         self.assertIn("(?![A-Za-z0-9_])", html, "百分数单位不能用 \\b 收尾")
 
+    def test_stage_row_keeps_status_on_one_line(self):
+        """返修行同时有 📝 徽章 + 状态 + 计时章，右栏不许被挤到第二行。
+
+        蓝图/像素主题的徽章带框，比深色主题更宽；旧 290px 左栏在
+        「建模评审门禁」+ 徽章 + 计时章这类组合下会把右栏挤换行。
+        """
+        html = (PROJECT / "lib/web/static/index.html").read_text(encoding="utf-8")
+        self.assertIn("grid-template-columns:300px 1fr", html,
+                      "阶段进度左栏要比旧 290px 宽一点")
+        self.assertIn(".stage .sname{flex:1 1 auto;min-width:0;overflow:hidden;"
+                      "text-overflow:ellipsis;white-space:nowrap}", html)
+        self.assertIn(".stage .dotline > span:last-child{flex:0 0 auto;white-space:nowrap}",
+                      html)
+        self.assertIn('<span class="sname" title=', html, "阶段名必须包在可收缩的 .sname 里")
+
+    def test_report_and_figure_tabs_scroll_inside_view(self):
+        """报告/图片页签必须像运行日志一样在 #view 内滚动，不能把整页撑长。
+
+        实测根因：section 作为 grid/flex 容器默认 min-height:auto，报告的长内容
+        会把 section 撑出 main 的固定高度，body 变成 28000px 的可滚长页。
+        """
+        html = (PROJECT / "lib/web/static/index.html").read_text(encoding="utf-8")
+        self.assertIn("section{display:flex;flex-direction:column;min-width:0;min-height:0}",
+                      html, "section 少了 min-height:0，报告/图片会把网页撑长")
+        self.assertIn("#view{flex:1;overflow:auto;", html)
+
     def test_frontend_renders_stage_badge_and_time_sort(self):
         html = (PROJECT / "lib/web/static/index.html").read_text(encoding="utf-8")
         for token in ("sortByMtime", "filestage", "--stage:", "var(--stage",

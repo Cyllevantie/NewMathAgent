@@ -362,6 +362,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(pre["ok"])
         self.assertEqual(pre["detail"], "")
 
+    def test_every_stage_prompt_bans_git_history(self):
+        """所有阶段（含 ⓪ 与 ⑯）都必须带「禁止从 Git 历史取本轮依据」的硬红线。
+
+        2026-10-21 的 ② 曾用 `git show HEAD:2026A试跑示例/...` 把工作区已删的旧报告/旧
+        core.py 捞回来复用；只在 ② SKILL 里写不够，必须在每个阶段的注入提示里统一出现。
+        """
+        for st in self.s.STAGES:
+            prompt = self.s.prompt_for(st, True)
+            self.assertIn("禁止使用任何 git 命令", prompt, st["id"])
+            self.assertIn("只能读取当前工作区文件", prompt, st["id"])
+
     def test_start_from_stage_drops_only_the_earlier_yellow_lights(self):
         """起点**之前**的黄灯作废（链不会走到它）；起点及之后的照留（链真会走到）。"""
         self.s.state["pending"] = {"stage": "audit", "kind": "paused", "actions": ["retry"]}
@@ -1326,6 +1337,27 @@ class WorkflowTests(unittest.TestCase):
         asyncio.run(self.s.pause())
         self.assertTrue(self.s.state["stopping"])
         self.assertTrue(self.s.state["pause_to_halt"])
+
+    def test_pause_turns_autopilot_off_so_it_cannot_start_the_next_chain(self):
+        """用户按暂停 = 人的明确动作：托管必须一起收掉。
+
+        否则 `run_all` 收尾时 `autopilot_armed` 会按推荐目标自动起下一条链，
+        面板上看起来就是「我明明暂停了，它立马又跑下一阶段」。
+        """
+        self.s.state["running"] = True
+        self.s.state["autopilot"] = True
+        self.s.state["autopilot_armed"] = True
+        asyncio.run(self.s.pause())
+        self.assertFalse(self.s.state["autopilot"], "暂停必须关掉托管")
+        self.assertFalse(self.s.state["autopilot_armed"], "待落实的托管动作也要撤销")
+
+    def test_stop_also_turns_autopilot_off(self):
+        """硬停同样不许托管在收尾时起链 —— 否则「停止」也会变成自动续跑。"""
+        self.s.state["autopilot"] = True
+        self.s.state["autopilot_armed"] = True
+        asyncio.run(self.s.stop())
+        self.assertFalse(self.s.state["autopilot"])
+        self.assertFalse(self.s.state["autopilot_armed"])
 
     def test_pause_refuses_when_nothing_is_running(self):
         self.s.state["running"] = False

@@ -152,6 +152,24 @@ python skills/figure-studio/scripts/figure_lock.py verify --root .
 - 在 `DRAWIO_REPORT.md` 写一张「本轮改动面」表：`figure_id | 原问题 | 改法 | 复验`。
   ⑧ 下一轮只看这张表和它点过的图，不从头怀疑全部。
 
+### 7. 返修编排：按 figure_id 只读诊断，主 agent 串行写
+
+⑧ 回执按 `figure_id` 分组后，若 **≥2 张图互不依赖**，可以让子 agent 并行做**只读诊断**：
+
+- 每个子 agent 只负责一个/一组 `figure_id`，读该图的 issue、PNG、spec 与
+  `figures/make_figures.py` 的对应段，可在 `tmp/figures/<figure_id>/diag/` 写探针或局部截图；
+- 返回：问题证据、拟改的 recipe/options/layout/caption、精确 patch（文件+位置+旧→新）、
+  重渲命令、风险；
+- 子 agent **不得**调用 `save_figure`，不得写 `figures/`、`source_data`、`meta`、
+  `figures/manifest.json`，也不得改 spec/bundle；
+- 主 agent 串行应用改动并 `save_figure` 登记；`manifest.json` 永远只有一个写者；
+- 涉及数据层 `[lock:data]`、claim/统计口径或**多张图共用的布局/图注**时，不并行：
+  按本 SKILL 的边界交回 ④，或由主 agent 单改；
+- 复验命令由主 agent 跑；未被点名的图的 PDF/SVG/PNG、source data、meta 保持逐字节不变
+  （改前/改后算 sha256 对照）。
+
+`fig_roadmap` 的 3–4 个结构候选仍按 §5A 并行生成，但**选型、合并、登记、导出**只由主 agent 做。
+
 ## 非数据图示：几何表达与篇幅排版
 
 对于数学物理或空间关系问题，先阅读 docs/GEOMETRY.md（相对项目根），判断是否需要整体几何图与截面/投影配图。

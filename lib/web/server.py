@@ -714,6 +714,15 @@ def prompt_for(stage, first):
 要停自己的后台任务只用 TaskStop；它之后底层子进程还在跑是正常的、不归你管。
 **你自己起的进程真跑飞了**是唯一例外，且只能「按 pid、且先读 runtime/driver.pid 跳过它」
 （读不到那个文件 ⇒ 一个都不杀）—— 完整三步见 skills/_references/stage_discipline.md 第七节。"""
+    # 所有阶段统一硬红线：禁止从 Git 历史恢复用户已删除的归档/旧版本。
+    #   这条不是某一个 SKILL 的局部纪律 —— ② 曾用 `git show HEAD:2026A试跑示例/...`
+    #   把工作区已删掉的旧报告/旧 core.py 捞回来复用，必须由驱动对每个阶段注入。
+    base += ("\n\n【硬红线·Git 历史】本阶段**禁止使用任何 git 命令**"
+             "（尤其 git show / git log / git cat-file / git ls-tree / git checkout / "
+             "git restore / git archive / git diff <rev> / git grep <rev>）。"
+             "只能读取当前工作区文件；用户已经删除的归档不得用 git 恢复，"
+             "历史版本也不得作为本轮结论、模型结构或探针内核的依据。"
+             "需要规范/文献时读 skills/ 与 docs/，不要读 Git 历史。")
     # 这里不再有「第 N 轮评审」提示：`MAX_ATTEMPTS_PER_STAGE=1` 之后调用点传的 attempt 恒为 1
     #   （除非环境类错误重试），而且它把 attempt 当"轮次"，语义也不对。真要按轮次提示，
     #   数据源是 state["rounds"]；而门禁回执已经通过 _save_feedback 落盘并由 seed_hint 送达，
@@ -2410,7 +2419,10 @@ def _claude_worker(cmd, sh):
     sh["pid"] = p.pid
     # 登记 pid：服务被外部强杀时子进程会变孤儿，下次启动靠这份登记把它们收掉。
     _register_stage_pid(p.pid)
-    short = lambda s, n=110: (s or "").replace("\n", " ")[:n]
+    # 工具调用日志的展示长度：原来 110 字符在宽屏日志面板里只占左半行，
+    #   后半截命令被吞掉，看起来像“前端截断”。500 与 hook 的 tool_calls.jsonl
+    #   上限对齐；前端 LOG_LINE_MAX=3000 仍是最后一道保险。
+    short = lambda s, n=500: (s or "").replace("\n", " ")[:n]
     L = sh["lines"].append
     tail = ""
     sid = sh["sid"]
@@ -8319,14 +8331,21 @@ async def pause():
     接受并披露 / 我已手工修好」。当前阶段的在跑进程会被收掉，回来时从它重试。
 
     与「停止」的分工：暂停把**出口留好**；停止是硬停，不给决策入口。
+    两者都会同时取消一键托管，避免收尾后自动起下一条链。
     """
     if not state["running"]:
         raise HTTPException(400, "链没在跑，无需暂停")
     state["stopping"] = True          # 与停止复用同一个"请求中断"信号
     state["pause_to_halt"] = True     # 区别只在收尾时要不要建黄灯
+    # 暂停是人的明确动作：同时收掉一键托管，否则收尾时 `_autopilot_fire`
+    # 会按推荐目标自动起下一条链 —— 用户看到的就是"我明明暂停了，它又跑了"。
+    was_auto = bool(state.get("autopilot") or state.get("autopilot_armed"))
+    state["autopilot"] = False
+    state["autopilot_armed"] = False
     _clock_persist()
-    log("收到暂停请求：从当前阶段停下并转黄灯，由你决定下一步")
-    return {"ok": True}
+    log("收到暂停请求：从当前阶段停下并转黄灯，由你决定下一步"
+        + ("；已同时取消一键托管，收尾后不会自动起下一阶段" if was_auto else ""))
+    return {"ok": True, "autopilot": False}
 
 
 @app.post("/api/stop")
@@ -8337,6 +8356,9 @@ async def stop():
     """
     state["stopping"] = True
     state["pause_to_halt"] = False    # 硬停：即使之前请求过暂停，也不建黄灯
+    # 硬停同样不许托管在收尾时再起一条链（与暂停同一处置）。
+    state["autopilot"] = False
+    state["autopilot_armed"] = False
     if state.get("halt_gate"):
         state["halt_gate"] = False
         state["halt_reason"] = ""
@@ -8345,7 +8367,7 @@ async def stop():
             if value == "awaiting_user":
                 state["stages"][sid] = "stopped"
     _clock_persist()          # 尽快落盘，防停机丢累计计时
-    return {"ok": True}
+    return {"ok": True, "autopilot": False}
 
 class AutopilotReq(BaseModel):
     on: bool

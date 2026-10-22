@@ -41,7 +41,8 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 
 ## 数值方法对照（按需，不默认）
 
-**默认不并行**：④ 是单一数据源，`code/`、`results/`、`figures/data` 只能有一个写者。
+**默认不并行（写正式产物）**：④ 是单一数据源，`code/`、`results/`、`figures/data`
+只能有一个写者。返修时的**只读诊断**可以并行，见下文「返修编排」。
 只有同时满足下面两条时才开方法对照：
 
 1. ② 选定的数值路线存在 **≥2 个可行离散/求解方案**（如固定网格 vs 材料坐标、半隐式 vs 全隐式、
@@ -228,6 +229,25 @@ layout、配色、caption 文字），不能改字段映射、统计口径、cla
 同一条纪律在不同阶段措辞不同，新加的阶段直接没有）。
 
 **本阶段的典型踩坑点**：代码尤其危险 —— 改一处数值会影响下游全部派生量，顺手改动会被 5Result-credibility-audit 当成新缺陷抓出来。改完必须重跑受影响子问题及其全部下游（派生指标 → 汇总 → 图表 → result_contract）。
+
+### 返修编排：诊断可并行，写入只有一个
+
+返修问题多时，**不要**把 `code/`、`results/`、`figures/data|spec` 拆给多个子 agent 同时改 —— 多个写者会互相覆盖，也会让「改 A 坏 B」无法逐条归因。正确分工：
+
+1. 主 agent 先按回执把问题拆成互不重叠的文件/子问题组。只有 **≥2 组确实互不依赖**
+   （不同 `q*.py`、不同结果文件、不同图 bundle）时才考虑并行。
+2. 并行只用于**只读诊断**：子 agent 读当前代码/结果/日志，可在
+   `_tmp/repair_diag/<issue>/` 写探针，返回「证据 + 根因 + 精确 patch（`file:line`，旧→新）
+   + 复验命令 + 风险」。子 agent **不得**写 `code/`、`results/`、`figures/`、`reports/`、
+   `*.lock.json`，也不得改 `INNOVATION_MEASUREMENT.json`。
+3. 主 agent **串行**应用 patch；每应用一条就重跑受影响的子问题及其下游
+   （派生指标 → 汇总 → 图表 → result_contract），不要等所有 patch 落完再统一跑。
+   涉及共享模块、共享数值或 `run_all.py` 的改动不分给子 agent，直接主 agent 做。
+4. 回执要求的复验必须由主 agent 亲自执行，并把**命令输出**写进 `RESULTS_REPORT.md`
+   的本轮改动/复验段；子 agent 的「已修好」只能当线索，不能当复验证据
+   （与 `receipt_ledger` 的「返修记录不许自证」同一条纪律）。
+5. 只有一条问题、或问题都在同一个数值链上时，**不要开子 agent**：直接主 agent 修，
+   省下的协调时间比并行多。
 
 ## 运行环境
 ## 数据读取与预处理

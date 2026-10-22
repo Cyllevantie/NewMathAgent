@@ -224,6 +224,47 @@ def _command_writes_protected(cmd, cwd):
     return bool(cmd) and _has_write_action(cmd) and _mentions_protected(cmd, cwd)
 
 
+def _command_invokes_git(cmd, depth=0):
+    """阶段 agent 一律不许碰 git（尤其从历史里捞已删除/旧归档）。
+
+    只拦阶段进程（main() 里先看 FMA_STAGE）；主 agent 自己仍可用 git 做版本管理。
+    直接命令、cd && git、bash -c/powershell -Command 内层、python -c 里的 git 都拦。
+    """
+    if not cmd or depth > 2:
+        return False
+    for seg in _segments(cmd):
+        tokens = _tokens(seg)
+        if not tokens:
+            continue
+        idx = 0
+        while idx < len(tokens) and (
+                tokens[idx][0].lower() in _WRAPPERS or
+                re.match(r"^[A-Za-z_]\w*=", tokens[idx][0])):
+            idx += 1
+        if idx >= len(tokens):
+            continue
+        name = os.path.basename(tokens[idx][0].strip().lstrip("&@")).lower()
+        if name.endswith(".exe"):
+            name = name[:-4]
+        if name == "git":
+            return True
+        rest = [t for t, _q in tokens[idx + 1:]]
+        low = [t.lower() for t in rest]
+        if name in _SHELLS:
+            for flag in ("-c", "/c", "-command"):
+                if flag in low:
+                    inner = " ".join(rest[low.index(flag) + 1:])
+                    if inner and _command_invokes_git(inner, depth + 1):
+                        return True
+        if name in _PYTHONS and "-c" in low:
+            code = " ".join(rest[low.index("-c") + 1:])
+            if re.search(r"(?i)(?:['\"]git(?:\.exe)?['\"]|\bgit\s+"
+                         r"(?:show|log|cat-file|ls-tree|checkout|restore|archive|"
+                         r"diff|grep|rev-list)\b)", code):
+                return True
+    return False
+
+
 _WARNINGS = []
 
 
@@ -272,6 +313,16 @@ def _main():
     _log(ev)
 
     if event == "PreToolUse":
+        # ★ 阶段 agent 一律不许碰 git：否则它会用 `git show HEAD:...` 把用户已经删掉的
+        #   旧归档（如 2026A试跑示例）从历史里捞回来，当作本轮依据。主 agent 不设
+        #   FMA_STAGE，仍可正常用 git 做版本管理。
+        if os.environ.get("FMA_STAGE") and tool in ("Bash", "PowerShell"):
+            cmd = str((ev.get("tool_input") or {}).get("command") or "")
+            if _command_invokes_git(cmd):
+                print("阶段内禁止使用 git（尤其 git show/log/cat-file/ls-tree 等读取历史）："
+                      "只能读当前工作区文件；用户删掉的归档不得用 git 恢复，"
+                      "历史内容不得作为本轮依据。", file=sys.stderr)
+                return 2
         # 面板锁存在时，子 agent / 主 agent 都只许写 _tmp/ 或 tmp/。
         # 超过 2h 的锁视为崩溃残留，自动失效，避免永久卡住后续阶段。
         if LOCK.exists():

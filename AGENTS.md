@@ -50,6 +50,18 @@
 - 看到"像是孤儿"的 python：**不要管** —— 驱动下次启动会自己收容（`_reap_orphan_agents`）。
 - 阶段侧的唯一权威表述（含"跑飞了怎么办"的完整步骤）：`skills/_references/stage_discipline.md` 第七节。
 
+## 禁止从 Git 历史取本轮依据（硬红线）
+
+**阶段内禁止使用任何 `git` 命令** —— 尤其 `git show` / `git log` / `git cat-file` /
+`git ls-tree` / `git checkout` / `git restore` / `git archive` / `git diff <rev>` /
+`git grep <rev>`。只能读取**当前工作区文件**；用户已经删除的归档不得用 git 恢复，
+历史版本也不得作为本轮结论、模型结构或探针内核的依据。需要规范/文献时读 `skills/` 与
+`docs/`，不要读 Git 历史。
+
+这条由 `runtime/hooks/fma_hook.py`（阶段进程带 `FMA_STAGE` 时拦 git）和
+`prompt_for()` 的注入提示机械执行；完整口径见 `skills/_references/stage_discipline.md`
+顶部的「Git 历史禁区」。
+
 ## 阶段链
 
 编号 ↔ skill ↔ 产出 的账本在 `docs/STAGE_CHAIN.md`（那里还列着「改链时要同步的各个面」）。

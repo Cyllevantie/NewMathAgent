@@ -60,6 +60,18 @@
 - 阶段侧的同一条纪律（含"跑飞了怎么办"的完整步骤）：`skills/_references/stage_discipline.md` 第七节
   —— 唯一权威表述在那边，这里只作入口。
 
+## 禁止从 Git 历史取本轮依据（硬红线）
+
+**阶段内禁止使用任何 `git` 命令** —— 尤其 `git show` / `git log` / `git cat-file` /
+`git ls-tree` / `git checkout` / `git restore` / `git archive` / `git diff <rev>` /
+`git grep <rev>`。只能读取**当前工作区文件**；用户已经删除的归档不得用 git 恢复，
+历史版本也不得作为本轮结论、模型结构或探针内核的依据。需要规范/文献时读 `skills/` 与
+`docs/`，不要读 Git 历史。
+
+这条由两个地方机械执行：`runtime/hooks/fma_hook.py`（阶段进程带 `FMA_STAGE` 时直接拦
+git 命令，主 agent 的版本管理不受影响）与 `prompt_for()` 的注入提示。完整口径见
+`skills/_references/stage_discipline.md` 顶部的「Git 历史禁区」。
+
 ## 阶段读取表（唯一权威）
 
 **每个阶段只读下表列出的 1–2 份；其余 docs 仅在对应命令报错时按需查。** 各 SKILL 不再重复声明读哪些 docs——需要领域判断时才查 `skills/_references/math_modeling_norms.md` 的对应小节。

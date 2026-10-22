@@ -35,8 +35,6 @@ try {
   button{background:#26303a;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 14px;cursor:pointer}
   button:hover{background:#2f3b47}button.primary{background:var(--acc);color:#062}
   #status{font-size:13px;margin-left:auto;color:var(--dim)}
-  /* SSE 连接状态：驱动死掉时页头不能还挂着最后一次的「运行中」（见 setConn）。 */
-  #conn{font-size:11.5px;margin-left:8px;color:var(--dim);white-space:nowrap}
   /* ★ 第二排（产物 chip 靠左、**GitHub 标识居中**、🤖托管 靠右 —— 用户 2026-09-29 / 2026-09-30）。
      `flex-basis:100%` 让它**必然独占一行**：不用"内容长了自己掉下去"那种概率写法，
      这里要的是确定性。
@@ -117,13 +115,17 @@ try {
   #gh_close{position:absolute;top:8px;right:12px;background:none;border:none;padding:2px 6px;
           font-size:18px;line-height:1;color:var(--dim);cursor:pointer}
   #gh_close:hover{color:var(--fg)}
-  main{display:grid;grid-template-columns:290px 1fr;gap:0;height:calc(100vh - 120px)}
+  main{display:grid;grid-template-columns:300px 1fr;gap:0;height:calc(100vh - 120px)}
   aside{border-right:1px solid var(--line);overflow:auto;padding:10px}
   .sec{font-size:12px;color:var(--dim);margin:12px 4px 6px;text-transform:uppercase}
   /* 外层改 block、内层 .dotline 才是那行 flex：因为建议面板要挂在**行下面**
      （2026-09-28 用户要求 📝 改成点击展开，不再用悬停提示）。 */
   .stage{padding:6px 8px;border-radius:6px;margin:2px 0;display:block;cursor:default}
-  .stage .dotline{display:flex;gap:8px;align-items:center}
+  /* 返修行右侧会同时出现 📝 徽章 + 状态 + 计时章；蓝图/像素的徽章带框，最容易把
+     最后一项挤到第二行。名字吃剩余宽度并在极窄时省略，右栏固定不换行。 */
+  .stage .dotline{display:flex;gap:8px;align-items:center;min-width:0}
+  .stage .sname{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stage .dotline > span:last-child{flex:0 0 auto;white-space:nowrap}
   /* 📝 徽章：改成**可点**的开关（点一下展开建议、再点收起），不再依赖悬停 */
   .advtag{cursor:pointer;border-bottom:1px dotted var(--dim);margin-right:2px}
   .advtag:hover{color:var(--fg)}
@@ -177,7 +179,10 @@ try {
   .grp{font-size:11px;color:var(--dim);padding:6px 8px 3px;cursor:pointer;user-select:none;border-top:1px solid var(--line);margin-top:4px}
   .grp:hover{color:var(--fg)}
   .grp .caret{display:inline-block;width:1.1em}
-  section{display:flex;flex-direction:column;min-width:0}
+  /* `min-height:0` 不能省：报告/图片页签的 #view 是 flex 子项，默认 min-height:auto
+     会让它按内容撑高、把 section 撑出 main 的固定高度，整页跟着变长（日志页签因为
+     #view 被改成 overflow:hidden + 绝对定位内层，所以没暴露这个问题）。 */
+  section{display:flex;flex-direction:column;min-width:0;min-height:0}
   .tabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel)}
   .tabs button{border:0;border-radius:0;background:none;color:var(--dim);padding:9px 16px}
   .tabs button.on{color:var(--acc);box-shadow:inset 0 -2px 0 var(--acc)}
@@ -1978,14 +1983,13 @@ try {
   <button id="upbtn">⬆ 上传题目</button>
   <button id="delivbtn" title="产物根 / 提交件根 / 各阶段产物 / 下一个归档名（点一下展开）">📁 产物</button>
   <select id="stage_sel" style="background:#26303a;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px"></select><button id="redo_btn">↺ 从所选阶段重跑</button><button id="wipe_btn">🗑 清空全部</button><button id="start" class="primary">▶ 开始全链</button>
-  <button id="pause" title="从当前阶段停下并转黄灯 —— 面板上可接着选「再试一次 / 回退到某阶段 / 接受并披露 / 我已手工修好」">⏸ 暂停</button>
+  <button id="pause" title="从当前阶段停下并转黄灯，同时取消一键托管 —— 面板上可接着选「再试一次 / 回退到某阶段 / 接受并披露 / 我已手工修好」">⏸ 暂停</button>
   <button id="stop" title="硬停，不给决策面板（黄灯若亮着则一并收起）。要「停下但保留出口」用暂停">⏹ 停止</button>
   <!-- 只在整链跑完、且工作区里确实还有残留时才出现（见 /api/cleanup 的两道门） -->
   <button id="cleanup" style="display:none" title="把工作区里剩下的生成物移到 <产物>/其他产物/（移动，不是复制）">🧹 清理全部残留</button>
   <div id="pwrap"><div id="pbar"></div></div><span id="ptext" style="color:var(--dim);font-size:12px"></span>
   <span id="timer" style="color:#39ff14;font-size:12px;font-family:var(--mono,monospace);margin-left:6px;text-shadow:0 0 6px rgba(57,255,20,.6)"></span>
   <span id="status">未运行</span>
-  <span id="conn" title="与驱动的实时连接">● 未连接</span>
   <!-- ★ 第二排：**左边**产物 chip、**右边** 🤖托管（用户 2026-09-29 指定）。
        这两个原本都挤在第一排右端，于是「计时器那栏一变长就把托管顶到下一排」。
        请下第一排之后：第一排不用再压缩、宽度也宽裕了，两个各占第二排一头，谁也不再挤谁。
@@ -2882,7 +2886,7 @@ function renderStages(st){
        +`onclick="toggleAdv('${id}',event)">${_icHTML('📝')}${nHard?nHard:''}</span>`
       :'';
     return {id, cls, html:
-      `<div class="dotline"><span class="dot"></span>${STAGE_NAME[id]||id}`
+      `<div class="dotline"><span class="dot"></span><span class="sname" title="${STAGE_NAME[id]||id}">${STAGE_NAME[id]||id}</span>`
       +`<span style="color:var(--dim);margin-left:auto;font-size:11px">${advTag}${advTag?' ':''}${_icHTML(tag)}${ts}</span></div>`};
   });
   const box=$('stages');
@@ -4065,14 +4069,31 @@ $('start').onclick=async()=>{
   loadState();
 };
 $('pause').onclick=async()=>{
-  if(!confirm('暂停？\n\n当前阶段会在收尾后停下并弹出决策面板，你可以接着选「再试一次 / 回退到某阶段 / 接受并披露 / 我已手工修好」。\n（当前阶段正在跑的进程会被收掉，回来时从它重试）')) return;
+  if(!confirm('暂停？\n\n当前阶段会在收尾后停下并弹出决策面板，你可以接着选「再试一次 / 回退到某阶段 / 接受并披露 / 我已手工修好」。\n暂停会同时取消一键托管，收尾后不会自动跑下一阶段。\n（当前阶段正在跑的进程会被收掉，回来时从它重试）')) return;
   const r=await fetch('/api/pause',{method:'POST'});
-  if(!r.ok){ const d=await r.json().catch(()=>({})); alert('无法暂停：'+(d.detail||r.status)); }
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ alert('无法暂停：'+(d.detail||r.status)); loadState(); return; }
+  // 新驱动会在 /api/pause 里直接收掉托管（返回 autopilot=false）；旧驱动没有这个字段，
+  // 这里补一刀，保证不重启也能做到「暂停后不再自动起下一阶段」。旧驱动上即使托管本来
+  // 是关的，多这一步也只是让服务端再确认一次关闭，不会起链。
+  if(d.autopilot!==false){
+    await fetch('/api/autopilot',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({on:false})}).catch(()=>{});
+  }
+  fillAutopilot(!!d.autopilot);
   loadState();
 };
 $('stop').onclick=async()=>{
   if(!confirm('硬停？\n\n不给决策面板；黄灯若亮着也一并收起。要「停下但保留出口」请用「暂停」。')) return;
-  await fetch('/api/stop',{method:'POST'}); loadState();
+  const r=await fetch('/api/stop',{method:'POST'});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ alert('无法停止：'+(d.detail||r.status)); loadState(); return; }
+  if(d.autopilot!==false){
+    await fetch('/api/autopilot',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({on:false})}).catch(()=>{});
+  }
+  fillAutopilot(!!d.autopilot);
+  loadState();
 };
 $('cleanup').onclick=async()=>{
   const dv=(lastSt&&lastSt.delivery)||{};
@@ -4369,26 +4390,12 @@ $('cf_back').onclick=()=>{ startMain(); splHide(); };
 $('brand').onclick=()=>{ if(_inMain) splShow('config'); };   // 主界面标题 → 回展示页
 $('splash_brand').onclick=()=>{ if(_mainStarted) splHide(); };  // 展示页标题 → 回主界面
 
-// SSE 连接状态（页头 #conn）：驱动死掉时 EventSource 会触发 onerror，浏览器自动重连；
-// 重连成功再触发 onopen。没有这个指示，页头会一直挂着最后一次的状态（如「运行中」），
-// 用户分不清"任务还在跑"还是"驱动已经没了"。
-let _connOk=null;   // 只在状态真变时动 DOM：onmessage 每条都会调 setConn(true)
-function setConn(ok){
-  const el=$('conn'); if(!el) return;
-  if(_connOk===ok) return;
-  _connOk=ok;
-  el.textContent=ok?'● 已连接':'● 连接断开（自动重连中）';
-  el.title=ok?'与驱动的实时连接正常'
-             :'与驱动的连接已断开 —— 浏览器正在自动重连；恢复后这里会自动变回「已连接」';
-  el.style.color=ok?'var(--ok)':'var(--fail)';
-}
+// SSE 只负责实时推送；连不上时浏览器会自己重试，不在页头显示连接状态。
 function startMain(){
   if(_mainStarted){ _inMain=true; return; }
   _mainStarted=true; _inMain=true;
   const es=new EventSource('/api/stream');
-  es.onopen=()=>setConn(true);
-  es.onerror=()=>setConn(false);
-  es.onmessage=e=>{ setConn(true); const m=JSON.parse(e.data);
+  es.onmessage=e=>{ const m=JSON.parse(e.data);
     if(m.evt==='log'){appendLog(m.data);}
     if(m.evt==='state'){renderStages(m.data);}
     if(m.evt==='end'){loadState();}
