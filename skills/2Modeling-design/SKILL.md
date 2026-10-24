@@ -52,15 +52,24 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
   - 逐子问题给出：变量与符号、模型假设、决策变量 / 目标函数 / 约束条件（建模三要素显式写出）、求解算法、机理依据（引用文献方向）、实现口径、代码阶段任务清单。
   - 求解算法选型：黑箱/非凸/不可导/组合优化类子问题，可标注"用 `metaheuristic-optimization` skill（MEALPY：GA/PSO/DE/GWO/WOA）"；线性/凸/可精确求解的问题优先用专用求解器（scipy/Gurobi），不强行套用元启发式。
   - 每个关键假设/建模决策附一行"为什么"，让评审员能据以判断是否偏离题意/机理。
-  - 「创新点与取舍」小节：基线卡、候选表、六项硬门槛评分、采用/不用的理由；只把有实测/可证伪增量、且主答案守住护栏的叫“核心创新”，其余叫“关键处理”。schema 与反模式见 `references/innovation-ledger.md`。
+  - 「创新点与取舍」小节：基线卡、候选表、六项硬门槛评分、采用/不用的理由；只把 `kind=innovation` 且有实测/可证伪增量、主答案守住护栏的叫“核心创新”；其余 innovation 叫 `supporting`，contribution 叫「模型特点与关键处理」。schema 与反模式见 `references/innovation-ledger.md`。
   - 报告带版本号与修订历史（评审回执如何被吸收）。
 - `reports/INNOVATION_LEDGER.json`（本阶段必写的**设计台账**；③ 只读它。
   ④⑥⑨ 分别写 `INNOVATION_MEASUREMENT.json` / `INNOVATION_ROBUSTNESS.json` /
   `INNOVATION_PAPER.json`，**不得回写设计台账**）：
-  - 记全部候选（含 rejected），不是只记采用项；至少 3 条，`panel.lenses` 至少 3 个视角且含对抗/审稿（纯优化题可用 optimization 代替）。
-  - 每条 adopted 必须有 `core（true/false）/ baseline_id / failure_mode / intervention / claim / predicted_delta / test / kill_if / primary_guard`；全篇最多 1 个 `core=true`，adopted 最多 2 条。
-  - `primary_guard` 写主答案是什么、允许相对变化多少（默认 10%）、为什么；主答案超出护栏且无独立证据 → 不能 adopted。
-  - 没有 adopted 时写 `no_adoption_reason`（为什么本题没有值得做的增量），不许空着。
+  - 记全部候选（含 rejected），不是只记采用项；至少 3 条，`panel.lenses` 至少 4 个不同视角，
+    且 `closure` 与 `adversarial` 各至少要有一个（纯优化/决策题可用 `optimization` 顶替其中
+    一项；不能两项都靠同一个 optimization 顶替，否则凑不满 4 个不同视角）。另两条从
+    mechanism/data 里取。
+  - `kind="innovation"` 的 adopted 最多 2 条（1 core + 1 supporting），每条必须有
+    `core（true/false）/ baseline_id / failure_mode / intervention / claim / predicted_delta /
+    test / kill_if / primary_guard`；全篇最多 1 个 `core=true`。
+  - `primary_guard` 只属于 innovation，写主答案是什么、允许相对变化多少（默认 10%）、为什么；
+    主答案超出护栏且无独立证据 → 不能 adopted。
+  - `kind="contribution"` 的 adopted 最多 3 条、`core` 必须 false；必须有
+    `contribution / baseline_is_naive / contribution_evidence`，不要求 `primary_guard`。
+  - 没有 adopted 时写 `no_adoption_reason`（为什么本题没有值得做的增量），不许空着；
+    但 ⑨ 仍会因 2.5 为空打回 ②（见 Step 3.7）。
   - 收尾自检：`python lib/web/check_innovation.py --stage design`。
 - `reports/TASK_CONTRACT.json`（启用 content-quality 时必写：项目根存在 `docs/CONTENT_QUALITY.md` / `config/content_quality.json`；schema 见前者「题意契约」）：
   - 把题面每条硬条件与交付要求映射为一个 requirement：`{id, source:{file,quote}, source_semantics, model_semantics, model_anchor:{file,quote}, status:"mapped"}`。
@@ -170,9 +179,19 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 
 - 基线必须是**本题最简、可跑、可辩护**的方案，不是“随便一个能出数的模型”；
 - 头条数字/决策必须是论文要回答的那一个（如 t_dry、最大含水率、成本、分组数）；
-- 失败模式要具体到方程/边界/数据口径/判据/决策，不写“精度不够”“效果一般”。
+- 失败模式要具体到方程/边界/数据口径/判据/决策，不写“精度不够”“效果一般”；
+- `kind=contribution` 的朴素基线如果与该问主基线不同，另写一张基线卡（如 `BASE-Q4-N`），
+  并在台账里让 `baseline_id` 指向它；不要拿主模型当朴素基线。
 
-**主答案护栏（最重要）**：每个 adopted 项另写
+**输入过定 / 闭合检查（开面板前必做）**：列出“同一物理量/几何被多个输入重复定义”的地方。
+典型：题给 R(t) 与附录的 ρ_b(C) 同时定义干物质存量；两者不能同时当独立物理输入。若存在过定：
+
+- 基线卡必须写“**主闭合是什么、哪个量只作诊断**”（例如 ρ_s∝R⁻² + 固体连续性；ρ_b(C) 只进热容；
+  干物质审计是输入过定诊断，不是数值质量泄漏）；
+- 创新面板必须至少提一条 `type=closure` 候选（见 Step 3.6 D），并且它必须有一个**朴素基线**
+  （不采用该闭合时的错误/不完整模型）与一致性/差值证据。
+
+**主答案护栏（最重要，仅 `kind=innovation`）**：每个 innovation adopted 项另写
 
 ```json
 "primary_guard": {
@@ -184,7 +203,8 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 
 创新默认只能让主答案在护栏内变化；如果主答案大幅偏离基线（例如温度从 33 ℃ 掉到 5 ℃，
 而空气是 41 ℃），先按**模型没闭合**处理，不叫创新。必须有独立证据（实验/文献/题面给定值/
-多模型一致/解析极限）证明是基线错了，否则只能降级为负结果/局限。没有护栏，不许 adopted。
+多模型一致/解析极限）证明是基线错了，否则只能降级为负结果/局限。innovation 没有护栏，
+不许 adopted；`kind=contribution` 不写护栏，改用“朴素基线 + 证据”的门槛（见 Step 3.7）。
 
 **创新的形态**：优先“简单模型 + 一个可控增量”（加一项闭合、换一个判据、证明一个结构），
 而不是“换一套模型把主答案带走”。如果确实要换模型类，baseline 与 intervention 都保留：
@@ -218,10 +238,27 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 - **可测量改变**：对头条数字/决策给出方向与量级，或定性翻转；
 - **任务相关性**：改变的是题目要回答的东西，不是顺手多算一个指标。
 
-以下**不算创新**：用了有限体积/PSO/机器学习；考虑了收缩/端面/变物性；做了灵敏度分析/
-网格收敛；精度更高；把三个模型拼在一起。它们是 L0/L1 或验证工作，只能叫“关键处理”。
+以下**本身不算创新**：用了有限体积/PSO/机器学习；考虑了收缩/端面/变物性；做了灵敏度分析/
+网格收敛；精度更高；把三个模型拼在一起。它们没有朴素基线 + 一致性/差值证据时只是
+L0/L1 或验证工作；补上“朴素基线 → 本文处理 → 证据”后可作为 `kind=contribution`
+（模型特点与关键处理），但仍不能叫核心创新。
 
-### Step 3.6: 创新面板（3 个默认视角 + 1 个可选）
+**两类正面内容（论文 2.5 不能为空）**：
+
+- `kind="innovation"`：基线是**主模型**，干预是增量，比较可测 delta 并守住主答案护栏；写“本文主要创新点”。
+- `kind="contribution"`：基线是**朴素/不完整模型**（例如固定域、体积平均判据、把 R(t) 与 ρ(C)
+  同时当独立输入），本文做法是任务特定的**闭合/结构/判据**；用一致性、必要性或差值证明，
+  不要求推动主答案。写“模型特点与关键处理”。
+
+两类项都有时，2.5 标题写「本文主要创新点与模型特点」：创新点用 `\textbf{创新点X：}`，
+贡献用 `\textbf{关键处理X：}`，两类都逐条写“基线 → 本文处理 → 证据/差值”。
+
+contribution 不是“没创新”，而是论文的模型贡献：例如“自洽收缩闭合（ρ_s∝R⁻² + 固体连续性，
+热容密度与之一致）”“全节点事件判据（相比体积平均晚 37.25%）”“材料坐标（相比固定域 130.5 h
+→ 51.2 h）”。没有 innovation 时，2.5 至少要有一条 contribution；否则 ⑨ 必须打回 ②，
+不能写“本文不宣称创新”。
+
+### Step 3.6: 创新面板（4 个默认视角，含闭合 + 1 个可选）
 
 目的：避免第一条建模思路定终身，但**不是让 agent 多想几个点子**——每个候选都必须从
 基线卡的失败模式出发，而不是从“我想用什么方法”出发。
@@ -231,19 +268,22 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
    （用 Write 直接写 `brief.md` 即可，它会自动建目录；不要依赖 PowerShell `New-Item`——
    本次实测它在 `acceptEdits` 下会被拒绝，白费一轮。）
    建好 brief 后，按 `../_references/stage_discipline.md` 八建 `.fma_panel_lock`；收齐候选后先删锁，再写正式报告。
-2. 用 Agent 工具并行启动 3 个子 agent（优先 `config/agents.json` 的
-   `idea-mechanism` / `idea-data` / `idea-adversarial`；不可用时 general-purpose；默认 3 个**不同视角**，不是 3 份同题重答）：
-   - A 机理 / 闭合（`idea-mechanism`）：模型漏了哪条物理通道、边界、耦合、尺度；
+2. 用 Agent 工具并行启动 **4 个**子 agent（优先 `config/agents.json` 的
+   `idea-mechanism` / `idea-data` / `idea-adversarial` / `idea-closure`；不可用时 general-purpose；
+   默认 4 个**不同视角**，不是 4 份同题重答）：
+   - A 机理（`idea-mechanism`）：模型漏了哪条物理通道、边界、耦合、尺度；
    - B 数据 / 辨识（`idea-data`）：哪个参数不可辨识、哪个数据没用上、误差怎么传到结论；
-   - C 对抗 / 审稿（`idea-adversarial`）：专门攻击基线，找“如果成立就会让结论翻转”的假设，给最小修补。
-   - D 优化 / 决策（`idea-optimization`，**仅当题目真是优化/决策题**）：最优控制、鲁棒设计、
+   - C 对抗 / 审稿（`idea-adversarial`）：专门攻击基线，找“如果成立就会让结论翻转”的假设，给最小修补；
+   - D 闭合 / 耦合（`idea-closure`，**默认必开；纯优化/决策题可用 E 代替**）：先扫“同一物理量/几何被多个输入重复定义”
+     （R(t) 与 ρ(C)、边界与物性、几何与守恒），提至少一条 `type=closure` 候选：
+     朴素基线是什么、主闭合换成什么、一致性/差值怎么验证；**这是模型层贡献的主要来源**。
+   - E 优化 / 决策（`idea-optimization`，**仅当题目真是优化/决策题**）：最优控制、鲁棒设计、
      调度、多目标、情景规划。非优化题不要默认开这个视角——它会产出题面没问的“优化烘房温度”。
 
-   **默认 3 的理由**：实测 2 个 agent 已能给出 5–6 条不重复方向，第 3 个用于补盲区；
-   再往上多是同一模型的重复采样，边际新意下降，主 agent 的评审成本反而上升。
-   三份候选如果**重叠 >50%**，或**可落地的不足 2 条**，再补 1–2 个「补位」agent：
-   对立假设 / 另一学科视角 / 审稿人视角；总数 **≤5**。补位要针对缺口写 prompt，
-   不要重复已有视角。连续一轮没有新主题就停（loop-until-dry）。
+   **默认 4 的理由**：前 3 个视角给机制/数据/对抗，闭合视角专门产出“模型层贡献”，
+   避免 9 条候选全是参数假设、台账全 rejected、论文 2.5 没内容。四份候选如果**重叠 >50%**，
+   或**可落地的不足 2 条**，再补 1 个「补位」agent（对立假设 / 另一学科视角）；总数 **≤5**。
+   补位要针对缺口写 prompt，不要重复已有视角。连续一轮没有新主题就停（loop-until-dry）。
 3. 每个子 agent 只写 `_tmp/idea_panel/<lens>.md`，每个方向固定七行：
 
    ```text
@@ -253,7 +293,8 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
    预测增量：对哪个头条数字/决策，方向与量级；主答案预计怎么变、是否在护栏内
    验证：用什么数据/对照/负控制；什么结果算失败
    代价：实现时间、数据需求、是否违反硬约束
-   类型与视角：mechanism/structure/criterion/evidence + mechanism/data/adversarial/optimization
+   类型与视角：mechanism/structure/criterion/evidence/closure + mechanism/data/adversarial/closure/optimization；
+               这是 innovation（主模型增量）还是 contribution（朴素基线→本文结构）
    ```
 
    禁止写最终报告，禁止改 `code/`、`results/`。
@@ -273,39 +314,56 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 
 ### Step 3.7: 评分与预注册（硬门槛，不是 1–5 分）
 
-| 维度 | 通过条件 |
-|---|---|
-| 必要性 | 去掉它，头条数字变化 ≥5%，或定性结论翻转；达不到就降为“关键处理” |
-| 可证伪 | 能写出一个可能失败的 test（对照/负控制/复算），不是“做灵敏度分析” |
-| 非显然 | 题面/文献没有直接给出，需要推导或对照才能看见 |
-| 可落地 | 数据可得，④ 能实现，⑥ 能检验；不超竞赛时间 |
-| 主答案护栏 | 主答案变化 ≤ `primary_guard.allowed_relative_change`；超出必须有 `independent_evidence`，否则不能 adopted |
-| 合规 | 不违反 Step 0 硬约束，不靠改口径/编数据 |
+| 维度 | `kind=innovation` 通过条件 | `kind=contribution` 通过条件 |
+|---|---|---|
+| 必要性 | 去掉它，头条数字变化 ≥5%，或定性结论翻转 | 朴素基线确实错/不完整；去掉本文处理，一致性/差值证据消失或显著变差（**不要求头条数字变化**） |
+| 可证伪 | 能写出一个可能失败的 test（对照/负控制/复算），不是“做灵敏度分析” | 同左 |
+| 非显然 | 题面/文献没有直接给出，需要推导或对照才能看见 | 同左 |
+| 可落地 | 数据可得，④ 能实现，⑥ 能检验；不超竞赛时间 | 同左 |
+| 主答案护栏 | 主答案变化 ≤ `primary_guard.allowed_relative_change`；超出必须有 `independent_evidence` | **不适用**（基线不是主模型）；`core` 必须 false |
+| 合规 | 不违反 Step 0 硬约束，不靠改口径/编数据 | 同左 |
 
-只有**必要性 + 可证伪 + 主答案护栏**都过，才能 `status=adopted`；一篇最多 **1 个 `core=true` +
-1 个 supporting**。每个 adopted 必须写 `kill_if`：④ 测不到或测失败就降级，不许嘴硬。
+`kind=innovation` 必须过**必要性 + 可证伪 + 主答案护栏**；`kind=contribution` 必须过
+**贡献必要性 + 可证伪**，不套主答案护栏。一篇最多 **1 个 core innovation + 1 个 supporting
+innovation + 3 个 contribution**。每个 adopted 必须写 `kill_if`：④ 测不到或测失败就降级，不许嘴硬。
 
-**主答案优先于创新**：如果创新让主答案大幅偏离基线、又没有独立证据，正确结论是“这个创新
-不成立/模型没闭合”，不是“我的方法更精细”。温度 5 ℃ vs 空气 41 ℃ 就是前一种。
+**主答案优先于创新（仅 `kind=innovation`）**：如果创新让主答案大幅偏离基线、又没有独立
+证据，正确结论是“这个创新不成立/模型没闭合”，不是“我的方法更精细”。温度 5 ℃ vs 空气
+41 ℃ 就是前一种。
 
 把**全部候选（含 rejected）**写进 `reports/INNOVATION_LEDGER.json`，schema 与示例见
 `references/innovation-ledger.md`。最低要求：
 
-- `panel.lenses` 至少 3 个视角且含 `adversarial`（纯优化题可用 `optimization` 代替）；
-- `items` ≥3 条，adopted 最多 2 条；每条 adopted 必须有
+- `panel.lenses` 至少 4 个不同视角，且 `closure` 与 `adversarial` 各至少要有一个
+  （纯优化/决策题可用 `optimization` 顶替其中一项；不能两项都靠同一个 optimization 顶替）；
+- `items` ≥3 条，且**至少 1 条模型层候选**（`type` ∈ `closure / structure / criterion`）；
+  全是 mechanism/evidence 的台账会被 `check_innovation` 判“没有模型贡献”；
+- `kind="innovation"` 的 adopted 最多 2 条（1 core + 1 supporting），每条必须有
   `core（true/false）/ baseline_id / failure_mode / intervention / claim / predicted_delta /
   test / kill_if / primary_guard`；
-- 没有 adopted 时写 `no_adoption_reason`（为什么本题没有值得做的增量），不许空着。
+- `kind="contribution"` 的关键处理最多 3 条，**core 必须 false**，每条必须有
+  `contribution（贡献是什么）/ baseline_is_naive（朴素基线为什么错）/
+  contribution_evidence（验证证据或路径）`；不要求 primary_guard；
+- 设计阶段**至少要预注册 1 条可望 adopted 的 contribution 或 innovation**（不保证通过；
+  ④ 测失败可以 downgraded）。全 rejected + no_adoption_reason 不会让设计门禁报错，但 ③ 会
+  退回补模型贡献、⑨ 会因 2.5 为空直接打回 ②；`no_adoption_reason` 只是诚实记录，不是
+  “论文可以没有贡献”的许可证。
 
 ### Step 3.8: 写进报告
 
 在 `ANALYSIS_MODELING_REPORT.md` 写「创新点与取舍」：
 
 - **基线卡表**（Step 3.4）；
-- **候选表**：`ID / 问 / 类型 / 失败模式 / 干预 / 可证伪命题 / 预测增量 / 主答案护栏 / 验证 / 状态`；
-- 采用项写清“为什么是它 + 代价 + 风险”，并标明 `core` 还是 `supporting`；
+- **候选表**：`ID / 问 / kind / 类型 / 失败模式 / 干预 / 可证伪命题 / 预测增量或一致性证据 / 主答案护栏（innovation）/ 贡献证据（contribution）/ 验证 / 状态`；
+- 采用项写清“为什么是它 + 代价 + 风险”，innovation 标明 `core` 还是 `supporting`，
+  contribution 标明「模型特点与关键处理」；
 - 未采用项各一句“为什么不用”（不可验证 / 超时间 / 偏离题意 / 必要性不足）；
-- 只把 `adopted` 且 `core=true` 的 1 项叫“核心创新”；其余 adopted 叫“关键处理”；
+- 只把 `kind=innovation` 且 `adopted` 且 `core=true` 的 1 项叫“核心创新”；其余 innovation
+  叫 `supporting`，contribution 叫“模型特点与关键处理”；
+- `kind=contribution` 的项写进「模型特点与关键处理」，每条写“朴素基线 → 本文处理 → 证据/差值”
+  （如“体积平均 36.1272 h → 全节点 57.5702 h，晚 37.25%”“固定域 130.5 h → 材料坐标 51.2 h”）；
+- **2.5 不能为空**：没有 innovation 时至少 1 条 contribution；禁止写“九项全 rejected /
+  本文不宣称创新”——那是内部筛选记录，不是论文内容，也会触发 ⑫ 的“完全无创新”致命项；
 - 不要用“创新点一/二/三”把 L0/L1 工作包装成创新。
 
 收尾自检：
@@ -405,9 +463,10 @@ python lib/web/check_contract.py      # 契约里每条 quote 还逐字指得到
 python lib/web/check_innovation.py --stage design
 ```
 
-不过就当场修：补基线/失败模式/test/kill_if/主答案护栏；测不了的项写 rejected + 理由。
-尤其检查主答案护栏：如果创新会让主答案大幅偏离基线又拿不出独立证据，先按模型没闭合处理，
-不要写成“创新点”。
+不过就当场修：补基线/失败模式/test/kill_if；`kind=innovation` 再补主答案护栏，
+`kind=contribution` 补 `contribution / baseline_is_naive / contribution_evidence`；
+测不了的项写 rejected + 理由。尤其检查 innovation 的主答案护栏：如果创新会让主答案
+大幅偏离基线又拿不出独立证据，先按模型没闭合处理，不要写成“创新点”。
 
 ### ③ 返修台账（被门禁退回过的轮次必做）
 

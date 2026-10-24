@@ -30,8 +30,15 @@ def export(fig, root, figure_id, *, sources, script, claim, caption, settings, i
             if text.get_fontsize() < settings["min_font_size"]:
                 issues.append("文字小于最小字号: " + text.get_text())
             box = text.get_window_extent(renderer)
-            if box.width and box.height and (box.x0 < -1 or box.y0 < -1 or
-                    box.x1 > fig.bbox.width + 1 or box.y1 > fig.bbox.height + 1):
+            if not (box.width and box.height):
+                continue
+            # Text entirely outside the canvas is not visible (mplot3d creates
+            # off-screen labels for its far axes); flag only text that is
+            # partially clipped and therefore actually readable-but-cut.
+            if (box.x1 < 0 or box.y1 < 0 or box.x0 > fig.bbox.width
+                    or box.y0 > fig.bbox.height):
+                continue
+            if box.x0 < -1 or box.y0 < -1 or box.x1 > fig.bbox.width + 1 or box.y1 > fig.bbox.height + 1:
                 issues.append("文字超出画布: " + text.get_text())
         # 图例压数据：在**画完但还没存**时查最准（需要 renderer 的显示坐标）。
         # 挡下来的是"图例落在稠密曲线上"这类人眼一看就废的问题。

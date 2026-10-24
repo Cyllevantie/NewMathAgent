@@ -5,9 +5,9 @@
 用法（项目根目录）::
 
     python skills/7Route-diagram/assets/physical3d/qa_physical3d.py \
-        --pdf figures/fig_geometry_3d.pdf \
-        --png figures/fig_geometry_3d.png \
-        --scene figures/fig_geometry_3d.scene.json \
+        --pdf figures/fig_geometry_shared.pdf \
+        --png figures/fig_geometry_shared.png \
+        --scene figures/fig_geometry_shared.scene.json \
         --width-mm 80 --font "Microsoft YaHei"
 
 退出码：0 = 全部通过；1 = 有硬缺陷；2 = 文件缺失/无法读取。

@@ -13,7 +13,7 @@
 
 API 速览::
 
-    configure_style(font="Microsoft YaHei", base_size=8.5)
+    configure_style(font=None, base_size=8.5)   # None = 读 FIGURE_CONTEXT 字体
     cam = Camera(azim=-58, elev=22)
     sc = Scene(cam)
     sc.cylinder(r=2.0, z0=0, z1=25, cut=(70, -35), color="#DBEAFE")
@@ -23,7 +23,7 @@ API 速览::
     fig, ax = plt.subplots(figsize=(3.2, 3.2))
     sc.fit(ax)
     sc.draw(ax, fig)
-    sc.save(fig, "fig_geometry_3d", "figures", width_mm=80)
+    sc.save(fig, "fig_geometry_shared", "figures", width_mm=80)
 
 约定：角度用**度**；z 轴为圆柱轴；正交投影为默认；``cut=(span, start)``
 表示从 ``start`` 开始保留 ``span`` 度的扇区（即切掉其余部分）。
@@ -69,8 +69,24 @@ FILL_GREEN = "#DCFCE7"
 EPS = 1e-9
 
 
-def configure_style(font: str = "Microsoft YaHei", base_size: float = 8.5,
+def _context_font() -> str | None:
+    """The paper template's resolved font, if a workspace context exists."""
+    for rel in ("reports/FIGURE_CONTEXT.json", "config/visualization.json"):
+        try:
+            data = json.loads((Path(__file__).resolve().parents[4] / rel)
+                              .read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        font = str(data.get("font") or "").strip()
+        if font:
+            return font
+    return None
+
+
+def configure_style(font: str | None = None, base_size: float = 8.5,
                     pdf_fonttype: int = 42) -> None:
+    """Apply the shared 3D style; ``font=None`` follows the template context."""
+    font = font or _context_font() or "Microsoft YaHei"
     mpl.rcParams.update({
         "font.size": base_size,
         "font.family": "sans-serif",
@@ -581,7 +597,7 @@ class Scene:
     def note(self, x: float, y: float, text: str, color: str = MUTED,
              size: float = 8.0, ha: str = "left", va: str = "center",
              bold: bool = False) -> "Scene":
-        """2D 注记（投影坐标）；用于面板字母、单位说明等，不要写长解释。"""
+        """2D 注记（投影坐标）；用于面板短描述、单位说明等，不要写长解释。"""
         self.notes.append(Note2D(x, y, text, color=color, size=size,
                                  ha=ha, va=va, bold=bold))
         return self

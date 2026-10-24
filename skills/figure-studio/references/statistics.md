@@ -84,7 +84,7 @@
 
 ```text
 图 X  <短标题>。
-(a) <面板内容>；n = <n>，<独立单位>；(b) <区间类型>（<方法>，<水平>）。
+左：<面板内容>；n = <n>，<独立单位>；右：<区间类型>（<方法>，<水平>）。
 数据为 <提交版/同模型试算/派生任务>；<排除规则>。无假设检验，未显示 p 值。
 ```
 
@@ -92,6 +92,6 @@
 
 ```text
 Fig. X  <short title>.
-(a) <panel content>; n = <n>, <independent unit>; (b) <interval type> (<method>, <level>).
+Left: <panel content>; n = <n>, <independent unit>; Right: <interval type> (<method>, <level>).
 Data are <submitted run / same-model trial / derived task>; <exclusion rule>. No hypothesis test; no p values are shown.
 ```

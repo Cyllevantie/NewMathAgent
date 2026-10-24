@@ -71,6 +71,11 @@ test 真跑 baseline 与 intervention，把结果如实写进自己的 sidecar**
    - `intervention` 只改该候选声明的那一处（方程/边界/判据/状态量），其余口径、网格、
      时间步、参数、随机种子与 baseline 完全一致；否则 delta 不可归因。
    - 两边都走同一套结果导出与校验；结果文件写到 `results/`，不得只写 `_tmp/`。
+   - 对 `kind="contribution"` 的项：`baseline` 用 `baseline_id` 指向的**朴素基线卡**
+     （如 `BASE-Q4-N`：固定域、体积平均判据、把 R(t) 与 ρ_s(C) 同时当独立输入等），
+     不是主模型；`intervention` 只换那一处闭合/结构/判据。两边同网格/同参数，报 `delta`
+     或一致性证据（干物质漂移、守恒残差、t_dry 变化）。**不写 `primary`/`primary_guard`**
+     ——contribution 的基线不是主答案，主答案护栏不适用。
 2. 在主 agent（单写者）里把实测值写进 **`reports/INNOVATION_MEASUREMENT.json`** 的
    `items[<id>].measurement`（不要改设计台账）：
    ```json
@@ -95,27 +100,33 @@ test 真跑 baseline 与 intervention，把结果如实写进自己的 sidecar**
      }
    }}}}
    ```
-   - **必须同时报主答案**（`primary`）：baseline 与 intervention 下同一个主答案的值、
-     相对变化、是否在 `primary_guard` 内。不能只报一个对创新有利的次要指标。
+   - **`kind=innovation` 必须同时报主答案**（`primary`）：baseline 与 intervention 下同一个
+     主答案的值、相对变化、是否在 `primary_guard` 内。不能只报一个对创新有利的次要指标。
    - `delta` 必须等于 `intervention_value - baseline_value`（同一单位）；`primary.relative_change`
      必须等于 `(intervention-baseline)/|baseline|`。检查器会重算，自报一个对不上的数会被打回。
    - 主答案超出护栏时，`guard_passed=false`，并在 `independent_evidence` 写独立证据
      （实验/文献/题面给定值/多模型一致/解析极限）；**没有证据就不要写 `true`**，
      按“创新不成立/模型没闭合”处理：把该项改 `downgraded`，写清原因。
-   - 定性结果（如“证明最大值只在中心/表面”）用 `kind="qualitative"` + `evidence` + `passed`，
-     不要硬编一个数；`primary` 仍要写能对照的主答案。
+   - **innovation** 的定性结果（如“证明最大值只在中心/表面”）用 `kind="qualitative"` +
+     `evidence` + `passed`，不要硬编一个数；`primary` 仍要写能对照的主答案。
+   - **contribution 例外**：不写 `primary`；定量写 `baseline_value / intervention_value /
+     delta / delta_unit`，定性写 `evidence`（路径 + 数值/一致性结论）；`source` 与 `passed` 必填。
+     校验器对 contribution 走独立分支，不会要求主答案护栏。
    - `source` 必须指向真实结果文件；⑤ 会按它复算。
-3. 若 test 失败、测不出，或**主答案偏离护栏且没有独立证据**：
+3. 若 test 失败、测不出，或 **`kind=innovation` 的主答案偏离护栏且没有独立证据**：
    - 在 measurement sidecar 里给该项加 `status="downgraded"` 与 `downgrade_reason`；
      不要改设计台账里的 `status`（那是 ② 的字段）；
    - **不许**改 `predicted_delta` / `test` 去迎合结果，也不许把失败项继续叫“创新”；
    - 负结果可以写进 `RESULTS_REPORT.md` 的“与建模报告的一致性说明”，由 ⑨ 放到局限/讨论。
-   - 主答案偏离不是“更精细”，先查能量/边界/口径是否闭合；没有证据就按失败处理。
+   - innovation 的主答案偏离不是“更精细”，先查能量/边界/口径是否闭合；没有证据就按失败处理。
 4. 在 `RESULTS_REPORT.md` 增一张「创新增量核验」表：
-   `ID / baseline / intervention / delta / 单位 / 主答案 baseline / 主答案 intervention /
-   主答案相对变化 / 护栏 / 来源文件 / 是否通过`。主答案列不能空着——它是判断“创新有没有
-   把模型带偏”的第一证据。题定结果表与主结论仍以 baseline 为准；intervention 只作为
-   增量对照并列，除非 ③ 已批准“主答案变更 + 独立证据”。
+   `ID / kind / baseline / intervention / delta / 单位 / 主答案 baseline / 主答案 intervention /
+   主答案相对变化 / 护栏 / 贡献证据 / 来源文件 / 是否通过`。
+   - `kind=innovation`：主答案列不能空着——它是判断“创新有没有把模型带偏”的第一证据；
+     题定结果表与主结论仍以 baseline 为准，intervention 只作为增量对照并列，除非 ③ 已批准
+     “主答案变更 + 独立证据”。
+   - `kind=contribution`：主答案/护栏列写“—”，填「贡献证据」列（朴素基线 → 本文处理 →
+     差值/残差/判据差）；不要为了凑表硬写一个主答案。
 5. 收尾自检：
    ```bash
    python lib/web/check_innovation.py --stage code
@@ -130,7 +141,14 @@ test 真跑 baseline 与 intervention，把结果如实写进自己的 sidecar**
 每张主图写 FigureBrief，然后用 `studio.save_bundle(...)` 落三件——
 `figures/data/<id>.npz`、`figures/spec/<id>.json`、`figures/<id>.lock.json`。
 成品 PDF/SVG/PNG、`figures/make_figures.py`、`figures/source_data/*`、`figures/<id>.meta.json`
-全部由 `7Route-diagram` 渲染和写。
+全部由 `7Route-diagram` 渲染和写。**论文主图**还要写 plate 叙事（title / subtitle / hero claim /
+2–3 个 supporting claim），⑦ 按 `../plate-figure/SKILL.md` 生成
+`figures/fig_<id>_plate.png/.pdf`；`spec` 小图是支撑面板，不直接替代 plate。
+plate 叙事用**模板语言**（`reports/FIGURE_CONTEXT.json` 的 language；CUMCM→中文，
+英文模板→英文）：title 是结论句，subtitle 只写数据口径（≤ 约 40 字），
+说明性句子写进 FigureBrief 的 caption，**不要**写进图内。每问一张 plate，问数=题目
+实际问数（不固定四问）；构图由 ⑦ 按各自的证据链自己设计，不套模板；只要求任意两张
+不要是同一骨架换数据。
 
 1. 解析模板语言与画布（CUMCM → 中文、160 mm、微软雅黑）：
 
@@ -139,7 +157,11 @@ test 真跑 baseline 与 intervention，把结果如实写进自己的 sidecar**
    ```
 
 2. 每张主图写 `reports/FIGURE_BRIEF.json`（或 `reports/figure_briefs/<id>.json`），
-   至少写 claim、数据字段/单位/n、面板 role/recipe、区间定义、退路；校验：
+   至少写 claim、数据字段/单位/n、**至少 2 个不同视觉编码的候选 recipe**、区间定义、退路；
+   候选要能用 bundle 里已有的字段渲染，不能只在 brief 里写一个数据层没有的图型。
+   若选中项是折线族，候选里**必须有一个非折线编码**（`raincloud` /
+   `field_raincloud` / `grouped_bars` / `dot_interval`）；同一 bundle + 同一视觉编码
+   只出一张图，plate hero 已经画的 3D 曲面不再写同源支撑 spec。校验：
 
    ```powershell
    python skills/figure-studio/scripts/check_brief.py reports/FIGURE_BRIEF.json --context reports/FIGURE_CONTEXT.json
@@ -170,6 +192,9 @@ test 真跑 baseline 与 intervention，把结果如实写进自己的 sidecar**
 
    字段名就是 ⑦ 能用的名字；`field_mapping` 必须覆盖 recipe 的 `required_fields`
    （`assets/recipes.json`）。同一张图的所有数组放同一个 bundle，不要跨文件引用。
+   **算过的状态量都要进 bundle**：一个问同时解了温度 T 和含水率 C，就同时存
+   `T_field`/`C_field`（含对应的 `r`/`t`），哪怕本轮只想画 C。只存 C 会让 ⑦
+   永远画不出温度/双场对照，事后为补一个字段回 ④ 重出 bundle + lock 很贵。
 
 4. 交付前跑数据锁与 FigureBrief 两道检查：
 
@@ -194,7 +219,8 @@ layout、配色、caption 文字），不能改字段映射、统计口径、cla
 
 - 本阶段负责：代码、实验运行、结果、结果表、数据图的数据包/spec/lock（`figures/data`、
   `figures/spec`、`figures/*.lock.json`）与 FigureBrief，以及
-  `reports/INNOVATION_MEASUREMENT.json`（baseline/intervention 与主答案护栏）。
+  `reports/INNOVATION_MEASUREMENT.json`（innovation：baseline/intervention 与主答案护栏；
+  contribution：delta 或一致性证据）。
 - 本阶段**不负责画布**：成品 PDF/SVG/PNG、`figures/make_figures.py`、`figures/source_data/*`、
   `figures/<id>.meta.json` 全部由 `7Route-diagram` 渲染和写。
 - 本阶段不负责：技术路线图、算法流程图、系统架构图、概念示意图。这些交给 `7Route-diagram`。
@@ -302,13 +328,17 @@ spec 要求（画布由 ⑦ 执行）：
 - 不把流程图/架构图/路线图塞进数据图 spec；那类走 ⑦（`skills/7Route-diagram/references/route-diagram.md`）。
 - 宽高按模板：CUMCM 全宽 160 mm、半栏 80 mm；英文 183/88 mm。spec 里写宽度，⑦ 按它排版。
 
-**别把每张图都画成折线**（典型错误：12 张图里 11 张是 trend/comparison，
+**别把每张图都画成折线**（典型错误：一整批图里绝大多数是 trend/comparison，
 热力图/等高线一张没有）。先问"我要画的量在几个维度上有结构"：
 
 | 量的结构 | 该用的图 | 别用什么 |
 |---|---|---|
-| 场 —— 标量在 (空间 × 时间) 或 (空间 × 空间) 上 | 热力图（`charts.heatmap`，逐格读数）或填充等高线（`charts.contour`，有阈值/前沿时它把"哪里是 0.15"画成一条线） | 折线：一条线只能切出一片剖面，场本身的结构看不见 |
-| 沿某个 x 或 t 的切片 | 折线（`charts.trend`；要画不确定度就传 `low=/high=` 加区间带） | —— 这才是折线的位置 |
+| 场 —— 标量在 (空间 × 时间) 或 (空间 × 空间) 上，且空间结构本身是 claim | 热力图（`charts.heatmap`，逐格读数）或填充等高线（`charts.contour`，有阈值/前沿时它把"哪里是 0.15"画成一条线） | 折线：一条线只能切出一片剖面，场本身的结构看不见 |
+| 场 —— 但 claim 是"分布怎么移动/变窄/整体下移" | `field_raincloud`（把每个时刻或每个半径带切成一组，sci-box 半小提琴 + 箱线 + 散点） | 一整墙 `profiles`/`field_waterfall`；也不要只靠一张热力图让读者自己找分布 |
+| 多组分布（每组多个观测） | `raincloud` / `distribution_box` | 每组 <3 个观测硬画小提琴；用线把类别连起来 |
+| 每个时间窗内两组空间带的分布差 | `field_split_raincloud`（sci-box 05 背靠背半小提琴） | 硬做相关矩阵；确定性场的空间自相关不是独立样本 |
+| 沿某个 x 或 t 的切片，且只需比较少数检查点 | `sampled_bars`（按 x 抽样成柱）或 `grouped_bars` | 为了“连续感”画整条折线；抽样点要在图注写清 |
+| 沿某个 x 或 t 的切片，且连续变化/斜率/交点是 claim | 折线（`charts.trend`；要画不确定度就传 `low=/high=` 加区间带） | —— 这才是折线的位置 |
 | 类别间比较 / 排序 | 柱状（`charts.bars`，2–5 个类别、要直接读数）、误差棒（`charts.comparison`，十几个类别横排） | 折线（类别不是连续量，连起来是假的） |
 | 两变量的关系 / 响应面 | 散点、`charts.response`、三维 `charts.surface3d` | 折线 |
 | 分布 | 直方图（`charts.distribution`，看形状）、箱线（`charts.boxplot`，多组同图比较、可 `log_scale`）、累积分布（`charts.ecdf`，直接读"小于某值的比例"） | 折线；小提琴图库里没有（要核密度估计）——要那层信息就用箱线 + ECDF 顶上 |
@@ -334,8 +364,7 @@ spec 要求（画布由 ⑦ 执行）：
 
 现成工具：`visualization.geometry.orthographic()`（Nx3 → 二维视平面）与
 `sphere_section()`；画法与验收标准见 `docs/GEOMETRY.md`。
-`config/visualization.json` 的 `chart_mix` 记着这条口径与每问的下限
-（每问 ≥2 张数据图，且至少一张不是折线）。
+`config/visualization.json` 的 `chart_mix.selection` 是**候选制**：每张图至少给 2 个不同视觉编码的候选，由 ⑦ 渲染后按 claim 选择。**折线不是“最后手段”，也不是“全都不要”**：支撑图折线族（`profiles` / `field_waterfall` / `small_multiples`）保留 4–6 个面板；场图/热力图共 2（1 张场图 + 1 张带数字的矩阵热力图），雨云/分布 ≤1，柱/抽样柱 ≤3。连续剖面/历史序列用折线；收敛/离散网格用点图；场分布才用 `field_raincloud`/`raincloud`；只在少数检查点比较才用 `sampled_bars`。空间结构本身是 claim 时才用场图；同一 bundle + 同一视觉编码只出一张图（plate hero 已画的 3D 曲面不再出同源支撑图）。
 
 **渲染细节由 ⑦ 按 `figure-studio` 执行**：图例底色/不压数据、8 色序列、连续量 `quantity=`
 色阶、线型不误用、注记不重叠、位图分辨率 —— 都是画布层的事。④ 只需在 spec 里声明

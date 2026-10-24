@@ -60,7 +60,7 @@
   "schema_version": 1,
   "report": "reports/ANALYSIS_MODELING_REPORT.md",
   "panel": {
-    "lenses": ["mechanism", "data", "adversarial"],
+    "lenses": ["mechanism", "data", "adversarial", "closure"],
     "candidates": 9,
     "adopted": 1
   },
@@ -69,6 +69,13 @@
       "id": "BASE-Q4",
       "question": "Q4",
       "model": "材料坐标一维径向有限体积，R(t) 取题给实测",
+      "headline": "达标时间 t_dry",
+      "unit": "h"
+    },
+    {
+      "id": "BASE-Q4-N",
+      "question": "Q4",
+      "model": "固定域一维径向有限体积（R 固定，不用材料坐标），作为朴素基线",
       "headline": "达标时间 t_dry",
       "unit": "h"
     },
@@ -207,9 +214,52 @@
 `evidence` 不能只写一句结论：至少 12 字，并含 `reports/`、`code/`、`results/`、
 `figures/`、`paper/` 之一的路径样 token（写 `"x"` 或「两列一致」会被机械检查打回）。
 
-## 4. 主答案护栏（最重要的一条）
+## 3b. 两类正面内容：innovation 与 contribution
+
+台账里的 `adopted` 项分两类，**论文 2.5 不能为空**：
+
+| `kind` | 基线 | 判据 | 论文写在哪 |
+|---|---|---|---|
+| `innovation`（默认） | **主模型** | 干预的实测 delta + `primary_guard`；不得把主答案带偏 | 2.5「本文主要创新点」，带数字 |
+| `contribution` | **朴素/不完整模型**（固定域、体积平均判据、把 R(t) 与 ρ(C) 同时当独立输入等） | 任务特定的闭合/结构/判据；用一致性、必要性或**差值**证明，不要求主答案变化 | 2.5「模型特点与关键处理」，写“朴素基线 → 本文处理 → 证据/差值” |
+
+两类都有时，2.5 标题写「本文主要创新点与模型特点」；innovation 用 `\textbf{创新点X：}`，
+contribution 用 `\textbf{关键处理X：}`，两类都逐条计量（每条 3–5 行）。
+
+contribution 的必填字段（在 `DESIGN_FIELDS` 之外）：
+
+```json
+{
+  "id": "INN-4", "question": "Q4", "lens": "closure", "type": "closure",
+  "kind": "contribution", "core": false, "baseline_id": "BASE-Q4-N",
+  "failure_mode": "把 R(t) 与 ρ_s(C) 同时当独立输入，干物质审计漂移 −10.98%",
+  "intervention": "ρ_s∝R⁻² + 固体连续性；ρ_b(C) 只进热容，热容密度与 ρ_s 一致",
+  "claim": "若闭合自洽，则 M_s 在模型闭包下守恒，且 t_dry 变化 ≤0.01%",
+  "predicted_delta": "干物质漂移 0；t_dry 51.2257 → 51.2205 h（−0.0052 h）",
+  "test": "同 solver 跑 appendix 与 consistent 热密度；复算 M_s 与 t_dry",
+  "kill_if": "M_s 漂移仍 >1% 或 t_dry 变化 >1% 且无独立证据",
+  "status": "adopted",
+  "contribution": "材料坐标下的自洽收缩闭合（密度与固体连续性一致）",
+  "baseline_is_naive": "朴素基线把 R(t) 与 ρ_s(C) 同时当独立物理输入，干物质审计 −10.98%",
+  "contribution_evidence": "results/q4_checks.json#heat_capacity"
+}
+```
+
+- **contribution 的 `baseline_id` 必须指向朴素基线卡**：如果它与该问的主基线不同，就在
+  `baselines[]` 里单独建一张（如 `BASE-Q4-N`：固定域、体积平均、把 R(t) 与 ρ(C) 同时当
+  独立输入等），不要复用主模型基线卡 —— 否则 ④ 会把主模型当 baseline，差值没有意义。
+- ④ 在 `INNOVATION_MEASUREMENT.json` 写 `kind / passed / source / evidence`；定量可写
+  `baseline_value / intervention_value / delta / delta_unit`，不定性写 `evidence` 路径。
+- ⑤ 对 contribution 也逐条回源审计；⑥ 只对 `core=true` 做扰动（contribution `core` 必须 false）。
+- ⑨ 的 `INNOVATION_PAPER.json` 里 contribution 也登记 `paper.section`（2.5）与 `claim_id`。
+- `check_innovation --stage write` 要求至少 1 条 innovation 或 contribution；只有
+  `no_adoption_reason` 会让 2.5 为空，直接打回 ②。
+
+## 4. 主答案护栏（最重要的一条，仅适用于 `kind=innovation`）
 
 **创新默认只能让主答案在护栏内变化；主答案大幅偏离基线，不等于创新，先按模型错误处理。**
+`kind=contribution` 的基线是朴素/不完整模型，不是主答案，**不套这一条**；它用一致性、
+必要性或差值证明，但仍要 ⑤ 回源审计。
 
 为什么：竞赛阅卷会拿你的主结果和题面、常见模型、其他队伍的量级对照。一个“创新”如果把
 主答案带到完全不同的量级，而你没有独立证据证明是基线错了，评委会直接判错，不会因为
@@ -246,14 +296,15 @@
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `panel.lenses` | 是 | 至少 3 个不同视角；至少含 `adversarial` 或 `optimization` |
+| `panel.lenses` | 是 | 至少 4 个不同视角；`closure` 与 `adversarial` 各至少要有一个（纯优化/决策题可用 `optimization` 顶替其中一项；不能两项都靠同一个 optimization 顶替） |
 | `panel.candidates` | 是 | 本轮候选总数，≥3 |
-| `baselines[]` | 是 | 每问的基线卡；至少 1 条 |
+| `baselines[]` | 是 | 每问的主基线卡；contribution 另建朴素基线卡（如 `BASE-Q4-N`）并让 `baseline_id` 指向它 |
 | `items[]` | 是 | 全部候选（含 rejected），≥3 条 |
 | `id` | 是 | 唯一，如 `INN-1` |
 | `question` | 是 | 对应子问题，如 `Q4` |
-| `lens` | 是 | `mechanism/data/adversarial/optimization` |
-| `type` | 是 | `mechanism/structure/criterion/evidence` |
+| `lens` | 是 | `mechanism/data/adversarial/closure/optimization` |
+| `type` | 是 | `mechanism/structure/criterion/evidence/closure` |
+| `kind` | 否 | `innovation`（默认，主模型增量）或 `contribution`（朴素基线→本文结构，写「模型特点与关键处理」）；contribution 必须有 `contribution / baseline_is_naive / contribution_evidence`，`core` 必须 false |
 | `core` | adopted 必填 | 是否核心创新；全篇最多 1 个 |
 | `baseline_id` | 是 | 指向 `baselines[].id` |
 | `failure_mode` | 是 | 基线在什么条件下会错，写具体 |
@@ -263,26 +314,26 @@
 | `test` | 是 | 什么对照/实验能证伪它 |
 | `kill_if` | 是 | 什么结果算失败；失败就降级 |
 | `status` | 是 | `adopted/rejected/downgraded` |
-| `primary_guard` | adopted 必填 | `metric/allowed_relative_change/why`：主答案护栏；默认允许 10% |
+| `primary_guard` | `kind=innovation` 必填；contribution 不应有 | `metric/allowed_relative_change/why`：主答案护栏；默认允许 10% |
 | `reject_reason` | rejected 必填 | 为什么不用 |
 | `downgrade_reason` | downgraded 必填 | 为什么测失败/降级 |
-| `measurement` | ④ adopted 必填；写 `INNOVATION_MEASUREMENT.json` | `baseline_value/intervention_value/delta/delta_unit/source/passed`；定性结果用 `kind=qualitative` + `evidence` |
-| `measurement.primary` | ④ adopted 必填；同上 | `metric/baseline_value/intervention_value/relative_change/guard_passed`；超护栏时加 `independent_evidence`；定性主答案用 `kind=qualitative`，值可写文字 |
+| `measurement` | ④ 所有 adopted 必填；写 `INNOVATION_MEASUREMENT.json` | innovation：`baseline_value/intervention_value/delta/delta_unit/source/passed`；contribution：定量同上，或定性 `evidence`+`source`+`passed`，**不写 primary** |
+| `measurement.primary` | ④ `kind=innovation` 必填；contribution 不写 | `metric/baseline_value/intervention_value/relative_change/guard_passed`；超护栏时加 `independent_evidence`；定性主答案用 `kind=qualitative`，值可写文字 |
 | `audit` | ⑤ adopted 必填；写 `INNOVATION_AUDIT.json` | `items[id] = {verdict,evidence}`；`evidence` ≥12 字且含 `reports/`、`code/`、`results/`、`figures/`、`paper/` 之一的路径；非 PASS 必须降级 |
-| `robustness` | ⑥ core 必填；任何要写进 2.5 的 adopted 项也必须 `survives=true`；写 `INNOVATION_ROBUSTNESS.json` | `survives/evidence/checks`；`checks` ≥2 项，每项 `what/result` 非空且 `what` 不重复；不稳时写 `claim_scope` 与 `core=false`/`downgraded`，且不能进 2.5 |
-| `paper` | ⑨ adopted 必填；写 `INNOVATION_PAPER.json` | `section/claim_id`；core 必须写 `2.5` |
-| `no_adoption_reason` | 无 adopted 时必填 | 为什么本题没有值得做的增量 |
+| `robustness` | ⑥ core innovation 必填；写进 2.5 的 innovation 也必须 `survives=true`；contribution 不强制；写 `INNOVATION_ROBUSTNESS.json` | `survives/evidence/checks`；`checks` ≥2 项，每项 `what/result` 非空且 `what` 不重复；不稳时写 `claim_scope` 与 `core=false`/`downgraded`，且不能进 2.5 |
+| `paper` | ⑨ 所有 adopted（含 contribution）必填；写 `INNOVATION_PAPER.json` | `section/claim_id`；core innovation 必须写 `2.5`；contribution 也写 `2.5` |
+| `no_adoption_reason` | 无任何 adopted（innovation/contribution）时必填 | 为什么本题没有值得做的增量；⑨ 仍会因 2.5 为空打回 ② |
 
 ## 6. 阶段职责
 
 | 阶段 | 动作 | 检查 |
 |---|---|---|
-| ② 建模设计 | 写**设计台账**：基线卡、主答案护栏、全部候选、1 core + 至多 1 supporting | `--stage design` |
-| ③ 建模评审 | 审“失败模式是否具体、test 是否能证伪、delta 是否相关、主答案是否守住护栏”；只读设计台账 | `--stage design` + 人工判断 |
-| ④ 编码计算 | 跑 baseline 与 intervention，写 `INNOVATION_MEASUREMENT.json`（含 `primary` 主答案） | `--stage code` |
-| ⑤ 结果审计 | 复核测量/主答案是否真实可复现，写 `reports/INNOVATION_AUDIT.json`（evidence 指认产物路径） | `--stage audit` |
+| ② 建模设计 | 写**设计台账**：基线卡、闭合检查、主答案护栏、全部候选、1 core innovation + 至多 1 supporting + 至多 3 contribution | `--stage design` |
+| ③ 建模评审 | 审“失败模式是否具体、test 是否能证伪、innovation 的 delta/主答案护栏、contribution 的朴素基线/证据”；只读设计台账；全 rejected + no_adoption_reason 退回补模型贡献 | `--stage design` + 人工判断 |
+| ④ 编码计算 | 跑 baseline 与 intervention；innovation 含 `primary`，contribution 写 delta/一致性证据 | `--stage code` |
+| ⑤ 结果审计 | 复核测量/主答案/贡献证据是否真实可复现，写 `reports/INNOVATION_AUDIT.json`（evidence 指认产物路径） | `--stage audit` |
 | ⑥ 稳健性 | 对 core 做 ≥2 类扰动/重抽样/口径对照，写 `INNOVATION_ROBUSTNESS.json` 的 `what/result` | `--stage robustness` |
-| ⑨ 论文撰写 | 只把 `adopted + passed + PASS + guard + robustness.survives=true` 的写进 2.5，写 `INNOVATION_PAPER.json` | `--stage write` |
+| ⑨ 论文撰写 | innovation 按 `adopted+passed+PASS+guard+survives` 写 2.5；contribution 按 `adopted+passed+PASS` 写「模型特点与关键处理」；写 `INNOVATION_PAPER.json` | `--stage write` |
 
 ## 7. 反模式
 
@@ -291,7 +342,9 @@
 - **test 写“做灵敏度分析”**：灵敏度不是证伪；要写“baseline vs intervention 的哪个数字、什么结果算失败”。
 - **predicted_delta 写“效果更好”**：没有方向与量级，④ 无法判断是否算通过。
 - **测失败还叫创新**：`passed=false` 必须 `downgraded`，可以在“模型评价/局限”里写负结果，不能放在 2.5。
-- **主答案偏离大还叫创新**：温度 33 ℃ → 5 ℃、空气 41 ℃ 这种，先查能量/边界/口径是否闭合；
-  没有独立证据就写进局限，不能放进 2.5。评委先看答案对不对，再看方法新不新。
-- **把标准方法包装成 L3**：材料坐标、有限体积、Brent、PSO 都是 L0/L1；除非你证明了新结构或量出了新 delta。
+- **主答案偏离大还叫创新（仅 kind=innovation）**：温度 33 ℃ → 5 ℃、空气 41 ℃ 这种，先查
+  能量/边界/口径是否闭合；没有独立证据就写进局限，不能放进 2.5。评委先看答案对不对，再看方法新不新。
+- **把标准方法包装成 L3**：材料坐标、有限体积、Brent、PSO 本身都是 L0/L1。作为
+  `kind=innovation` 仍需新结构 + 实测 delta；作为 `kind=contribution` 必须写成
+  “朴素基线 → 本文处理 → 证据/差值”（如固定域 130.5 h → 材料坐标 51.2 h），且不能叫核心创新。
 - **core 超过 1 个**：一篇论文最多 1 个核心创新；其余是 supporting/关键处理，否则评委会觉得都在自称创新。

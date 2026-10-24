@@ -19,6 +19,78 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 **本阶段是数据图的唯一渲染者**，同时负责论文中的非数据型图示（技术路线图、求解流程图、
 模型结构图、数据处理流程图、变量关系图、指标体系图等）。
 
+## 0. 当前定稿样式（先看这一节，再看后面的通用规则）
+
+- **论文主图**：每个问一张 **Nature-style plate**，按 `../plate-figure/SKILL.md`。
+  **构图由你自己按这一问的证据链设计**，不要套模板：`skills/plate-figure/templates/`
+  里的几张只是参考实现（当前题 Q1 示意+2×2、Q2 上宽 3D、Q3 场+右栏、Q4 截面条），
+  整份复制会得到同一骨架，`check_plate.py` 会把 `axes_mm` 矩形完全相同的两张判失败。
+  **问数由题目决定，不固定四问**：每问一张，有几问画几张；不要为了凑“四张”把两问
+  硬拆成四张，也不要少画。图内语言=模板语言（`reports/FIGURE_CONTEXT.json`；
+  CUMCM 当前为中文），不放 `Panel a: …` 说明句或来源脚注。当前题成品是
+  `figures/plate_q1.py`、`figures/plate_q2.py`、`figures/plate_q3.py`、
+  `figures/plate_q4.py`（只是本题的文件名，不是数量要求）。每轮先跑
+  `python figures/make_plates.py`（它按名字跑所有 `figures/plate_*.py`），再跑
+  `python skills/plate-figure/scripts/check_plate.py --root .`；**没跑/没登记
+  `fig_<id>_plate`、图内仍是英文说明句、或两张 plate 构图雷同的 ⑦ 会被 ⑧ 打回**。
+- **技术路线图**：参照 `references/route-diagram.md` 的 **flow1 问题路由树语法**
+  （输入带 → 共用模型容器 → 条件菱形链 → 各问支链 → 结果文档/胶囊），但**不是照抄
+  某一张参考图的坐标**。每题的输入、真实分支、支链数量和结果文档都不同，**构图要由
+  你按本题的证据链自己设计**——就像 `plate-figure` 对合成图那样：模板只给语法和阅读
+  顺序，不给固定骨架。`skills/7Route-diagram/assets/roadmap_templates/flow1.png` /
+  `flow2.png` 是两张已生成的参考实现；`scripts/flow1_roadmap.py` 也只是**本题的参考
+  实现**，不是必选模板。可以改它的内容槽位、列数、支链顺序、结果文档排布，甚至另写
+  生成器；但必须满足 `references/route-diagram.md` §5 的硬规则和 §6 的 8 条自检。
+  每个问用 `config/visualization.json` 的 `question_palette` 对应项上色；问数不是固定
+  四问，超过现有 Q1–Q4 时按同一语义色阶补色，不要硬凑四个问题。图内方法名以
+  `code/core.py` 与 `results/q3_checks.json` 为准（隐式 Euler、Picard 2 次、400
+  细分求根），不要写 Radau/Newton/Brent。生成后先跑
+  `python skills/paper-diagram/scripts/check_layout.py figures/fig_roadmap.drawio --flow`，
+  再按 §6 打开 PNG 逐框量；**不许出现悬空箭头、缺入口的支链、没有「是/否」标签的
+  菱形出口**。
+  **不要直接 `python figures/make_roadmap.py` 就交**：先在
+  `reports/ROADMAP_DESIGN.md` 写本题的结构清单——题面有几个问、每个真实二选一是
+  什么、每支链几步、结果文档几个、哪些框可以合并；再按这份清单画。参考实现的
+  节点数量/顺序/列数只是 2026A 的一种解法，不能当作填空模板；本题结构不同就必须
+  改列数/支链顺序/结果文档排布，甚至另写生成器。`DRAWIO_REPORT.md` 再写
+  「结构选择 + 真实分支清单」和「逐框自检 8 条」；只放大画布不算修排版。
+- **几何图**：按**模型**拆，不按问数凑。Q1–Q3 共用固定域 ⇒ 一张
+  `fig_geometry_shared`（轴向剖切 + 径向网格）；Q4 收缩动域 ⇒ 单独一张
+  `fig_geometry_q4`（动域剖切 + ξ 截面）。每张 180 mm、多视角；旧
+  `fig_geometry_3d` 是**重复图**，必须删掉 PDF/SVG/PNG/scene.json 并从 manifest
+  移除（不要 included=false 留档）。生成器
+  `figures/make_geometry_split.py`，两张都要跑 `qa_physical3d.py`，并把两份结果合并写
+  `reports/FIG_GEOMETRY_3D_QA.json`（`ok=true`，`parts` 分 `shared`/`q4`；每个 part 里
+  保留 qa_physical3d 的原始 `report`（嵌套 `pdf`/`png`/`scene`），交付层会递归读
+  `errors`/`warnings`，只写顶层空数组会漏掉真实 QA 问题）。
+- **支撑图不进论文**：`reports/FIGURE_PLAN.md` 标了“支撑，不进论文”的 spec 图
+  （`q1_series` / `q2_props` / `q4_shrink`），manifest 必须写 `included=false`；
+  不要因为“盘上有、也登记了”就改回 `true` —— 那会和主图 plate 重复。
+  当前题 `q2_props` 的 **3D 曲面**是重复图：不要渲染/登记，从 manifest 移除并删旧
+  PDF/SVG/PNG（bundle 留给对应的 plate 读）。若要把它的 C×T 数据做成**带数字的
+  2D 矩阵热力图**（`annotated_heatmap`，与 3D 不同编码），可以重新登记为支撑图，
+  正好占“1 张带数字热力图”的名额。
+- **图级判重**：同一 bundle + 同一视觉编码只出现一次。plate hero 已经画的 3D 曲面，
+  不得再出同源同图型的支撑图（当前题 `q2_props` 与 `fig_q2_plate` 都读
+  `q2_props.npz` 画 3D ⇒ 跳过 `q2_props` 的渲染/登记，从 manifest 移除并删旧产物；
+  bundle 仍保留给 plate）。`render_specs.py` 默认按 `check_figure_mix.duplicate_ids()`
+  跳过这类图；不要用 `--include-duplicates` 绕开。
+- **混排预算**：支撑图里折线族（`profiles` / `field_waterfall` / `small_multiples`）
+  面板 **4–6 个**（不是全删；收敛/离散网格不算折线，用点图）；场图/热力图共
+  **2 个**，平均分成 1 张场图（`field_contour`/`field_moving`）+ 1 张带数字的
+  矩阵热力图（`annotated_heatmap`，格子里写数值）；雨云/分布 **≤1 个**，
+  柱/抽样柱 **≤3 个**；见 `config/visualization.json` 的
+  `chart_mix.line_budget`。连续轨迹/相轨迹/需要读斜率或交点的历史序列**保留折线**；
+  只有“分布怎么移动/变窄”才用 `field_raincloud`；只在少数检查点比较时用
+  `sampled_bars` / `grouped_bars` / `dot_interval`。不要把所有图压成热力图或雨云，
+  也不要全删折线。检查：
+  `python skills/figure-studio/scripts/check_figure_mix.py --root .`。
+- 参考图都已在项目内：plate 的版式看
+  `skills/plate-figure/assets/references/composite_1–3.png`；路线图模板看
+  `skills/7Route-diagram/assets/roadmap_templates/flow1.png` / `flow2.png`。
+  只看 hero 面积、面板短描述、语义色、间距和 KPI 条（图内标题归 ⑨），不抄内容/数值；不要依赖
+  项目外路径（用户后续会删掉项目外的参考图）。
+
 ## 数据图渲染（第一优先，先做这一块）
 
 开工先盘点三件套，再动 draw.io：
@@ -77,6 +149,14 @@ python skills/figure-studio/scripts/figure_lock.py verify --root .
 把结论写进 `reports/DRAWIO_REPORT.md` 的「选图决策」表：`figure_id | claim | 数据形态 |
 候选 recipe | 淘汰理由`。不要只写“已生成”。
 
+候选必须有**不同的视觉编码**（至少两个 recipe 家族），不是同一图型换配色/换轴位。
+选择结果写到 `figures/choice/<id>.json`（`selected` + `candidates` + 评分），然后用
+`python skills/figure-studio/scripts/check_selection.py --root .` 机械核对；没有通过
+候选多样性检查的图，不许进入登记。
+④ 的 brief 没预见到、但你在本轮实际渲染并选中的 recipe（例如 `field_raincloud` /
+`raincloud`）要补进 `figures/choice/<id>.json` 的 `candidates`，写清淘汰理由；
+`check_selection.py` 以 brief ∪ choice 为准，不会因此判你“选了不在候选里的图型”。
+
 ### 2. 候选生成（落 `tmp/`，不登记）
 
 每个主图至少比较 **2 个不同视觉编码的候选**（不是 2 个配色）。候选图一律渲染到
@@ -110,7 +190,13 @@ python skills/figure-studio/scripts/figure_lock.py verify --root .
 
 **A. `fig_roadmap` 的候选面板（默认，不再可选）**
 
-1. 主 agent 先按 `references/route-diagram.md` 定结构（问题路由树 / X 问泳道）和内容清单；
+0. **先看用户参考模板**：`references/route-diagram.md` §0.0 的 `flow1` / `flow2`
+   是**语法参考**，不是固定骨架。flow1 的“输入带 → 共用模型 → 条件菱形 → 各问支链 →
+   结果文档”阅读顺序优先；本题如果分支数、支链长度、结果文档数量不同，就按本题重排，
+   不要为了“像模板”把节点塞进不合适的列。flow1 装不下或各问没有真实路由条件时才用
+   flow2 泳道。候选仍要比较，但不必逐像素复刻模板。
+1. 主 agent 先按 `references/route-diagram.md` 定结构（flow1/flow2/混合）和内容清单；
+   写清本题的真实分支（每个菱形二选一是什么）和各问支链长度；
    按 `../_references/stage_discipline.md` 八建 `.fma_panel_lock`。
 2. 并行启动 3 个（最多 4 个）子 agent（优先 `config/agents.json` 的 `fig-candidate`；
    不可用时 general-purpose），每个画一个**不同结构/阅读方向**的候选：
@@ -187,7 +273,7 @@ python skills/figure-studio/scripts/figure_lock.py verify --root .
    - `Scene.project()` 可把三维坐标投到视平面（正交投影，不计算遮挡）
    - 画完用 `visualization.export.export(...)` 导出并登记来源
    - **`scene3d` 只适合点/线/箭头级的简单三维示意**；实体剖切、隐藏面、内部结构
-     改用第五类 `fig_geometry_3d`（见下文与 `references/physical-3d.md`）
+     改用第五类 `fig_geometry_<part>`（见下文与 `references/physical-3d.md`）
 3. 每张示意图只讲一件事，标签用题面/论文里的符号（与符号表一致），
    不要在一张图里叠三层含义；辅助线细而弱、主对象粗而深。
 
@@ -200,7 +286,7 @@ python skills/figure-studio/scripts/figure_lock.py verify --root .
 **演化与对比类必须用多面板，不要硬塞进一张**：
 - 有"动起来"的过程（运动/传播/演化/收敛），用同一场景的两个（或多个）时刻并排表达：
   t₁ 与 t₂、初始态与终止态、迭代前与迭代后——各面板共享同一坐标范围与视角，否则读者无法比较。
-- 对比类（不同参数/不同方案/优化前后）同理并排；面板标题写清各自状态（如"(a) $t=0$"、"(b) $t=T$"）。
+- 对比类（不同参数/不同方案/优化前后）同理并排；面板标题写清各自状态（如「左：$t=0$」「右：$t=T$」）；**图内不写 a/b/c 字母**。
 - 用 `schematic.scene2d_panels` / `scene3d_panels` 建共享画布，各面板按同一套坐标画；
   3D 多面板**必须共用同一 `camera` 与 `limits`**，否则形变会让对比失效。
 
@@ -209,7 +295,7 @@ python skills/figure-studio/scripts/figure_lock.py verify --root .
 若题面是纯数据/统计/优化问题（没有几何或物理对象），就不画示意图，别硬凑。
 
 **物理立体 / 3D 剖切图不要用 `schematic.scene3d` 硬画**：它只做正交投影、
-不计算遮挡，也不支持实心剖切。按第五类 `fig_geometry_3d` 的 Route A/B 走
+不计算遮挡，也不支持实心剖切。按第五类 `fig_geometry_<part>` 的 Route A/B 走
 （见 `references/physical-3d.md`）：透明线框用 `style3d`，实心剖切用 `solid3d`，
 计算结果场用 Route C（读 `figures/data`）。
 
@@ -280,8 +366,8 @@ figures/
   fig_roadmap.pdf
   fig_flow_q1.drawio
   fig_flow_q1.pdf
-  fig_geometry_3d.pdf / .png         # 第五类，按需；Route A/B 成品
-  fig_geometry_3d.scene.json         # Route B 的投影/相机/标签记录（Route A 可无）
+  fig_geometry_<part>.pdf / .png     # 第五类，按需；Route A/B 成品（每部分一张）
+  fig_geometry_<part>.scene.json     # Route B 的投影/相机/标签记录（Route A 可无）
   make_geometry_3d.py                # 第五类可复现源脚本（本阶段拥有）
   ...
 reports/DRAWIO_REPORT.md
@@ -337,7 +423,7 @@ reports/DRAWIO_REPORT.md
 若全是 `#333333 / #222222 / #f2f2f2 / #d9d9d9` 这类中性灰，就是一点语义键都没取到，
 与本文档「它可以有配色」那条对不上。
 
-**小图同源**：`fig_flow_*` / `fig_pipeline` / `fig_model` / `fig_geometry_3d` 等
+**小图同源**：`fig_flow_*` / `fig_pipeline` / `fig_model` / `fig_geometry*` 等
 非数据图也从同一 `config/visualization.json` 取语义键（主流程 `palette[0]`、
 判断 `warn`、分组 `box`/`grid`），不再强制灰阶；同类节点同色、同语义同色，
 只做语义区分，不做装饰色。
@@ -366,7 +452,7 @@ reports/DRAWIO_REPORT.md
 - 配色同源 —— 流程图、结构图、数据流图**可以沿用 `fig_roadmap` 的同一套语义色**
   （主流程 `palette[0]`、判断 `warn`、分组 `box`/`grid`），不再强制黑白；
   但只做语义区分，不做装饰，且必须经得起灰度打印（明度/线型可区分，不能只靠红绿）。
-  同类节点同色，跨图同一语义同色；`fig_geometry_3d` 物理立体图也沿用这套低饱和色
+  同类节点同色，跨图同一语义同色；`fig_geometry*` 物理立体图也沿用这套低饱和色
   （热/湿/固体/剖面/箭头），不做高饱和装饰色。
 - 几何/物理示意可以画三维（轴测） —— 圆柱、球、多层介质、
   空间坐标与方位这类本身就有三维结构的对象，用轴测图比硬压成二维剖切清楚得多。
@@ -379,7 +465,7 @@ reports/DRAWIO_REPORT.md
 - **节点更少**：小图节点 ≤ 8 个、层级 ≤ 3 层。现有 11 个节点的 `fig_flow_solve`
   应按此精简（Picard 回路与终点判断是它的核心，保留；其余细节进正文）。
 
-### 第五类非数据图：物理立体 / 3D 剖切示意图（`fig_geometry_3d`）
+### 第五类非数据图：物理立体 / 3D 剖切示意图（`fig_geometry_<part>`）
 
 本阶段的非数据图按用途分五类（前四类沿用原规范）：
 
@@ -389,10 +475,12 @@ reports/DRAWIO_REPORT.md
 | 2 | 子问题求解流程图 | `fig_flow_q*` | 这一问的算法/判断/循环 |
 | 3 | 数据处理/模型结构/指标体系/决策树 | `fig_pipeline` / `fig_model` / `fig_index_system` / `fig_decision_tree` | 数据怎么流、模块怎么连、指标怎么分层 |
 | 4 | 二维几何/物理示意 | `fig_geometry` / `fig_q4_material` / `fig_flow_solve` | 截面、角度、投影、二维关系 |
-| 5 | **物理立体 / 3D 剖切** | `fig_geometry_3d` | 对象长什么样、内部怎么分层、边界加在哪、哪一问的几何变了 |
+| 5 | **物理立体 / 3D 剖切** | `fig_geometry_<part>`（如 `fig_geometry_shared` / `fig_geometry_q4`；只有一张时可用 `fig_geometry_3d`） | 对象长什么样、内部怎么分层、边界加在哪、哪一问的几何变了 |
 
-第五类不是给现有流程图换皮，也不是“每问一张”的装饰图。完整规范见
-`references/physical-3d.md`。
+第五类不是给现有流程图换皮，也不是“每问一张”的装饰图。**文件名按几何部分命名**：
+Q1–Q3 共用固定域就一张 `fig_geometry_shared`，Q4 动域另起 `fig_geometry_q4`；只有全题
+共用一张时才用 `fig_geometry_3d` 这个单图默认名。已拆分后还留着的 `fig_geometry_3d`
+是重复图，`make_geometry_split.py` 会删掉它。完整规范见 `references/physical-3d.md`。
 
 **先决定这一问要不要画（按问判重）**：
 
@@ -439,12 +527,16 @@ reports/DRAWIO_REPORT.md
 
 ```bash
 python skills/7Route-diagram/assets/physical3d/qa_physical3d.py \
-    --pdf figures/fig_geometry_3d.pdf \
-    --png figures/fig_geometry_3d.png \
-    --scene figures/fig_geometry_3d.scene.json \
+    --pdf figures/fig_geometry_shared.pdf \
+    --png figures/fig_geometry_shared.png \
+    --scene figures/fig_geometry_shared.scene.json \
     --width-mm 90 --font "Microsoft YaHei" \
     --report reports/FIG_GEOMETRY_3D_QA.json
 ```
+
+**每张 `fig_geometry_<part>` 都要跑一次**，`parts` 按 `shared`/`q4`/… 分别记录，
+合并写进同一份 `reports/FIG_GEOMETRY_3D_QA.json`；只跑其中一张会让 ⑧ 的
+`physical3d_issues` 认为报告缺项。
 
 Route A（mplot3d）没有 `.scene.json` 时只查 PDF/PNG；标签仍按上面 10 条目检。
 
@@ -495,7 +587,7 @@ DRAWIO PLAN CHECKLIST:
 | 模型结构图 | `fig_model` | 展示模块关系、变量关系、模型层次 |
 | 指标体系图 | `fig_index_system` | 展示目标层、准则层、指标层 |
 | 决策树/规则图 | `fig_decision_tree` | 展示分类规则、设备选择、策略分支 |
-| 物理立体/3D 剖切示意图 | `fig_geometry_3d` | 对象本身有三维结构（圆柱/球/多层/空间机构），需要表达内部结构、剖面、层位或三维场 |
+| 物理立体/3D 剖切示意图 | `fig_geometry_<part>`（单图可用 `fig_geometry_3d`） | 对象本身有三维结构（圆柱/球/多层/空间机构），需要表达内部结构、剖面、层位或三维场 |
 
 技术路线图 / 全文概览 / 研究框架图**不再使用 paper-diagram 的五个线性模板**
 （`roadmap-5band` / `roadmap-3phase` / `framework-3col` / `stageflow-3col` / `taskflow-land` 已停用：
@@ -636,7 +728,7 @@ matplotlib 画流程图要点：
 2. **文字不溢出**：每行都落在框线内，左右留白 ≥ 4 px；长句换行，字号不低于 9 pt。
 3. **起止居中**：开始对准第一个框的中心，结束对准最后一个框的中心；箭头垂直进入/离开。
 4. **菱形真分支**：每个菱形都有真实出口标签（是/否或真实工况）；没有「按题切片」这类伪判断。
-5. **箭头连接**：从框边到框边，不悬空、不穿框、不绕圈、不在框内拐弯。
+5. **箭头连接**：从框边到框边，不悬空、不穿过**实体框**（容器虚线边允许穿过）、不绕圈、不在框内拐弯。
 6. **无解释性文字**：图内没有整句解释、图例、注、脚注、总结条；只有节点事实和分支标签。
 7. **并列拆框**：一个框里不塞并列项；大框只做容器，容器内每项有自己的小框。
 8. **空白与对齐**：同列同宽、同行同高、间距统一；没有大片空白或明显偏心。
@@ -668,7 +760,7 @@ matplotlib 画流程图要点：
 | 文件 | 类型 | 来源依据 | 用途 | 状态 |
 | --- | --- | --- | --- | --- |
 
-## 3D 物理立体图自检（有 fig_geometry_3d 时）
+## 3D 物理立体图自检（有 fig_geometry* 时）
 | figure_id | 路线 | 投影 | 标签越界/压实体 | 剖面/隐藏面 | 与同构问是否合并 | QA 报告 |
 | --- | --- | --- | --- | --- | --- | --- |
 

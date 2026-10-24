@@ -6,6 +6,8 @@
 
 FAIL：文字溢出、元素越界、id 重复、盒子重叠、连线穿盒、内嵌位图。
 WARN：端点压在盒边、疑似空盒、字号种类过多、填充色发散。
+--flow 额外查流程图连通性：悬空节点/缺入口支链/单出口菱形/悬空箭头，以及输入母线
+        贴卡底/缺短引线（母线要读成大括号，不是卡片下划线；可选，默认关闭）。
 
 用中文字宽模型（全角=字号、半角=字号/2、行高=字号+3）；**不**对紧密堆叠的行列间距报警——
 学术示意图里 3px 贴合的表格式堆叠是刻意的，不是缺陷。规则详解见 references/preflight-rules.md。
@@ -80,10 +82,154 @@ def seg_rect(x1, y1, x2, y2, r):
     return False
 
 
+def point_rect_boundary(p, r):
+    """点到矩形边框的距离（点在内部时取到最近边的距离）。"""
+    x, y = p
+    rx, ry, rw, rh = r
+    if rx <= x <= rx + rw and ry <= y <= ry + rh:
+        return min(x - rx, rx + rw - x, y - ry, ry + rh - y)
+    dx = max(rx - x, 0.0, x - (rx + rw))
+    dy = max(ry - y, 0.0, y - (ry + rh))
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def point_seg(p, a, b):
+    x, y = p
+    x1, y1 = a
+    x2, y2 = b
+    dx, dy = x2 - x1, y2 - y1
+    if dx == 0 and dy == 0:
+        return ((x - x1) ** 2 + (y - y1) ** 2) ** 0.5
+    t = max(0.0, min(1.0, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)))
+    px, py = x1 + t * dx, y1 + t * dy
+    return ((x - px) ** 2 + (y - py) ** 2) ** 0.5
+
+
+def _flow_checks(boxes, edges):
+    """Connectivity checks for a flowchart (opt-in ``--flow``).
+
+    The generic layout check only sees geometry.  It cannot tell that a whole
+    branch has no incoming arrow, or that a diamond has only one labelled exit
+    — both happened in ``fig_roadmap`` while the old check said 0 FAIL.
+    """
+    nodes = [b for b in boxes if b["solid"]]
+    frames = [b for b in boxes if b.get("frame")]
+    anchor = 5.0
+
+    def touches(pt, box):
+        return point_rect_boundary(pt, box["r"]) <= anchor
+
+    def in_frame(box):
+        x, y = box["r"][0] + box["r"][2] / 2, box["r"][1] + box["r"][3] / 2
+        return any(fr["r"][0] <= x <= fr["r"][0] + fr["r"][2]
+                   and fr["r"][1] <= y <= fr["r"][1] + fr["r"][3]
+                   for fr in frames)
+
+    for b in nodes:
+        if in_frame(b):
+            # A container member is wired through its container (the input bus /
+            # shared-model band), not by an individual arrow on every chip.
+            continue
+        label = b["txt"].strip().split("\n")[0][:16]
+        incoming = sum(1 for _cid, pts, _st in edges if touches(pts[-1], b))
+        outgoing = sum(1 for _cid, pts, _st in edges if touches(pts[0], b))
+        low = label.lower()
+        is_start = label.startswith("开始") or low.startswith(("start", "begin"))
+        is_end = ("结果" in label or label.startswith("结束")
+                  or low.startswith(("result", "end", "output", "finish")))
+        if not incoming and not is_start:
+            FAIL.append(f'{b["id"]}: 支链/节点没有入口箭头（「{label}」）——'
+                        f' 它悬空了，读者不知道从哪来')
+        if not outgoing and not is_end:
+            FAIL.append(f'{b["id"]}: 节点没有出口箭头（「{label}」）——'
+                        f' 流程在这里断掉')
+        if "rhombus" in b["st"] and outgoing < 2:
+            FAIL.append(f'{b["id"]}: 判断菱形只有 {outgoing} 个出口（「{label}」）——'
+                        f' 真分支必须两个出口都画出来')
+        if "rhombus" in b["st"]:
+            lines = b["txt"].split(chr(10)) or [""]
+            max_w = max((text_w(ln, b["fs"]) for ln in lines), default=0)
+            usable = max(1.0, b["r"][2] - 8)
+            if max_w > 0.62 * usable:
+                FAIL.append(
+                    f'{b["id"]}: 菱形文字占宽 {max_w / usable:.0%}（>62%）——'
+                    f'菱形太窄，文字快贴边；加宽/加高菱形，不要只缩字号')
+
+    # --- 输入汇流要读成“大括号”，不是卡片下划线 ---------------------------
+    # 4 张输入卡 + 一条贴着卡底的横线 + 看不出长度的短引线，渲染出来只是四条
+    # 下划线。母线必须落到卡底下方至少 BUS_GAP，且每张卡有一条可见引线。
+    BUS_GAP = 6.0       # 母线离卡片底边的最小距离（px）
+    TAP_MIN = 6.0       # 引线最短可见长度（px）
+    segs = [(cid, a, b, st) for cid, pts, st in edges
+            for a, b in zip(pts, pts[1:])]
+    taps = [s for s in segs
+            if abs(s[1][0] - s[2][0]) <= 0.6
+            and abs(s[1][1] - s[2][1]) >= TAP_MIN - 1]
+    seen_bus = set()
+    for cid, a, b, _st in segs:
+        if abs(a[1] - b[1]) > 0.6:                 # 只看水平段
+            continue
+        lo, hi = sorted((a[0], b[0]))
+        if hi - lo < 40:                            # 太短，不像母线
+            continue
+        y = a[1]
+        above = [n for n in nodes
+                 if lo - 2 <= n["r"][0] + n["r"][2] / 2 <= hi + 2
+                 and -0.5 <= y - (n["r"][1] + n["r"][3]) <= 26]
+        if len(above) < 3 or (cid, round(y, 1)) in seen_bus:
+            continue
+        seen_bus.add((cid, round(y, 1)))
+        gap = min(y - (n["r"][1] + n["r"][3]) for n in above)
+        if gap < BUS_GAP:
+            FAIL.append(
+                f"{cid}: 输入母线离卡片底边只有 {gap:.0f}px（<{BUS_GAP:g}）——"
+                f"看起来是卡片下划线，不是汇流母线；把母线移到卡底下方 ≥{BUS_GAP:g}px")
+        missing = []
+        for n in above:
+            xc = n["r"][0] + n["r"][2] / 2
+            bb = n["r"][1] + n["r"][3]
+            if not any(abs(p[0] - xc) <= 4
+                       and min(p[1], q[1]) <= bb + 1.5
+                       and max(p[1], q[1]) >= y - 1.5
+                       for _c, p, q, _s in taps):
+                missing.append(n["id"])
+        if missing:
+            FAIL.append(
+                f"{cid}: 输入母线缺竖向引线（{', '.join(missing[:4])}）——"
+                f"每张卡要有一条 ≥{TAP_MIN:g}px 的短引线落到母线，读成一个大括号")
+
+    anchors = nodes + frames
+    for cid, pts, st in edges:
+        # Arrowhead must not eat the shaft: a 7 px gap with a 6 px head reads
+        # as "only a triangle" in the rendered PNG.
+        if str(st.get("endArrow", "classic")).lower() not in ("none", "0"):
+            try:
+                head = float(st.get("endSize", 6))
+            except (TypeError, ValueError):
+                head = 6.0
+            a, b = pts[-2], pts[-1]
+            last = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+            if last < head * 1.8 + 2:
+                FAIL.append(
+                    f"{cid}: 箭头头几乎占满箭杆（末段 {last:g}px，endSize={head:g}）——"
+                    f"加大框间距或减小箭头头；读者现在只看到三角形")
+        for pt in (pts[0], pts[-1]):
+            if any(point_rect_boundary(pt, b["r"]) <= anchor for b in anchors):
+                continue
+            if any(point_seg(pt, q1, q2) <= anchor * 0.6
+                   for ocid, opts, _ost in edges if ocid != cid
+                   for q1, q2 in zip(opts, opts[1:])):
+                continue
+            FAIL.append(f"{cid}: 端点 ({pt[0]:g},{pt[1]:g}) 悬空 —— "
+                        f"既不接框也不接另一条母线")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('drawio')
     ap.add_argument('--strict', action='store_true')
+    ap.add_argument('--flow', action='store_true',
+                    help='额外检查流程图连通性：悬空节点/缺入口支链/单出口菱形/悬空箭头')
     a = ap.parse_args()
 
     root = ET.parse(a.drawio).getroot()
@@ -110,7 +256,8 @@ def main():
             is_frame = st.get('dashed') == '1' and st.get('fillColor') == 'none'
             is_shape = 'shape=' in raw_style
             boxes.append(dict(id=cid, r=(x, y, w, h), fs=fs, txt=txt, st=st, shape=is_shape,
-                              fill=st.get('fillColor'), solid=not (is_text or is_frame)))
+                              fill=st.get('fillColor'), solid=not (is_text or is_frame),
+                              text=is_text, frame=is_frame))
             if (not txt.strip() and not is_text and not is_frame and not is_shape
                     and st.get('fillColor') not in (None, 'none')):
                 WARN.append(f'{cid}: 有填充有描边却没有文字，疑似漏填')
@@ -138,7 +285,10 @@ def main():
             if tp is not None:
                 pts.append((float(tp.get('x')), float(tp.get('y'))))
             if len(pts) >= 2:
-                edges.append((cid, pts))
+                edges.append((cid, pts, st))
+
+    if a.flow:
+        _flow_checks(boxes, edges)
 
     solid = [b for b in boxes if b['solid']]
     for i in range(len(solid)):
@@ -171,7 +321,7 @@ def main():
                 FAIL.append(f'{s["id"]} 盖住文字「{first}」（{t["id"]}）——'
                             f' 该文字没有不透明底色，会被压在下面看不见')
 
-    for cid, pts in edges:
+    for cid, pts, _st in edges:
         for k in range(len(pts) - 1):
             x1, y1 = pts[k]
             x2, y2 = pts[k + 1]

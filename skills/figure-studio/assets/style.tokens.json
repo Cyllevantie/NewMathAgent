@@ -213,5 +213,16 @@
     ],
     "editable_text": true,
     "_note": "PDF fonttype 42、SVG fonttype none；交付 PDF/SVG/PNG，投稿包另出 600 dpi TIFF。"
+  },
+  "bars": {
+    "series": [
+      "#5B8FF9",
+      "#61DDAA",
+      "#F6BD16",
+      "#7262FD",
+      "#78D3F8",
+      "#F08BB4"
+    ],
+    "_note": "柱状图用浅而鲜艳的科研色：亮蓝/薄荷绿/暖黄/紫/天蓝/粉；不用深绿/深海军蓝。红仍留给阈值/警示。配细描边、无 hatch、墨色数值。"
   }
 }

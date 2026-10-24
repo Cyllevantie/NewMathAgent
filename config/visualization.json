@@ -152,31 +152,72 @@
     "require_automated_pass": true,
     "require_visual_review": true
   },
-  "_chart_mix_note": "别把每张图都画成折线。本问题的状态量是 (r, t) 上的二维场 —— 温度、水分浓度各是一张**场**，用折线只能切出一族剖面，场本身的结构（穿透深度、干前沿、热点移动）看不见。选型权仍在画图者，但**二维场默认先想热力图/等高线**，折线的位置是'沿某个 r 切片'或'沿某个 t 切片'。三维只在第三维真有变量含义时才用。",
+  "_chart_mix_note": "选型按 claim 与数据形态决定，折线是最后手段而不是默认：支撑图里折线族面板受 line_budget.max_line_panels 限制；场分布优先 field_raincloud/raincloud，离散时刻优先 grouped_bars/dot_interval，只有真正需要连续轨迹时才用 profiles。每个主图至少给 2 个不同视觉编码的候选，由 ⑦ 渲染后按 claim 支持/信息密度/可读性选择；淘汰理由必须写进报告。同一 bundle + 同一视觉编码只出一张图。",
   "chart_mix": {
     "field_over_spacetime": [
       "heatmap",
       "contour"
     ],
-    "note_on_field": "(r, t) 上的标量场优先热力图或等高线；折线留给剖面切片与指标对比",
+    "note_on_field": "场图不是默认选项；只有 claim 需要空间结构（干前沿、收缩域、二维响应面）时才用",
     "encouraged_when_semantically_useful": [
       "heatmap",
       "contour",
       "response",
       "scatter",
       "surface3d",
-      "trajectory3d"
+      "trajectory3d",
+      "small_multiples",
+      "dot_interval",
+      "grouped_bars"
     ],
     "preferred_use_cases": [
-      "场结构",
+      "场结构（有真实空间 claim）",
       "响应面",
       "轨迹",
       "多变量关系",
-      "参数敏感性"
+      "参数敏感性",
+      "时间序列/剖面比较"
     ],
-    "_three_d_note": "物理/数学相关的内容**可以且应当**考虑三维。三维不是装饰：只有第三维**真有变量含义**时才用 —— 空间结构（圆柱/球/多层介质）、响应面（两个参数 → 一个指标）、三维轨迹、多变量关系、优化地形。用三维时的**配套要求**：① 视角必须可读，别用看不穿的等轴投影糊住遮挡；② 检查遮挡；③ **投影有歧义时必须配一张二维投影/切片/等高线**。工具：`visualization.geometry.orthographic()` 与 `sphere_section()`；画法与验收见 `docs/GEOMETRY.md`。",
-    "min_data_figures_per_question": 2,
-    "require_one_non_line_per_question": true
+    "_three_d_note": "物理/数学相关的内容可以考虑三维，但只有第三维真有变量含义时才用；三维必须配二维投影/切片/等高线。",
+    "selection": {
+      "mode": "claim_driven",
+      "min_candidates_per_figure": 2,
+      "require_distinct_visual_encodings": true,
+      "require_rendered_candidates": true
+    },
+    "line_budget": {
+      "max_line_panels": 6,
+      "min_line_panels": 4,
+      "max_field_panels": 2,
+      "max_field_maps": 1,
+      "max_heatmaps": 1,
+      "min_annotated_heatmaps": 1,
+      "max_distribution_panels": 1,
+      "max_bar_panels": 3,
+      "subfamily_balance_share": 0.7,
+      "line_recipes": [
+        "profiles",
+        "field_waterfall",
+        "small_multiples",
+        "paired_dumbbell",
+        "roc_curve"
+      ],
+      "_note": "图的混排预算（含 included=false 的支撑图，因为读者在盘上也会看到）：折线 4–6 个；场图/热力图共 2 个，平均分成 1 张场图 + 1 张带数字的矩阵热力图；雨云/分布 ≤1；柱/抽样柱 ≤3。连续轨迹/相轨迹/历史保留折线；只有分布形状是 claim 才用雨云。单项超了就按 claim 换图型，不要全折线、全热力图或全柱状图。这是跨题默认区间，不是给某一题手调的；agent 在区间内按 claim 选。"
+    }
+  },
+  "question_palette": {
+    "Q1": {"fill": "#E8F5E9", "stroke": "#2E7D32", "label": "预热段"},
+    "Q2": {"fill": "#E8F0FE", "stroke": "#1D4ED8", "label": "全过程"},
+    "Q3": {"fill": "#FFF3E0", "stroke": "#B45309", "label": "t_dry 定位"},
+    "Q4": {"fill": "#F3E8FF", "stroke": "#6D28D9", "label": "收缩域"},
+    "_note": "流程图每个问的语义色。Q1–Q4 是当前题的示例；问数=题面实际问数，超过四项时按同一语义色阶补色，不要把四问当固定结构。数据图仍用 style.tokens.json 的 series palette，不把 Q 色当装饰。"
+  },
+  "roadmap_question_palette": {
+    "Q1": {"fill": "#E8F5E9", "stroke": "#A5C9A7", "text": "#2E7D32"},
+    "Q2": {"fill": "#E8F0FE", "stroke": "#A9C1ED", "text": "#1D4ED8"},
+    "Q3": {"fill": "#FFF3E0", "stroke": "#E2C08D", "text": "#B45309"},
+    "Q4": {"fill": "#F3E8FF", "stroke": "#C4B5FD", "text": "#6D28D9"},
+    "_note": "路线图的低对比问色：描边比填充只深一档，标题文字用问色；数据图的 question_palette 仍用深描边。"
   },
   "_gamma_note": "非线性色标指数（`PowerNorm`）。场图的低值平台常占一大片，线性色标下那一片被压成**一个颜色**，干前沿只能靠外加的判据线读 —— 这是把问题从'色阶'转移到'另加判据线'，不算解决。`PowerNorm(γ<1)` 把**低端拉开**：同一套色标、同一 vmin/vmax 不变，后段色差重新可见。与 `slice` 分工不同 —— `slice` 治「最低端近白、吃白线」，`gamma` 治「低值区占一大片、后段压平」；两者可同时用。改它会改变所有场图外观 ⇒ 改完必须重渲 + 重新目检。",
   "ink": "#1F2937",

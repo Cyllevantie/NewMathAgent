@@ -13,9 +13,17 @@
 > 数据层契约与 `[lock:data]` / `[lock:contract]` 路由见
 > `skills/figure-studio/references/decoupling.md`。
 
+## 论文主图：Nature-style plate
+
+每问的论文主图用 `skills/plate-figure/SKILL.md` 的 plate 语法：kicker → 结论式 title → subtitle，
+hero 面板占 40–55%，其余面板不等宽马赛克，底部 summary band。当前题的可运行模板是
+`figures/plate_q3.py`（`fig_q3_plate`）与 `figures/plate_q2.py`（`fig_q2_plate`）。
+`figures/spec` 的 9 张图是支撑面板/数据层，不直接替代 plate；单图 sci-box 模板在
+`skills/mathmodel-figure-templates/`。plate 只读 bundle/results，不重算数值。
+
 ## 先规划，再画图
 
-在 `reports/FIGURE_PLAN.md` 中记录每张候选图的稳定语义 ID、它回答的问题、来源文件和字段/单位、图型、区间定义、正文/附录用途、最终宽度。按论证需求选图；数据图以 `config/visualization.json` 的 `chart_mix` 为下限（每问 ≥2 张，且至少一张不是折线），下限之上按论证需求增补，不设固定张数；非数据图不规定每问数量。没有实际计算支持的统计区间、最优点和权衡曲线不进入计划。流程图根据实际子问题生成，节点每行约十字、最多两行，长公式留正文。
+在 `reports/FIGURE_PLAN.md` 中记录每张图的稳定语义 ID、它回答的问题、来源文件和字段/单位、**2 个以上不同视觉编码的候选**、区间定义、正文/附录用途、最终宽度。按论证需求选图，不设“每问至少几张/至少一张非折线”的配额；折线是最后手段（支撑图折线面板受 `chart_mix.line_budget` 限制），场分布优先 `field_raincloud`/`raincloud`，离散时刻优先 `grouped_bars`/`dot_interval`，只有空间结构本身是 claim 时才用场图。同一 bundle + 同一视觉编码只出一张图。没有实际计算支持的统计区间、最优点和权衡曲线不进入计划。流程图根据实际子问题生成，节点每行约十字、最多两行，长公式留正文。
 
 ## 数据图契约（④ → ⑦）
 

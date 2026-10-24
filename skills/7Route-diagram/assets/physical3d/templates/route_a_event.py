@@ -54,7 +54,7 @@ def build(font: str, width_mm: float, out_dir: Path, stem: str):
                  color=S.RED, bold=True, size=8.6)
     S.annotate3d(ax3, (0.0, 0.0, 6.0), "$\\max_r C(r,t)$", xytext=(18, 8),
                  color=S.AMBER, size=8.2)
-    fig.text(0.01, 0.02, "(a) 全场最坏点在轴心", fontsize=8.2,
+    fig.text(0.01, 0.02, "全场最坏点在轴心", fontsize=8.2,
              color=S.MUTED, ha="left", va="bottom")
 
     # ---------------- (b) 事件求根 ----------------
@@ -92,7 +92,7 @@ def build(font: str, width_mm: float, out_dir: Path, stem: str):
                 arrowprops=dict(arrowstyle="-|>", color=S.MUTED, lw=0.9))
     _halo_text(ax, 0.99, -0.265, "$t$", S.MUTED, size=8.4, ha="right",
                va="top")
-    fig.text(0.56, 0.02, "(b) 事件求根（示意）", fontsize=8.2,
+    fig.text(0.56, 0.02, "事件求根（示意）", fontsize=8.2,
              color=S.MUTED, ha="left", va="bottom")
 
     out_dir.mkdir(parents=True, exist_ok=True)

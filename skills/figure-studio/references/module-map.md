@@ -16,6 +16,7 @@
 | 预测—真实边缘分布 | `marginal-joint-scatter` | `studio.prediction_marginal` | 大样本用 hexbin，不抽稀 |
 | RF/TPE 调参 3D 曲面 | `tuning-surface-3d` / `surface3d-response` | `studio.surface3d_panel` | 平滑曲面 + 二维投影；不画瀑布 |
 | 下三角相关+半边小提琴 | `split-violin-corr-matrix` | `studio.split_violin_corr_matrix` | 需要 feature × group × value；组别 ≤3 |
+| 确定性场的拆半小提琴 | `field-split-raincloud` | `studio.field_split_raincloud` | 只借 sci-box 05 的 split-violin；相关矩阵/分组树不适用（空间自相关是构造出来的） |
 | 分组环形热图 | `circular-heatmap` | `studio.circular_heatmap` | 类别要有周期/分组含义；否则用矩形热图 |
 | 城市公园降温组合 | `distribution-composite` | `studio.distribution_composite` | 堆叠 + 云雨 + 箱线的总装；组件总和无意义时不要堆叠 |
 | Nature 和弦 | `chord-diagram` | `studio.chord_diagram` | 需要 source × target × weight；稀疏连接用邻接矩阵 |

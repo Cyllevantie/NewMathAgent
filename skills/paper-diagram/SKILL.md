@@ -24,6 +24,10 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob
 `../7Route-diagram/references/route-diagram.md` 的「问题路由树」或「X 问泳道」生成。
 旧脚本与资产保留在 `scripts/`、`assets/` 下，仅供历史兼容；新图不要调用。
 
+用户给的 `flow1.png` / `flow2.png` 参考模板在
+`../7Route-diagram/assets/roadmap_templates/`；flow1 优先、flow2 兜底，具体见
+`../7Route-diagram/references/route-diagram.md` §0.0。它们不是本 skill 的线性模板，不冲突。
+
 ## B. 从零手写 XML
 
 读 `references/authoring.md`：骨架、样式速查、中文字宽预算、连接器写法、四个必踩的坑。图标与特殊图元见 `references/icons.md`。
@@ -50,6 +54,7 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob
 
 ```bash
 python3 scripts/check_layout.py fig.drawio      # 溢出/越界/重复 id/重叠/穿盒/位图（--strict 作门禁）
+python3 scripts/check_layout.py fig.drawio --flow  # 再加：悬空节点/缺入口支链/单出口菱形/悬空箭头/输入母线贴卡底或短引线
 python3 scripts/export_figure.py fig.drawio     # 1:1 PNG + 矢量 PDF（需 drawio 命令行）
 python3 scripts/preview_html.py fig.drawio      # 浏览器预览，无需 drawio 命令行
 ```

@@ -37,11 +37,14 @@ def base_ledger():
     return {
         "schema_version": 1,
         "report": "reports/ANALYSIS_MODELING_REPORT.md",
-        "panel": {"lenses": ["mechanism", "data", "adversarial"],
+        "panel": {"lenses": ["mechanism", "data", "adversarial", "closure"],
                   "candidates": 9, "adopted": 1},
         "baselines": [
             {"id": "BASE-Q4", "question": "Q4",
              "model": "材料坐标一维径向有限体积，R(t) 取题给实测",
+             "headline": "达标时间 t_dry", "unit": "h"},
+            {"id": "BASE-Q4-N", "question": "Q4",
+             "model": "固定域一维径向有限体积（朴素基线）",
              "headline": "达标时间 t_dry", "unit": "h"},
             {"id": "BASE-Q2", "question": "Q2",
              "model": "一维径向有限体积 + 题给物性",
@@ -183,8 +186,111 @@ class InnovationLedgerTests(unittest.TestCase):
             },
         }
 
+    def reject_all(self):
+        for item in self.ledger["items"]:
+            item["status"] = "rejected"
+            item["reject_reason"] = "测试用"
+
+    def add_contribution(self, iid="INN-4"):
+        item = {
+            "id": iid, "question": "Q4", "lens": "closure", "type": "closure",
+            "kind": "contribution", "core": False, "baseline_id": "BASE-Q4-N",
+            "failure_mode": "R(t) 与 ρ_s(C) 同时当独立输入，干物质漂移 −10.98%",
+            "intervention": "ρ_s∝R⁻² + 固体连续性；ρ_b(C) 只进热容",
+            "claim": "闭合自洽时 M_s 守恒，t_dry 变化 ≤0.01%",
+            "predicted_delta": "t_dry 51.2257→51.2205 h",
+            "test": "同 solver 跑 appendix 与 consistent 热密度",
+            "kill_if": "M_s 漂移仍 >1%",
+            "status": "adopted",
+            "contribution": "材料坐标下的自洽收缩闭合",
+            "baseline_is_naive": "朴素基线把 R(t) 与 ρ_s(C) 同时当独立物理输入",
+            "contribution_evidence": "results/innovation_checks.json",
+            "measurement": {
+                "kind": "quantitative", "baseline_value": 51.2257,
+                "intervention_value": 51.2205, "delta": -0.0052,
+                "delta_unit": "h", "source": "results/innovation_checks.json",
+                "passed": True, "evidence": "results/q4_checks.json#heat_capacity",
+            },
+            "audit": {"verdict": "PASS",
+                      "evidence": "按 results/q4_checks.json 复算 heat_capacity 变体与干物质漂移"},
+            "paper": {"section": "2.5", "claim_id": "C4"},
+        }
+        self.ledger["items"].append(item)
+        return item
+
     def test_valid_design_passes(self):
         self.assertEqual(self.validate("design"), [])
+
+    def test_a_contribution_can_fill_2_5_without_primary_guard(self):
+        """模型贡献（closure）只凭一致性/差值进 2.5，不套主答案护栏。"""
+        for item in self.ledger["items"]:
+            item["status"] = "rejected"
+            item["reject_reason"] = "测试用"
+        self.add_contribution()
+        self.assertEqual(self.validate("write"), [])
+
+    def test_a_contribution_without_evidence_is_rejected(self):
+        self.reject_all()
+        self.add_contribution()["contribution_evidence"] = ""
+        self.assert_has(self.validate("design"), "contribution_evidence")
+
+    def test_contribution_cap_is_enforced(self):
+        """「模型特点与关键处理」最多 3 条；否则 2.5 会被写成方法清单。"""
+        self.reject_all()
+        for n in range(4):
+            self.add_contribution(iid=f"INN-{10 + n}")
+        self.assert_has(self.validate("design"), "最多 3 条")
+
+    def test_contribution_delta_must_match_the_two_columns(self):
+        """contribution 的差值也是证据，不能自报一个与 baseline/intervention 对不上的数。"""
+        self.reject_all()
+        item = self.add_contribution()
+        item["measurement"]["delta"] = 0.5
+        self.assert_has(self.validate("code"), "不一致")
+
+    def test_contribution_must_not_carry_a_primary_guard(self):
+        self.reject_all()
+        item = self.add_contribution()
+        item["primary_guard"] = {"metric": "t_dry",
+                                 "allowed_relative_change": 0.1,
+                                 "why": "测试用"}
+        self.assert_has(self.validate("design"), "primary_guard 不应出现在 contribution")
+
+    def test_contribution_measurement_must_not_carry_primary(self):
+        self.reject_all()
+        item = self.add_contribution()
+        item["measurement"]["primary"] = {"metric": "t_dry", "guard_passed": True}
+        self.assert_has(self.validate("code"), "primary 不应出现在 contribution")
+
+    def test_contribution_core_must_be_false(self):
+        self.reject_all()
+        item = self.add_contribution()
+        item["core"] = True
+        self.assert_has(self.validate("design"), "core 必须是 false")
+        item["core"] = None
+        self.assert_has(self.validate("design"), "core 必须是 false")
+
+    def test_contribution_write_requires_audit_pass(self):
+        self.reject_all()
+        item = self.add_contribution()
+        item["audit"]["verdict"] = "FAIL"
+        self.assert_has(self.validate("write"), "⑤ 复核不是 PASS")
+
+    def test_panel_must_include_the_closure_lens(self):
+        """4 个视角仍可能全是机制/数据/对抗 + 一个自定义补位，必须点名缺 closure。"""
+        self.ledger["panel"]["lenses"] = ["mechanism", "data", "adversarial", "literature"]
+        self.assert_has(self.validate("design"), "必须含 closure")
+
+    def test_optimization_can_replace_closure_for_an_optimization_problem(self):
+        """纯优化/决策题允许 optimization 顶替 closure（但 4 个视角仍需互不相同）。"""
+        self.ledger["panel"]["lenses"] = ["mechanism", "data", "adversarial", "optimization"]
+        issues = self.validate("design")
+        self.assertFalse(any("closure" in x for x in issues), issues)
+
+    def test_a_panel_of_only_mechanism_hypotheses_is_rejected(self):
+        for item in self.ledger["items"]:
+            item["type"] = "mechanism"
+        self.assert_has(self.validate("design"), "模型层")
 
     def test_design_ledger_must_not_carry_downstream_fields(self):
         """measurement/robustness/paper 写回设计台账 = ② 的回执每轮自失效。"""
@@ -216,9 +322,10 @@ class InnovationLedgerTests(unittest.TestCase):
         issues = ci.validate(self.tmp, "design")
         self.assert_has(issues, "缺创新台账")
 
-    def test_panel_needs_adversarial_or_optimization_lens(self):
-        self.ledger["panel"]["lenses"] = ["mechanism", "data", "criterion"]
-        self.assert_has(self.validate("design"), "对抗/审稿视角或优化视角")
+    def test_panel_needs_four_lenses(self):
+        """4 个不同视角 + closure 后，adversarial/optimization 已被集合大小隐含。"""
+        self.ledger["panel"]["lenses"] = ["mechanism", "data", "adversarial"]
+        self.assert_has(self.validate("design"), "至少要有 4 个不同视角")
 
     def test_panel_needs_three_candidates(self):
         self.ledger["panel"]["candidates"] = 2
@@ -299,13 +406,20 @@ class InnovationLedgerTests(unittest.TestCase):
             item["reject_reason"] = "测试用"
         self.assert_has(self.validate("code"), "downgraded")
 
-    def test_honest_no_adoption_reason_passes_later_stages(self):
+    def test_no_adoption_reason_is_allowed_until_write_but_2_5_cannot_be_empty(self):
+        """no_adoption_reason 允许 ②-⑥ 诚实收尾；但 ⑨ 不能把 2.5 写空。
+
+        2026-10-24 用户口径：论文不能“啥都没有”。只写 no_adoption_reason 会让 2.5 空着，
+        write 阶段必须打回 ② 补一条 contribution（模型特点与关键处理）。
+        """
         for item in self.ledger["items"]:
             item["status"] = "rejected"
             item["reject_reason"] = "本题没有值得做的增量"
         self.ledger["no_adoption_reason"] = "题面只要求复现标准扩散模型，额外闭合无数据支持"
-        for stage in ("design", "code", "audit", "robustness", "write", "all"):
+        for stage in ("design", "code", "audit", "robustness"):
             self.assertEqual(self.validate(stage), [], stage)
+        for stage in ("write", "all"):
+            self.assert_has(self.validate(stage), "2.5 不能为空")
 
     def test_code_requires_measurement(self):
         self.assert_has(self.validate("code"), "measurement")

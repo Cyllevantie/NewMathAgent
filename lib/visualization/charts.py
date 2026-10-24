@@ -349,7 +349,16 @@ def contour(ax, x, y, z, *, colorbar_label, quantity=None, cmap=None, levels=14,
         if label_lines:
             # 字号取 rcParams（`style()` 按 config 的 font_size 设），**不写死 7**：
             #   写死会低于 `min_font_size`，`export()` 的"文字小于最小字号"当场拦下。
-            ax.clabel(cs, fmt=line_fmt, fontsize=mpl.rcParams["font.size"])
+            labels = ax.clabel(cs, fmt=line_fmt, fontsize=mpl.rcParams["font.size"],
+                               inline=True, inline_spacing=4)
+            # A contour value printed directly on a highlighted red criterion line
+            # is unreadable when the red line shows through the glyph counters
+            # (FR8-02).  The label belongs to the white line; give it an opaque
+            # panel-coloured box so the separately drawn highlight cannot cross it.
+            for label in labels or []:
+                label.set_bbox({"facecolor": "white", "edgecolor": "none",
+                                "alpha": 0.95, "pad": 0.6})
+                label.set_zorder(6)
     if highlight is not None:
         ax.contour(x, y, z, levels=[float(highlight)], colors=highlight_color,
                    linewidths=1.6)

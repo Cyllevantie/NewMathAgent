@@ -1,6 +1,6 @@
 ---
 name: 8Figure-gate
-description: "绘图门禁（紧跟 7Route-diagram 之后）。⑦ 一跑完全文 12 张图就都在盘上了 —— 这是最早能对图全集做检查的位置。机械地板由驱动跑 `python -m lib.visualization audit` + `figure_lock.py verify`，本阶段负责机器看不见的那一半：图的选型对不对、读起来是否清楚、与正文讲的话是否一致。只判不改：画法/契约 FAIL 回 ⑦，数据层 `[lock:data]` 回 ④。"
+description: "绘图门禁（紧跟 7Route-diagram 之后）。⑦ 一跑完全部图就都在盘上了 —— 这是最早能对图全集做检查的位置。机械地板由驱动跑 `python -m lib.visualization audit` + `figure_lock.py verify` + `check_selection.py` + `check_plate.py` + `check_figure_mix.py` + `check_layout.py --flow`，本阶段负责机器看不见的那一半：图的选型对不对、读起来是否清楚、与正文讲的话是否一致。只判不改：画法/契约 FAIL 回 ⑦，数据层 `[lock:data]` 回 ④。"
 allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent
 ---
 
@@ -25,7 +25,7 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent
 1. 时间。图到 ⑮ 验收才被查出来，中间已经白跑了 ⑨ 论文撰写、⑩ 数学论证、⑪ 跨问一致性、⑫ 评分标终审、⑬ 按评分判词返修、⑭ 排版与版式
    四个阶段 —— 而 ⑨ 是小时级的。这一关的全部价值就是把发现提前。
 2. 机器看不见一半。`visualization audit` 能查资产过期、登记缺失、目检复核签名、
-   位图质量、图例压数据、drawio 版式体检 —— 但它查不出「12 张图里 11 张是折线、
+   位图质量、图例压数据、drawio 版式体检 —— 但它查不出「一整批图里绝大多数是折线、
    二维场一张热力图都没有」这种选型问题：机器全绿、人一眼看出全是折线，是常态。
 3. ⑮ 验收那条图闸门只管晚场。它管的是"成稿之后图又被动过"（⑭ 排版会重渲染）。
    本阶段管早场。**两条都在，不要互相替代。**
@@ -50,7 +50,7 @@ bundle/source 在锁之后变了，⑦ 不能改数据，驱动会把这一类�
 4. `reports/DRAWIO_REPORT.md`（⑦ 产出）与 `reports/RESULTS_REPORT.md`（④ 产出）—— 图想说什么。
 5. `config/visualization.json` —— 尺子：非数据图语义色（`palette`/`ink`/`line`/`box`/`grid`/`warn`）、
    `quantity_cmap`（物理量→色阶）、`quality` 阈值、`chart_mix` 选型口径。数据图的分类色/字体/字号/
-   面板字母以 `figure-studio/assets/style.tokens.json` 为准（中文全宽/半栏 `min_pt` 7.5/7，英文 6）。
+   面板短描述以 `figure-studio/assets/style.tokens.json` 为准（中文全宽/半栏 `min_pt` 7.5/7，英文 6）。
 
 ## 两道检查
 
@@ -59,9 +59,16 @@ bundle/source 在锁之后变了，⑦ 不能改数据，驱动会把这一类�
 ```bash
 python -m lib.visualization audit     # 必须 PASS
 python skills/figure-studio/scripts/figure_lock.py verify --root .   # 数据层契约
+python skills/figure-studio/scripts/check_selection.py --root .      # 候选/选中记录
+python skills/plate-figure/scripts/check_plate.py --root .           # 主图 plate
+python skills/figure-studio/scripts/check_figure_mix.py --root .     # 重复 3D / 折线预算
+python skills/paper-diagram/scripts/check_layout.py figures/fig_roadmap.drawio --flow  # 流程图连通性
+python skills/7Route-diagram/scripts/check_roadmap_design.py --root .  # 是否仍为参考骨架
 ```
 
-驱动在 `_gate_decision` 里对本阶段直接跑这两个检查：它报问题就直接判 FAIL，不看你的裁决。
+驱动在 `_gate_decision` 里对本阶段直接跑这些检查（含 `check_figure_mix.py`
+的重复 3D/折线预算、`check_layout.py --flow` 的流程图连通性）：它报问题就直接判
+FAIL，不看你的裁决。
 `figure_lock` 的三类输出要分清：
 
 - `[lock:data]`：bundle/source 在锁之后变了 ⇒ **数据层问题，回 ④**。⑦ 改不了，
@@ -88,17 +95,24 @@ python skills/figure-studio/scripts/audit_studio.py --root .
 
 | 查什么 | 判据 | 反例 |
 |---|---|---|
-| 选型 | 二维场（空间 × 时间）该是热力图/等高线；折线只用于切片与指标对比 | 12 张图 11 张折线，温度场/水分场一张热力图都没有 |
+| 选型 | 按 claim 选：折线**不是最后手段**，也不是全都不要——支撑图折线面板保留 `line_budget` 的 4–6 个；场分布用 `field_raincloud`/`raincloud`，离散时刻用 `grouped_bars`/`dot_interval`；只有空间结构本身是 claim 时才要场图。候选至少两个不同视觉编码，选中项在 `figures/choice/` | 不分 claim 一律要求热力图；或候选全是同一图型换配色；整批图都是 profiles/field_waterfall；或全删折线压成热力图/雨云 |
+| 主图 plate | 每问主图按 `../plate-figure/SKILL.md`：hero 占 40–55%，图内不写整图标题（标题交 ⑨）、**不写 a/b/c 字母**、需要时面板下方一行短描述、KPI 紧凑且无框；问数=题目实际问数（不固定四张），任意两张的 `axes_mm` 签名不能雷同；图内不放 `Panel a: …` 说明句/来源脚注/英文 kicker；不得用 2×2 等分四宫格凑数 | 只有同宽小图、没有 hero 面板；图内出现整图标题；带 a/b/c 字母；多张图同一骨架换数据；中文模板里整句英文（或反之） |
+| 3D/合成图 | 3D 曲面必须与二维投影/等高线同源；红/蓝/绿语义固定；删失下界只能是箭头/标注 | 3D 只作装饰；删失点画成实测点 |
 | 该用三维却压成了二维 | 物理/数学相关且第三维真有变量含义的（空间结构、响应面、三维轨迹、多变量关系）—— 硬压成折线或二维剖切会把"两个参数怎么共同影响结果"这层信息丢掉。可以且应当用三维，但必须配齐：视角可读、遮挡交代、投影有歧义时配一张二维投影/切片 | 圆柱三点位的空间结构只用一张径向剖切表达，方位与端面看不出来 |
 | 3D 图重复/该合并 | 只差时间窗/参数/输出、几何同构的两个问应合并成一张（同相机、同比例双面板或共用模型 + 参数标注）；每个问各画一张同构 3D 图 = 版面翻倍、读者看不出差别 | Q1/Q2 同一圆柱模型各画一张；控制体在每个问里重复画 |
 | 3D 标签/剖面/遮挡 | 标签不压实体、不穿几何、不互相压；剖面有填充/剖面线，不是空壳；内部线不穿出实体；投影与遮挡在 caption 交代；字体字号与其他图一致 | 标签白底框切断圆柱；剖面空白像空壳；`max_r C` 公式被曲线穿过 |
 | 读得清 | 图例不压曲线、线不穿字、字号 ≥ `style.tokens.json` 的 `typography.<lang>[_half].min_pt`（中 7.5/7，英 6）、灰度打印下仍能区分 | `q1_profiles` 图例没底色、曲线从标签上穿过 |
 | 场图别是一片死色 | 低值区占一大片、线性色标把它压成一个颜色时，先加 `gamma`（PowerNorm）把低端拉开；拉开还平就改成剖面/折线 —— 别靠「再画一条判据线」绕过去 | `q2_surface3d` 右栏 t≳22 h 占栏高 43.6% 死色；`q1_field` 水分栏 76% 同色 |
 | 不超载 | 单图序列 ≤ 8（超了颜色回绕、两条线同色）；非数据图节点 ≤ 8 | 数值解/级数解 8 条线挤一张，图例糊成一行 |
+| 图级判重 | 同一 bundle + 同一编码只出现一次；plate hero 的 3D 曲面不再出同源支撑图 | 某张支撑图与对应 plate 各画一张同字段 3D 曲面 |
+| sci-box 拼接 | 只取适配的面板（05 拆半小提琴、08 半小提琴、10 云雨+箱线、07 3D）与本题场/线拼；不适用部件不画 | 整张放弃；或为用模板硬造相关矩阵/ROC/配对 |
+| 混排预算 | 折线 4–6；场图/热力图共 2，平均分成 1 张场图 + 1 张带数字的矩阵热力图；雨云/分布 ≤1；柱/抽样柱 ≤3（`chart_mix.line_budget`）；同类子型也尽量均分，数据不支持就不硬换；连续轨迹/相轨迹保留折线，只在少数检查点比较时用 `sampled_bars`/柱/点，场分布才用雨云 | 一整批全是折线；或反过来全删折线、全压成热力图/雨云 |
+| 场图堆 | 论文主图不能所有面板都是 `field_contour`/`field_heatmap`/`field_moving`；至少一个分布/比较面板 | 两张等高线并排，前沿推进仍要读者自己找 |
+| 流程图连通 | 每个支链有入口箭头；每个真菱形两个出口都有「是/否」标签；无悬空端点 | Q3 支链只有「是·复用解」标签、没有箭头 |
 | 说到做到 | 图里画的与 `claim`、正文那句一致；数值与 `results/` 对得上 | —— |
 | 一张大图 | 图 1（分析流程图）是唯一的整栏大图；其余非数据图半栏以内，**配色可沿用图 1 的同一套语义色**（低饱和、灰度可读），不再强制黑白；同类同色、同语义同色 | 大图缩到 0.7 栏、节点字糊掉；小图用高饱和装饰色抢图 1 的注意力 |
 | 语言 | 图内解释性文字与模板一致（CUMCM→中文；英文模板→英文）；方法名/单位符号可保留拉丁写法 | 中文论文里全英文标题/图例；英文图里夹中文解释句 |
-| 画风 | 配色/字体/字号/面板字母走 `figure-studio/assets/style.tokens.json`；≥5 序列同时用线型/标记 | 每张图一套 rcParams；红蓝只靠色相区分 |
+| 画风 | 配色/字体/字号/面板短描述走 `figure-studio/assets/style.tokens.json`；≥5 序列同时用线型/标记 | 每张图一套 rcParams；红蓝只靠色相区分；图内出现 a/b/c 字母 |
 | 来源数据 | 每个面板有 `figures/source_data/<id>__<panel>.csv`；meta 有 counts/intervals/exclusions；`figure_lock verify` 无 `[lock:data]`/`[lock:contract]` | 只有 PNG，数值无法追溯；bundle/spec 被改过 |
 
 完整的选型/语言/统计/来源数据清单见 `../figure-studio/references/qa.md`；本阶段按它逐张核，
@@ -106,6 +120,19 @@ python skills/figure-studio/scripts/audit_studio.py --root .
 
 不达标就填 `issues`（`category: "diagram"`，硬伤），别写进 `advisories` ——
 `diagram` 那一路本来就是给"图本身的产出缺陷"准备的，路由回 ⑦。
+
+## 后台 Workflow 必须收尾（交卷前）
+
+`Workflow` 工具是**后台任务**：调用后它自己继续跑，你结束回合**不会**取消它。
+本阶段用 Workflow 做对抗复核时：
+
+- 写 `FIGURE_REVIEW_REPORT.md` / `.verdict.json` 并输出最终答复**之前**，必须确认它已经结束
+  （收到完成通知，或读 journal：`started` 条数 == `result` 条数）；
+- 等不及就显式取消（`TaskStop`），不要留着后台 agent 交卷；
+- 交卷时还挂着后台 Workflow ⇒ `claude -p` 不会退出。驱动现在有兜底：**回合结束 + 报告落盘
+  + 600 秒没有主 agent 输出** → 结束进程树并按正常完成收尾；但交卷后才回来的复核结果**直接作废**，
+  别指望它们进裁决。2026-10-23 实测：交卷后还留 5 个 verify agent，空转 80 分钟，
+  裁决其实 19:53 就写完了。
 
 ## 必须产出
 

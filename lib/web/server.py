@@ -24,6 +24,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from lib.visualization.evidence import audit as audit_figures
 
 
+def _checker_json(proc, name, what):
+    """Parse a checker's JSON stdout; empty output is an environment gap, not PASS.
+
+    `json.loads(proc.stdout or "{}")` used to turn a pre-print crash (missing
+    import, syntax error, killed interpreter) into an empty issue list — the
+    ⑧ floor then showed green although that checker never ran.  Empty output
+    must leave a log line, same as a raised exception.
+    """
+    raw = (proc.stdout or "").strip()
+    if not raw:
+        log(f"⚠️ ⑧ 绘图门禁：{name} 没有输出（rc={getattr(proc, 'returncode', '?')}）"
+            f"—— 本次机械地板**少跑**了{what}")
+        return None
+    return json.loads(raw)
+
+
 def _audit_studio_issues():
     """Run the shared figure skill's static check for the ⑧ mechanical floor.
 
@@ -43,7 +59,9 @@ def _audit_studio_issues():
             [sys.executable, "-X", "utf8", str(script), "--root", str(ROOT), "--json"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
         )
-        data = json.loads(proc.stdout or "{}")
+        data = _checker_json(proc, "audit_studio", "绘图静态检查")
+        if data is None:
+            return []
         return list(data.get("issues") or [])
     except Exception as exc:                # noqa: BLE001
         # 不能静默吞：脚本崩了/超时/输出不是 JSON 时，⑧ 的机械地板会**少跑**这一类检查，
@@ -51,6 +69,229 @@ def _audit_studio_issues():
         log(f"⚠️ ⑧ 绘图门禁：audit_studio 静态检查未能运行"
             f"（{type(exc).__name__}: {exc}）—— 本次机械地板**少跑**了这项检查")
         return []
+
+
+def _check_selection_issues():
+    """Run the ④→⑦ candidate/choice record check for the ⑧ mechanical floor.
+
+    `audit_studio` checks meta/claim/source-data wiring; it does not know whether
+    each figure had two visual encodings and a recorded choice.  The ⑧ SKILL
+    lists `check_selection.py` as part of the floor, so the driver must run it
+    here rather than trusting the agent to remember.
+    """
+    script = ROOT / "skills/figure-studio/scripts/check_selection.py"
+    if not script.is_file():
+        log("⚠️ ⑧ 绘图门禁：找不到 skills/figure-studio/scripts/check_selection.py —— "
+            "本次机械地板**少跑**了候选/选中记录检查（环境缺件，不是图不合格）")
+        return []
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-X", "utf8", str(script), "--root", str(ROOT)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+        )
+        data = _checker_json(proc, "check_selection", "候选/选中记录检查")
+        if data is None:
+            return []
+        return list(data.get("issues") or [])
+    except Exception as exc:                # noqa: BLE001
+        log(f"⚠️ ⑧ 绘图门禁：check_selection 未能运行"
+            f"（{type(exc).__name__}: {exc}）—— 本次机械地板**少跑**了候选/选中记录检查")
+        return []
+
+
+def _check_plate_issues():
+    """Run the Nature-style plate check for the ⑧ mechanical floor.
+
+    The plate generators are the main paper figures; a run that only re-renders
+    the small `figure-studio` charts must not pass ⑧.  Each
+    ``figures/plate_<id>.py`` must have a registered ``fig_<id>_plate`` with
+    existing artifacts and a current visual review.
+    """
+    script = ROOT / "skills/plate-figure/scripts/check_plate.py"
+    if not script.is_file():
+        log("⚠️ ⑧ 绘图门禁：找不到 skills/plate-figure/scripts/check_plate.py —— "
+            "本次机械地板**少跑**了主图 plate 检查（环境缺件，不是图不合格）")
+        return []
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-X", "utf8", str(script), "--root", str(ROOT), "--json"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+        )
+        data = _checker_json(proc, "check_plate", "主图 plate 检查")
+        if data is None:
+            return []
+        return list(data.get("issues") or [])
+    except Exception as exc:                # noqa: BLE001
+        log(f"⚠️ ⑧ 绘图门禁：check_plate 未能运行"
+            f"（{type(exc).__name__}: {exc}）—— 本次机械地板**少跑**了主图 plate 检查")
+        return []
+
+
+def _check_figure_mix_issues():
+    """Run the figure-level duplicate / line-budget check for the ⑧ floor.
+
+    Per-figure checks cannot see that one 3D surface was rendered twice, or
+    that the support set drifted into an all-line batch.  Those are selection
+    failures, so they must fail the gate with an actionable list.
+    """
+    script = ROOT / "skills/figure-studio/scripts/check_figure_mix.py"
+    if not script.is_file():
+        log("⚠️ ⑧ 绘图门禁：找不到 skills/figure-studio/scripts/check_figure_mix.py —— "
+            "本次机械地板**少跑**了重复图/折线预算检查（环境缺件，不是图不合格）")
+        return []
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-X", "utf8", str(script), "--root", str(ROOT), "--json"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+        )
+        data = _checker_json(proc, "check_figure_mix", "重复图/折线预算检查")
+        if data is None:
+            return []
+        return list(data.get("issues") or [])
+    except Exception as exc:                # noqa: BLE001
+        log(f"⚠️ ⑧ 绘图门禁：check_figure_mix 未能运行"
+            f"（{type(exc).__name__}: {exc}）—— 本次机械地板**少跑**了重复图/折线预算检查")
+        return []
+
+
+def _figure_policy_text():
+    """Per-run duplicate/line-heavy hint for the ⑦ prompt.
+
+    The figure ids change with the problem, so the prompt must not carry a
+    hard-coded ``q2_props``/``q3_dryfront`` list.  Read the current specs and
+    let the same checker that guards ⑧ produce the names.
+    """
+    generic = ("同一 bundle + 同一视觉编码只出现一次；plate hero 已画的 3D 曲面不再出"
+               "同源支撑图。`render_specs.py` 默认跳过这类重复图，不要用 "
+               "`--include-duplicates` 绕开。")
+    script = ROOT / "skills/figure-studio/scripts/check_figure_mix.py"
+    if not script.is_file():
+        return generic
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("fma_check_figure_mix", script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        result = mod.check(ROOT)
+        dupes = mod.duplicate_ids(ROOT)
+    except Exception:                       # noqa: BLE001 - prompt must still build
+        return generic
+    parts = [generic]
+    if dupes:
+        parts.append("当前判定为重复 3D 的图：" + "、".join(f"`{x}`" for x in dupes)
+                     + "（与 plate 同源）。跳过它们的渲染/登记，从 manifest 移除并删旧 "
+                       "PDF/SVG/PNG；bundle 保留给 plate 读。")
+    rows = result.get("line_figures") or []
+    field_rows = result.get("field_figures") or []
+    dist_rows = result.get("distribution_figures") or []
+    bar_rows = result.get("bar_figures") or []
+    if rows or field_rows or dist_rows or bar_rows:
+        def _detail(items):
+            return "、".join(f"`{fid}` {n}/{total}" for fid, n, total in items) or "0"
+        parts.append(
+            f"当前混排：折线 {result.get('line_panels')}（{_detail(rows)}，预算 "
+            f"{result.get('min_line_panels')}–{result.get('max_line_panels')}）；"
+            f"场图+热力图 {result.get('field_panels')}（场图 "
+            f"{result.get('field_map_panels')}/≤{result.get('max_field_maps')}、"
+            f"热力图 {result.get('heatmap_panels')}/≤{result.get('max_heatmaps')}；"
+            f"带数字 {result.get('annotated_heatmaps')}/≥"
+            f"{result.get('min_annotated_heatmaps')}）；雨云/分布 "
+            f"{result.get('distribution_panels')}（{_detail(dist_rows)}，≤"
+            f"{result.get('max_distribution_panels')}）。"
+            f"折线不是全删：连续剖面/历史序列保留 `profiles`/`field_waterfall`；"
+            f"收敛/离散网格用点图；场分布才用 `field_raincloud`/`raincloud`；"
+            f"离散检查点用 `sampled_bars`/`grouped_bars`/`dot_interval`。"
+            f"场图、雨云、柱超预算时改回折线剖面/点图，不要把所有图压成同一种。")
+    all_field = [x for x in (result.get("issues") or []) if "全是场图" in str(x)]
+    if all_field:
+        parts.append("当前整张图都是场图：" + "；".join(all_field)
+                     + "。把其中一个面板改成 `field_raincloud`（sci-box 半小提琴 + "
+                       "箱线 + 散点）或一个分布/比较面板。")
+    geom = [x for x in (result.get("issues") or []) if "fig_geometry_3d" in str(x)]
+    if geom:
+        parts.append("几何图重复：" + "；".join(geom))
+    balance = [x for x in (result.get("advisories") or [])
+               if "占 " in str(x) and "子类" not in str(x)]
+    if balance:
+        parts.append("子类均分提示（数据不支持就不用硬换）：" + "；".join(balance))
+    heat_hint = [x for x in (result.get("advisories") or [])
+                 if "annotated_heatmap" in str(x)]
+    if heat_hint:
+        parts.append("热力图格子提示（不强制）：" + "；".join(heat_hint))
+    excluded = [x for x in (result.get("advisories") or [])
+                if "included=false" in str(x)]
+    if excluded:
+        parts.append("支撑图去留：" + "；".join(excluded)
+                     + "。保留的支撑图按 claim 用折线/点图，不要再交热力图或雨云；"
+                       "不保留的从 manifest 和磁盘一起移除，不要只把 included 改 false。")
+    parts.append("不要沿用 `figures/choice/*.json` 里旧的“≤2 个折线”预算——"
+                 "那是上一轮的错误口径；以 `config/visualization.json` 的 "
+                 f"{result.get('min_line_panels')}–{result.get('max_line_panels')} / "
+                 f"场≤{result.get('max_field_panels')} / "
+                 f"雨云≤{result.get('max_distribution_panels')} 为准。")
+    parts.append("改完跑 `python skills/figure-studio/scripts/check_figure_mix.py "
+                 "--root .` 直到 PASS。")
+    return "\n".join(parts)
+
+
+def _check_roadmap_design_issues():
+    """Reject a roadmap that is still the fixed reference skeleton."""
+    script = ROOT / "skills/7Route-diagram/scripts/check_roadmap_design.py"
+    if not (ROOT / "figures" / "fig_roadmap.drawio").is_file():
+        return []
+    if not script.is_file():
+        log("⚠️ ⑧ 绘图门禁：找不到 skills/7Route-diagram/scripts/check_roadmap_design.py —— "
+            "本次机械地板**少跑**了流程图设计检查（环境缺件，不是图不合格）")
+        return []
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-X", "utf8", str(script), "--root", str(ROOT), "--json"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+        )
+        data = _checker_json(proc, "check_roadmap_design", "流程图设计检查")
+        if data is None:
+            return []
+        return list(data.get("issues") or [])
+    except Exception as exc:                # noqa: BLE001
+        log(f"⚠️ ⑧ 绘图门禁：check_roadmap_design 未能运行"
+            f"（{type(exc).__name__}: {exc}）—— 本次机械地板**少跑**了流程图设计检查")
+        return []
+
+
+def _check_flowchart_issues():
+    """Run the connectivity check on ``figures/fig_roadmap.drawio``.
+
+    ``check_layout.py --flow`` catches the failure the generic geometry check
+    missed: a whole branch with no incoming arrow, or a diamond with only one
+    exit.  It is only run when the drawio source exists; a missing roadmap is
+    already caught by the figure audit.
+    """
+    drawio = ROOT / "figures" / "fig_roadmap.drawio"
+    script = ROOT / "skills/paper-diagram/scripts/check_layout.py"
+    if not drawio.is_file():
+        return []
+    if not script.is_file():
+        log("⚠️ ⑧ 绘图门禁：找不到 skills/paper-diagram/scripts/check_layout.py —— "
+            "本次机械地板**少跑**了流程图连通性检查（环境缺件，不是图不合格）")
+        return []
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-X", "utf8", str(script), str(drawio), "--flow"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+        )
+        text = (proc.stdout or "") + (proc.stderr or "")
+        if "FAIL 0" in text:
+            return []
+        lines = [ln.strip() for ln in text.splitlines() if "FAIL" in ln and "FAIL 0" not in ln]
+        return ["fig_roadmap: " + ln for ln in lines] or (
+            ["fig_roadmap: check_layout --flow 未通过：\n" + text.strip()[:1200]]
+            if proc.returncode else [])
+    except Exception as exc:                # noqa: BLE001
+        log(f"⚠️ ⑧ 绘图门禁：流程图连通性检查未能运行"
+            f"（{type(exc).__name__}: {exc}）—— 本次机械地板**少跑**了这项检查")
+        return []
+
+
 from lib.publication.checks import audit as audit_publication
 from lib.result_contract.core import audit as audit_results
 from lib.paper_structure import check as check_paper_structure
@@ -723,10 +964,65 @@ def prompt_for(stage, first):
              "只能读取当前工作区文件；用户已经删除的归档不得用 git 恢复，"
              "历史版本也不得作为本轮结论、模型结构或探针内核的依据。"
              "需要规范/文献时读 skills/ 与 docs/，不要读 Git 历史。")
+    # Workflow 是**后台任务**，结束回合不会取消它；交卷时还挂着，`claude -p` 就不退出。
+    #   2026-10-23 ⑧ 实测：19:59 已写完裁决，后台还留 5 个 verify agent，阶段空转 80 分钟，
+    #   日志里只有每 10 分钟一条「自动延长」。所有阶段统一注入，别只写在 ⑧ 的 SKILL 里。
+    base += ("\n\n【后台 Workflow 必须收尾】`Workflow` 工具调用后会在后台继续跑，"
+             "**结束回合不会取消它**。如果你用它做交叉复核/验证，必须在写最终报告、输出最终答复"
+             "**之前**等它结束（收到完成通知，或 journal 里 `started` 条数 == `result` 条数）；"
+             "等不及就显式 `TaskStop` 取消。交卷时还留着后台 Workflow ⇒ `claude -p` 不会退出；"
+             "驱动会在「回合结束 + 报告落盘 + 600 秒没有主 agent 输出」后强制结束进程树并按正常完成收尾，"
+             "剩下没回来的复核结果**直接作废**（面板锁存在时不收）。"
+             "后台 Agent 子任务同理：要么等它回来，要么显式停掉，不要留给下一轮。")
     # 这里不再有「第 N 轮评审」提示：`MAX_ATTEMPTS_PER_STAGE=1` 之后调用点传的 attempt 恒为 1
     #   （除非环境类错误重试），而且它把 attempt 当"轮次"，语义也不对。真要按轮次提示，
     #   数据源是 state["rounds"]；而门禁回执已经通过 _save_feedback 落盘并由 seed_hint 送达，
     #   不缺这一句。
+    if sid == "drawio":
+        base += ("\n\n【主图 plate（硬要求）】本阶段除了 `figures/spec` 的支撑图，还必须先读 "
+                 "`skills/plate-figure/SKILL.md`，按每一问自己的证据链**设计**一张 "
+                 "Nature-style 主图（hero 面板、不等宽马赛克、KPI 条；图内不写整图标题）；"
+                 "`skills/plate-figure/templates/` 只是参考实现，**不要整份套模板**——"
+                 "每问一张 plate，问数=题目实际问数（不固定四张）；任意两张的 `axes_mm` 矩形不能雷同；"
+                 "图内语言=模板语言（`reports/FIGURE_CONTEXT.json`：当前 CUMCM→中文，英文模板→英文），"
+                 "不要硬写中文或中文字体；不放 `Panel a: …` 说明句或来源脚注；"
+                 "**图内不写 a/b/c 字母**（面板字母已全面取消）；需要时只在每个面板下方写一行"
+                 "短描述（如「三时刻截面」），不要漂浮在左上角；"
+                 "KPI 2–4 项只要横向放得下就**排成一行**（值在上、标签在下，无框无底板，"
+                 "参照本套 plate 里已经排成一行的 KPI），不要 2×2 宫格；KPI 要放在它所"
+                 "总结的面板 caption 正下方（如「三时刻截面」这行描述下面），不要甩到整图底部/"
+                 "顶部，值/标签成组贴近；只有侧栏窄到 4×17 mm 以下才竖排。先跑 `python figures/make_plates.py`，再跑 "
+                 "`python skills/plate-figure/scripts/check_plate.py --root .`；"
+                 "`figures/manifest.json` 必须登记 `fig_<id>_plate` 并通过视觉复核。"
+                 "只重画 `figure-studio` 支撑图、没有 plate 的 ⑦ 会被 ⑧ 的机械地板打回。"
+                 "【图级判重与线预算·硬要求】" + _figure_policy_text() +
+                 "【sci-box 部件拼接】模板不是整张用或整张不用：只适配一个面板时，"
+                 "就把那个面板（05 拆半小提琴 / 08 半小提琴 / 10 云雨+箱线 / 07 3D 面）"
+                 "与本题的场图/折线拼成一张，不适配的部件（相关矩阵/分组树/ROC/Taylor）不画。"
+                 "每个面板仍要写清 claim/字段/口径，不能借模板造假统计。"
+                 "【图内标题】所有图（plate/流程图/几何）都不写整图标题，正式标题交 ⑨ 的 LaTeX "
+                 "caption；需要一句 claim 补充时用 6–7 pt 常规字，放在图内空位/中间/下边，"
+                 "不要放顶部、不要加粗、不要做成 header。"
+                 "【技术路线图·构图自己设计】flow1/flow2 是**语法参考**（输入带 → 共用模型 → "
+                 "条件菱形 → 各问支链 → 结果文档/胶囊），不是要逐像素复刻的底图；每题的输入、真实"
+                 "分支、支链数量和结果都不同，按本题证据链自己排。先修排版再谈字号：不许有悬空节点、"
+                 "缺入口的支链、只有单出口的菱形、没有「是/否」标签的菱形出口、箭头悬空；"
+                 "输入母线要画成汇流大括号（卡底下方一条横线 + 每卡一条可见短引线 + 中点一根主干），"
+                 "不要贴着卡底变成下划线；主干直接穿过容器虚线边是允许的，不要为它开白口或分段。"
+                 "框间距要够长，箭头头不能吃掉箭杆（否则只剩三角形，check_layout --flow 会判 FAIL）。"
+                 "`scripts/flow1_roadmap.py` 只是本题的一份参考实现，节点数量/顺序/列数不能当填空模板；"
+                 "先在 `reports/ROADMAP_DESIGN.md` 写本题的问数、真实分支、支链步数和结果文档数，"
+                 "再按它重排/另写。导出前必须跑 "
+                 "`python skills/paper-diagram/scripts/check_layout.py figures/fig_roadmap.drawio --flow`"
+                 "（0 FAIL）；⑧ 会把这个检查当机械地板。**按一页 A4 的宽高比设计**"
+                 "（W:H≈0.68–0.71；160 mm 宽时高约 226 mm），不要画成 0.59 的窄长条；"
+                 "宽度不够先加宽列/横向间距，不要只往下堆框。不要只把画布放大来掩盖拥挤。"
+                 "【几何图】按**模型**拆，不按问数凑：几何不同的模型各一张，几何相同的问合并。"
+                 "若本题正好有共用域/动域两套，可跑 `python figures/make_geometry_split.py`"
+                 "（当前题产物 `fig_geometry_shared` / `fig_geometry_q4`）；只有一套模型就只画一张，"
+                 "不要硬拆。每张 180 mm、多视角；分别跑 `qa_physical3d.py`，QA 合并写 "
+                 "`reports/FIG_GEOMETRY_3D_QA.json`（ok=true）。旧合图/被拆分后的旧几何图是"
+                 "**重复图**：删掉 PDF/SVG/PNG/scene.json 并从 manifest 移除，不要 included=false 留档。")
     if sid == "write" and (REPORTS / "RESULT_AUDIT_REPORT.md").exists():
         # audit 可能给出 REVISE_CLAIM / 写作红线：写论文前必须读 audit 报告并按其"写作红线/§结论表述"落实
         base += ("\n\n注意：reports/RESULT_AUDIT_REPORT.md 是 5Result-credibility-audit 审计报告。若其整题结论为 REVISE_CLAIM 或含"
@@ -1270,9 +1566,12 @@ _EXTRA_INPUT_PATHS = {
     # 锁文件按图逐个存在，下面 `_input_paths` 里用 glob 动态补（不能写死名单）。
     "drawio": ["reports/FIGURE_PLAN.md", "reports/FIGURE_BRIEF.json",
                "reports/figure_briefs", "reports/FIGURE_POLISH_QUEUE.json",
-               "figures/data", "figures/spec"],
+               "figures/data", "figures/spec", "figures/plate_*.py",
+               "skills/plate-figure", "skills/mathmodel-figure-templates"],
     "figreview": ["reports/FIGURE_PLAN.md", "reports/FIGURE_BRIEF.json",
-                  "reports/figure_briefs", "figures/data", "figures/spec"],
+                  "reports/figure_briefs", "figures/data", "figures/spec",
+                  "figures/plate_*.py", "skills/plate-figure",
+                  "skills/mathmodel-figure-templates"],
     "verify": ["paper_appendix", "reports/SUBMISSION_MANIFEST.json", "运行说明.md",
                "figures/data", "figures/spec", "reports/INNOVATION_LEDGER.json",
                "reports/INNOVATION_MEASUREMENT.json", "reports/INNOVATION_ROBUSTNESS.json",
@@ -1359,7 +1658,7 @@ def _input_paths(stage):
         if rep in _skip_reports:
             continue
         art.append("paper" if rep.startswith("paper") else "reports/" + rep)
-    art += _EXTRA_INPUT_PATHS.get(stage["id"], [])
+    art += _expand_rels(_EXTRA_INPUT_PATHS.get(stage["id"], []))
     if stage["id"] in ("drawio", "figreview", "verify"):
         # 一图一锁，名单由盘上现算；新增/删除一张图也会让指纹变。
         art += [p.relative_to(ROOT).as_posix()
@@ -1602,19 +1901,13 @@ def _save_receipt(stage, manual=False):
     state["stale_instr"].discard(stage["id"])
 
 
-# def _input_legacy_rels():
-#     """（占位，无调用者）说明 `figures/` 为何**两侧都不进指纹**：
-#     把整目录 `figures/` 算进输入，后果是「6Robustness 往 figures/ 写 27 张稳健性图」
-#     就把 code/drawio 的回执全部弄失效（code 的 out-digest 由
-#     `19da02c7…` 变 `6dff5918…`，而 code 自己的交付物一个没动）。
-#     图的「完整性 + 新鲜度」已有专用机制：`figures/manifest.json` 逐张记 sha256 +
-#     `python -m lib.visualization audit` 对过期资产直接 FAIL（15Verification 会跑它）——
-#     驱动再整目录哈希一遍是重复劳动，口径还更粗（谁写的都算）。
-#     ④/⑦ 解耦后，**数据图层**（`figures/data`/`spec`/`*.lock.json`）是 ④ 的产物，
-#     由 `ARTIFACTS["code"]` + `figure_lock.py verify` 盯；它不在 ⑤⑥ 的输入里。
-#     `code/` 与 `results/` 保留在 artifacts 里：它们变了数值真的会变，且没有别的机制兜底。
-#     """
-#     return None
+# `figures/` 两侧都不进指纹（设计说明，别再写回整目录哈希）：
+# · 把整目录算进输入，⑥ 往 figures/ 写稳健性图就会让 code/drawio 的回执全部失效，
+#   而 code 自己的交付物一个没动；
+# · 图的完整性 + 新鲜度由 figures/manifest.json 的逐张 sha256 与
+#   `python -m lib.visualization audit` 负责；驱动再整目录哈希一遍是重复且更粗；
+# · ④/⑦ 解耦后，数据图层（figures/data、spec、*.lock.json）由 ARTIFACTS["code"]
+#   + figure_lock.py verify 盯；code/ 与 results/ 保留在 artifacts，因为它们变了数值真的会变。
 
 
 def _output_digest(stage):
@@ -2440,6 +2733,10 @@ def _claude_worker(cmd, sh):
                 continue
             try:
                 obj = json.loads(raw)
+                # “主 agent 的回合结束了”是收尾判据的一半（另一半是报告落盘，见
+                # `_result_exit_ready`）：后台 Workflow 会让 -p 在所有任务结束后才退出，
+                # 不记这个时间就只能陪它空转到墙钟上限。
+                _note_stream_event(obj, sh)
                 msg = obj.get("message") or {}
                 content = msg.get("content", []) or []
                 if isinstance(content, str):
@@ -2479,7 +2776,11 @@ def _claude_worker(cmd, sh):
         p.wait()
     except Exception as exc:
         L(f"  ⚠ [{sid}] 等待进程退出时异常: {type(exc).__name__}: {str(exc)[:120]}")
-    sh["rc"] = p.returncode if p.returncode is not None else -1
+    # `early_exit`：主 agent 已交卷、报告已落盘，看门狗主动结束了它留下的后台任务。
+    #   这是**正常完成**，不是被打断 —— rc 必须按 0 交回去，否则 run_stage 会走失败/
+    #   回滚路径，把刚写好的裁决一起撤掉。
+    sh["rc"] = 0 if sh.get("early_exit") else (
+        p.returncode if p.returncode is not None else -1)
     sh["tail"] = tail
     sh["done"] = True
 
@@ -2555,6 +2856,96 @@ CALL_HARD_CAP = _num("FMA_CALL_HARD_CAP", 10800)   # 单次 claude 调用硬上�
                         # 代价远超多等 30 分钟。改需重启生效。
 CALL_PROTOCOL_CAP = _num("FMA_CALL_PROTOCOL_CAP", 900)  # 协议级修复（只补写 .verdict.json）的短上限
 WAIT_AFTER_KILL = _num("FMA_WAIT_AFTER_KILL", 60)       # 看门狗强杀后最多再等读循环结束多久（秒）
+# ---- 「主 agent 已交卷，但后台任务还持有进程」的收尾 ----
+#   Workflow/后台 Agent 会让 `claude -p` 在**所有**后台任务结束后才退出。主 agent 已经
+#   输出最终答复、报告也已落盘时，继续等只会陪后台复核空转（2026-10-23 ⑧：25-agent
+#   Workflow 还剩 5 个 verify，进程空转 80 分钟，日志里只有每 10 分钟一次自动延长）。
+#   看门狗按 `_result_exit_ready` 结束进程树，并按**正常完成**（rc=0）收尾 —— 不是
+#   被打断，不走回滚/还原快照那条路。
+RESULT_EXIT_QUIET = _num("FMA_RESULT_EXIT_QUIET", 60)   # 收到最终 result 后再等多久（秒）
+TURN_EXIT_QUIET = _num("FMA_TURN_EXIT_QUIET", 600)      # 回合结束+报告落盘后，再等多久（秒）
+
+
+def _note_stream_event(obj, sh):
+    """从 stream-json 行记下“主 agent 的回合结束”（见 `_result_exit_ready`）。"""
+    if not isinstance(obj, dict):
+        return
+    sid = obj.get("session_id")
+    if sid and not sh.get("session_id"):
+        sh["session_id"] = sid            # init 事件带的会话 id，用来过滤子 agent 的 hook
+    if obj.get("type") == "assistant" and not obj.get("parent_tool_use_id"):
+        # 主 agent 又说话了（后台任务回来把它唤醒）⇒ 上一个“回合结束”作废，重新计时。
+        # 只认主 agent 的 assistant（子 agent 的被 --forward-subagent-text 转发时带
+        # parent_tool_use_id），否则后台复核的每句话都会把计时清掉，兜底永远不触发。
+        sh["turn_end_at"] = 0.0
+        return
+    if obj.get("type") == "result":
+        sh["result_seen"] = True
+        sh["turn_end_at"] = time.time()
+    elif obj.get("type") == "system" and obj.get("subtype") in (
+            "hook_response", "stop_hook_summary"):
+        # Stop hook 的收尾事件 = 主 agent 的回合结束。实测（2026-10-23，与阶段同一组
+        # --include-hook-events 参数）流里是 `system/hook_response` + `hook_event:"Stop"`；
+        # `stop_hook_summary` 是会话转录里的同义事件，保留兼容。
+        if obj.get("subtype") == "hook_response":
+            if obj.get("hook_event") != "Stop" and obj.get("hook_name") != "Stop":
+                return
+        # 子 agent 的 hook / stop summary 也会被转发；只认主会话的收尾事件
+        # （见上 session_id）。这条过滤必须放在 subtype 分支之外：只过滤
+        # hook_response 时，子 agent 的 stop_hook_summary 仍会把主 agent 的
+        # 计时清零，兜底就永远不触发。
+        if (sh.get("session_id") and obj.get("session_id")
+                and obj["session_id"] != sh["session_id"]):
+            return
+        sh["turn_end_at"] = time.time()
+
+
+def _stage_report_file(sid):
+    """本阶段声明的报告文件（盘上存在才返回）。write 的 report 是 `paper/main`，按 ROOT 找。"""
+    stage = next((s for s in STAGES if s["id"] == sid), None)
+    if not stage:
+        return None
+    rel = str(stage.get("report") or "")
+    if not rel:
+        return None
+    for base in (REPORTS, ROOT):
+        p = base / rel
+        if p.is_file():
+            return p
+        for suf in (".tex", ".pdf", ".md"):
+            q = p.with_suffix(suf)
+            if q.is_file():
+                return q
+    return None
+
+
+def _result_exit_ready(sid, t0, sh, now):
+    """主 agent 已交卷、报告已落盘、回合结束后再无输出 → 可以结束进程树。
+
+    只认两种“回合结束”：`result`（会话最终事件）或 `system/stop_hook_summary`
+    （主 agent 的回合收尾）。后台 Agent 子任务回来时 CLI 会**唤醒**主 agent，stdout
+    会继续更新 `last_out`，这里自然不成立 —— 正常的面板等待不会被误杀。
+    报告必须在本阶段开跑之后写过（mtime >= t0-5），防止拿上一轮的旧报告判完成。
+    """
+    turn_end = float(sh.get("turn_end_at") or 0)
+    if not turn_end:
+        return False
+    # 面板锁还在 ⇒ 主 agent 可能正等子 agent（⑨ 的“写后审稿”就是先落稿再开面板），
+    # 报告可能只是草稿。锁协议见 skills/_references/stage_discipline.md 第八节。
+    if (ROOT / ".fma_panel_lock").exists():
+        return False
+    need = RESULT_EXIT_QUIET if sh.get("result_seen") else TURN_EXIT_QUIET
+    if now - turn_end < need:
+        return False
+    # 用“回合结束”而不是“最后一行 stdout”计时：Stop hook 之后的 result/system
+    # 收尾行不该把计时清零（那样一次多余的系统事件就能让兜底永远不触发）；
+    # 真正被唤醒时会有主 agent 的 assistant 事件，`_note_stream_event` 已把
+    # turn_end_at 清 0。
+    rep = _stage_report_file(sid)
+    try:
+        return bool(rep and rep.stat().st_mtime >= t0 - 5)
+    except OSError:
+        return False
 
 
 # ---------------- 人工决策（黄灯）：上限、预估解析、待决策上下文 ----------------
@@ -3116,7 +3507,10 @@ def _build_pending(stage, kind, status, reason, *, verdict="", decision=None, ta
                            #   attest_default 常是**当前阶段自己**。
                            "only_attest": STAGE_IDX.get(attest_default, -1) >= idx})
 
-    has_artifact = _artifact_ok(stage)
+    # 用户主动暂停的灯，即使半成品还没通过 artifact 校验，也要保留「接受并披露」：
+    #   暂停的语义是"先停在这里看盘面"，不是"这一阶段没产物"；把 disclose 收掉会让
+    #   面板又回到"只剩重跑/回退"的老问题。`_load_pending` 的 paused 分支同样按 True 算。
+    has_artifact = _artifact_ok(stage) or kind == "paused"
     # 动作集见 `_action_set`（单一事实来源 —— 复活旧黄灯时也要拿它现算对账）。
     actions = _action_set(sid, kind, status, has_artifact, attest_default,
                           stale=stale, stale_findings_ok=stale_findings_ok,
@@ -3554,6 +3948,21 @@ def _load_pending():
                 state["halt_gate"] = True
                 _mark(p)
                 log("⚠️ 发现遗留的超时黄灯：进程已不在，已降级为失败类黄灯（不再提供「延长」）。")
+            elif p and p.get("stage") in STAGE_IDX and p.get("kind") == "paused":
+                # 用户主动暂停的灯不是「门禁裁决过期」：输入/图在这之后变了，也不该把
+                #   「回到目标阶段 / 接受并披露」两个出口收掉。旧的 stale 分支会把 actions
+                #   压成 ['retry']，面板上就只剩重跑；用户实际想先看盘面再决定回退还是披露。
+                #   这里保留暂停语义，并按当前盘面重算动作集（不重算 issues/verdict）。
+                p = dict(p, status="paused",
+                         actions=_action_set(p["stage"], "paused", "paused", True,
+                                             p.get("attest_default")))
+                p["reason"] = ("你按了暂停：输入/图在这之后有变化；仍可重跑本阶段、"
+                               "回退到目标阶段或接受披露，请按当前盘面核实后再选。")
+                _set_pending(p)
+                state["halt_gate"] = True
+                _mark(p)
+                log("ℹ️ 复活的黄灯是用户暂停：保留重跑/回退/披露/认证四个出口"
+                    "（不因输入变化压成只重跑）")
             elif p and p.get("stage") in STAGE_IDX and _pending_went_stale(p):
                 # 复活的黄灯里存着**旧的裁决结论**（issues/target/actions 都是上次算的）。
                 #   若这期间判据或驱动代码变过，那份裁决已经作废 —— 按旧结论渲染会给出
@@ -3657,16 +4066,23 @@ async def _call(prompt, sid, cap=None):
     mcp_file = STAGE_MCP.get(sid)
     if mcp_file and mcp_file.is_file():
         cmd += ["--mcp-config", str(mcp_file)]
-    # 面板排障开关：默认关，避免子 agent 文本把 web_run.log 撑爆。
+    # Stop hook 事件是“主 agent 的回合结束”在流里的唯一信号（`_result_exit_ready`
+    # 靠它收掉后台 Workflow 留下的进程）——**必须始终加**。实测（2026-10-23）：
+    # 不加这个 flag 时流里只有 result；而 result 恰好在后台任务未结束时不会发出，
+    # 兜底就永远不触发。
+    cmd += ["--include-hook-events"]
+    # 面板排障开关：只控制子 agent 文本转发（这个才会把 web_run.log 撑爆）。
     if os.environ.get("FMA_STREAM_DETAIL") == "1":
-        cmd += ["--include-hook-events", "--forward-subagent-text"]
+        cmd += ["--forward-subagent-text"]
     schema_file = STAGE_JSON_SCHEMA.get(sid)
     if schema_file and schema_file.is_file():
         cmd += ["--json-schema", schema_file.read_text(encoding="utf-8").strip()]
     if PERMS == "bypass": cmd += ["--dangerously-skip-permissions"]
     else: cmd += ["--permission-mode", "acceptEdits"]
     sh = {"pid": None, "rc": None, "tail": "", "done": False,
-          "stalled": False, "sid": sid, "last_out": time.time(), "lines": []}
+          "stalled": False, "sid": sid, "last_out": time.time(), "lines": [],
+          # 主 agent 的回合结束时间 / 是否收到最终 result / 是否由看门狗按“已交卷”收尾
+          "turn_end_at": 0.0, "result_seen": False, "early_exit": False}
     task = asyncio.create_task(asyncio.to_thread(_claude_worker, cmd, sh))
     pid = None
     def drain():
@@ -3717,6 +4133,16 @@ async def _call(prompt, sid, cap=None):
                     log(f"  🔴 [{sid}] 300 秒仍未拿到子进程 pid（Popen 未返回）→ 放弃等待")
                     break
                 continue
+            # 主 agent 已交卷（回合结束事件）+ 本阶段报告已落盘 + 回合结束后再无输出：
+            # 后台 Workflow 还挂着也不等了 —— 结束进程树，按**正常完成**收尾。
+            # 不设这条的话，CPU 会被后台任务一直顶着，假死判据永远不响，只能等 3 小时硬上限。
+            if _result_exit_ready(sid, t0, sh, now):
+                _kill_tree(pid)
+                sh["early_exit"] = True
+                sh["rc"] = 0          # 即使读循环没在 WAIT_AFTER_KILL 内收尾，也按完成交回
+                log(f"  ✅ [{sid}] 主 agent 已交卷且报告已落盘，后台任务仍持有进程 → "
+                    f"结束进程树，按正常完成收尾")
+                break
             out_recent = (now - sh["last_out"]) < 8
             cpu = _tree_cpu_seconds(pid)          # 整棵进程树(claude+其计算子进程)的 CPU，长计算不误判
             cpu_up = (cpu is not None and last_cpu is not None and cpu - last_cpu > 0.4)
@@ -3766,7 +4192,10 @@ async def _call(prompt, sid, cap=None):
                 st = next(s for s in STAGES if s["id"] == sid)
                 # 两种超限可能同时成立，以**墙钟上限**为准（与上面那个键同一判据，别两处不一样）
                 _is_cap = bool(over_cap)
-                desc = (f"已运行 {int((now - t0) / 60)} 分钟（上限 {int(cap_s / 60)} 分钟）" if _is_cap
+                # 「最后输出」是这次 80 分钟空转能一眼看出来的关键：CPU 有增量（后台
+                # Workflow 还在调 API）但主 agent 早已交卷，只报「已运行 N 分钟」会骗人。
+                desc = (f"已运行 {int((now - t0) / 60)} 分钟（上限 {int(cap_s / 60)} 分钟）；"
+                        f"最后输出在 {int(now - sh.get('last_out', t0)) // 60} 分钟前" if _is_cap
                         else f"{int(now - idle_since)} 秒无输出/无 CPU（容忍 {int(limit)} 秒）")
                 p = _build_pending(st, "overtime", "overtime",
                                    f"超时，但**任务仍在运行**：{desc}。不杀进程，等你决定。",
@@ -3811,13 +4240,21 @@ async def _call(prompt, sid, cap=None):
             pass
         await asyncio.sleep(0.25)
     if not sh["done"]:
-        log(f"[{sid}] 强杀后子进程读循环仍未结束（{WAIT_AFTER_KILL}s 超时）→ 放弃等待，按失败重试")
-        sh["stalled"] = True
+        if sh.get("early_exit"):
+            # 已按“主 agent 交卷 + 报告落盘”收尾，只是某个脱离进程还握着管道写端。
+            # 这不是阶段失败：rc 已经是 0，不能再把 stalled 交回去，否则 run_stage
+            # 会把刚写好的裁决当失败回滚。
+            log(f"[{sid}] 已按交卷收尾，但子进程读循环未在 {WAIT_AFTER_KILL}s 内结束 "
+                f"→ 仍按正常完成交回")
+        else:
+            log(f"[{sid}] 强杀后子进程读循环仍未结束（{WAIT_AFTER_KILL}s 超时）→ 放弃等待，按失败重试")
+            sh["stalled"] = True
     try:
         drain()
     except Exception:
         pass
-    return (sh["rc"] if sh["rc"] is not None else -1), sh["tail"], bool(sh["stalled"])
+    stalled = bool(sh["stalled"]) and not sh.get("early_exit")
+    return (sh["rc"] if sh["rc"] is not None else -1), sh["tail"], stalled
 
 # ---------------- 计时：跨重跑/跨重启累计 ----------------
 # 规则：阶段 elapsed = 该阶段历次运行片段的累计；总耗时 = elapsed_base + 本次 run_all 的墙钟。
@@ -4307,27 +4744,53 @@ def _innovation_floor(stage_id):
     if not problems:
         return None
     # 目标按**谁有权改**分：③ 只审设计，台账归 ②；⑤ 的实测/复核归 ④（⑤ 是门禁，
-    #   不能改自己的输入）；⑮ 只核对成稿引用，登记字段归 ⑨。
-    target = {"review": "analysis", "audit": "code", "verify": "write"}[stage_id]
+    #   不能改自己的输入）；⑮ 默认核对成稿引用（归 ⑨），但 write 阶段现在还会报
+    #   “2.5 为空 / 没有模型层 / 缺 closure”这类设计问题 —— 那不是 ⑨ 能补的，
+    #   必须回 ②，否则 ⑨ 会带着同一份台账反复重跑。
+    design_markers = ("panel", "schema_version", "`report`", "`items` 必须", "`items` 至少",
+                      "items[", "`baselines` 至少", "baselines[", "模型层", "2.5 不能为空",
+                      "没有 adopted", "core 必须是", "primary_guard", "baseline_id", "kind=",
+                      "缺创新台账", "创新台账不可读")
+    text = " ".join(problems)
+    if stage_id == "review" or any(marker in text for marker in design_markers):
+        target = "analysis"
+    elif stage_id == "audit":
+        target = "code"
+    else:
+        target = "write"
     status = "FAIL" if stage_id == "verify" else "NEEDS_FIX"
     # category 只在这两条里选：台账缺/对不上是**数据完整性**，adopted 未复核/未落地是
     #   **验证**问题。别用图/版式类 category —— 那会把返修目标带到别的阶段去。
     category = "data_integrity" if stage_id == "audit" else "validation"
     fixes = {
         "review": "回 ② 建模设计补齐 reports/INNOVATION_LEDGER.json：基线卡、≥3 个候选、"
-                  "adopted 项的失败模式/可证伪 test/主答案护栏；schema 见 "
+                  "closure 视角；innovation 补失败模式/可证伪 test/主答案护栏，"
+                  "contribution 补朴素基线卡/contribution_evidence；schema 见 "
                   "skills/2Modeling-design/references/innovation-ledger.md",
-        "audit": "回 ④ 编码计算补齐 adopted 项的 measurement（baseline/intervention/delta/source/passed），"
-                 "并把 ⑤ 的独立复核写进 reports/INNOVATION_AUDIT.json（逐 id 的 verdict/evidence）；"
+        "audit": "回 ④ 编码计算补齐 adopted 项的 measurement（innovation：baseline/intervention/"
+                 "delta/source/passed/primary；contribution：delta 或定性 evidence）；"
+                 "reports/INNOVATION_AUDIT.json 由 ⑤ 复核后写，④ 不要代写；"
                  "测失败就改 downgraded + downgrade_reason",
-        "verify": "回 ⑨ 论文撰写补齐台账 paper.section/claim_id；2.5 只写 ⑤ 复核 PASS 且 ⑥ 稳健性"
-                  "survives=true 的 adopted 项，rejected/downgraded 只能进局限/负结果",
+        "verify": "回 ⑨ 论文撰写补齐台账 paper.section/claim_id；2.5 只写 ⑤ 复核 PASS 的"
+                  "innovation/contribution（innovation 另需 ⑥ survives=true），"
+                  "rejected/downgraded 只能进局限/负结果",
+        "verify_analysis": "回 ② 建模设计补模型贡献：2.5 不能为空，至少 1 条可 adopted 的"
+                           "innovation 或 contribution；候选里要有 closure/structure/criterion，"
+                           "panel.lenses 至少 4 个，closure 与 adversarial 各需其一"
+                           "（纯优化题可用 optimization 顶替其中一项）；"
+                           "schema 见 skills/2Modeling-design/references/innovation-ledger.md",
     }
+    if target == "analysis":
+        fix = fixes["verify_analysis"] if stage_id == "verify" else fixes["review"]
+    elif stage_id == "verify":
+        fix = fixes["verify"]
+    else:
+        fix = fixes[stage_id]
     return {"status": status, "reason": "innovation_ledger_failed", "target": target,
             "issues": [{"id": "innovation_ledger", "severity": "hard", "category": category,
                         "evidence": f"创新台账机械核对不过（check_innovation --stage {check_stage}）："
                                     + "; ".join(problems),
-                        "fix": fixes[stage_id],
+                        "fix": fix,
                         "recheck": f"python lib/web/check_innovation.py --stage {check_stage}"}]}
 
 
@@ -4459,7 +4922,10 @@ def _mechanical_floor(stage):
     #   程序看不见的理由判 FAIL（那正是这一阶段存在的意义）。
     #   默认只回 ⑦（画法/契约/登记）；`[lock:data]` 是动态例外，直接回 ④。
     if stage["id"] == "figreview" and (ROOT / "config/visualization.json").exists():
-        problems = audit_figures(ROOT) + _audit_studio_issues()
+        problems = (audit_figures(ROOT) + _audit_studio_issues()
+                    + _check_selection_issues() + _check_plate_issues()
+                    + _check_figure_mix_issues() + _check_flowchart_issues()
+                    + _check_roadmap_design_issues())
         if problems:
             # ④/⑦ 解耦后，`[lock:data]` 是**数据的**问题（bundle/source 在锁之后变了），
             #   ⑦ 修不了：它只能读 bundle，不能改数据。直接回 ④ 重出 bundle + lock；
@@ -6220,7 +6686,10 @@ ARTIFACTS = {
     # fig_geometry / fig_mesh / fig_shrink_coord 这些名字），图的完整性由
     # figures/manifest.json 管；`figures/data`/`spec`/`*.lock.json` 是 ④ 的产物，
     # 不在 ⑦ 这里（回退 ⑦ 不该搬数据层）。
-    "drawio": ["reports/DRAWIO_REPORT.md"],
+    "drawio": ["reports/DRAWIO_REPORT.md",
+               "figures/fig_*_plate.png", "figures/fig_*_plate.pdf",
+               "figures/fig_roadmap.png", "figures/fig_roadmap.pdf",
+               "figures/fig_geometry*.png", "figures/fig_geometry*.pdf"],
     # `FIGURE_POLISH_QUEUE.json` 是 ⑧ 写给 ⑦ 的**跨阶段交办单**，刻意不列在这里：
     #   回退到 ⑦ 时若把它当 ⑧ 的产物暂存走，⑦ 就看不到要改哪几张图了。
     #   它由 `_EXTRA_INPUT_PATHS["drawio"]` 进 ⑦ 的输入；整链清理时随 reports/ 一起归档。

@@ -50,6 +50,21 @@
 - 看到"像是孤儿"的 python：**不要管** —— 驱动下次启动会自己收容（`_reap_orphan_agents`）。
 - 阶段侧的唯一权威表述（含"跑飞了怎么办"的完整步骤）：`skills/_references/stage_discipline.md` 第七节。
 
+## 后台 Workflow / 子 agent 必须收尾（硬红线）
+
+**`Workflow` 是后台任务：调用后它自己继续跑，你结束回合不会取消它。** `claude -p` 只有在
+所有后台任务结束后才退出 —— 交卷时还挂着后台 Workflow，阶段进程永远不退，驱动一直记作
+running，每 10 分钟自动延长一次，只能靠人按暂停。
+
+- 写最终报告、输出最终答复**之前**，必须确认 Workflow 已结束（收到完成通知，或 journal 里
+  `started` 条数 == `result` 条数）；等不及就显式 `TaskStop`。
+- 后台 Agent 子任务同理：要么等它回来，要么显式停掉。
+- 驱动有兜底：回合结束 + 报告落盘 + 600 秒没有主 agent 输出 → 结束进程树（面板锁存在时不收）。
+  它只防空转，交卷后才回来的结果直接作废，别指望它们进裁决。
+
+2026-10-23 实测：⑧ 交卷后还留 5 个 verify，空转 80 分钟。完整步骤见
+`skills/_references/stage_discipline.md` 第九节。
+
 ## 禁止从 Git 历史取本轮依据（硬红线）
 
 **阶段内禁止使用任何 `git` 命令** —— 尤其 `git show` / `git log` / `git cat-file` /

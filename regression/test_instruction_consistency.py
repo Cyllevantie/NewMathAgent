@@ -147,6 +147,66 @@ class InstructionConsistencyTests(unittest.TestCase):
         self.assertIn("摘要 1 页 + 正文（一～七）29 页", t)
         self.assertNotIn("31 页正文", t)          # 反向对照：改回旧句即失败
 
+    def test_roadmap_reference_templates_are_packaged(self):
+        """flow1/flow2 必须在项目资产里，且 route 文档明确优先级。"""
+        base = PROJECT / "skills/7Route-diagram/assets/roadmap_templates"
+        for name in ("flow1.png", "flow2.png"):
+            self.assertTrue((base / name).is_file(), name)
+        self.assertTrue((PROJECT / "skills/7Route-diagram/scripts/flow1_roadmap.py").is_file())
+        t = text("skills/7Route-diagram/references/route-diagram.md")
+        self.assertIn("flow1.png", t)
+        self.assertIn("flow2.png", t)
+        self.assertIn("优先按 flow1", t)
+
+    def test_plate_figure_is_wired_into_stage7(self):
+        """Main figures must use the Nature-style plate skill, not only charts."""
+        t = text("skills/7Route-diagram/SKILL.md")
+        self.assertIn("plate-figure", t)
+        self.assertIn("figures/plate_q1.py", t)
+        self.assertIn("figures/plate_q4.py", t)
+        self.assertTrue((PROJECT / "skills/plate-figure/SKILL.md").is_file())
+        self.assertTrue((PROJECT / "skills/plate-figure/assets/plate_common.py").is_file())
+        for name in ("plate_q1_schematic.py", "plate_q2_surface.py",
+                     "plate_q3_results.py", "plate_q4_crosssections.py"):
+            self.assertTrue((PROJECT / "skills/plate-figure/templates" / name).is_file(), name)
+        self.assertIn("plate", text("skills/4Coding-and-computation/SKILL.md"))
+
+    def test_reference_images_are_vendored_inside_the_project(self):
+        """Skills must not depend on reference images outside the repo.
+
+        The user deletes external reference folders between runs.  Style
+        references must live under ``skills/*/assets/``; a hard-coded
+        ``...Downloads/test/...`` path is a broken skill waiting to happen.
+        """
+        import re
+        offenders = []
+        pattern = re.compile(r"[A-Za-z]:[\\/][^\s`\"']*Downloads[\\/]test")
+        for path in (PROJECT / "skills").rglob("*.md"):
+            body = path.read_text(encoding="utf-8", errors="replace")
+            if pattern.search(body):
+                offenders.append(str(path.relative_to(PROJECT)))
+        self.assertEqual(offenders, [], f"仍引用项目外参考图：{offenders}")
+        for name in ("composite_1.png", "composite_2.png", "composite_3.png"):
+            self.assertTrue((PROJECT / "skills/plate-figure/assets/references" / name).is_file(),
+                            name)
+        for name in ("flow1.png", "flow2.png"):
+            self.assertTrue((PROJECT / "skills/7Route-diagram/assets/roadmap_templates"
+                             / name).is_file(), name)
+
+    def test_figure_selection_is_claim_driven_not_quota_driven(self):
+        """旧 quota 不许回流；候选检查器必须存在。"""
+        import json
+        cfg = json.loads(text("config/visualization.json"))
+        cm = cfg["chart_mix"]
+        self.assertNotIn("require_one_non_line_per_question", cm)
+        self.assertNotIn("min_data_figures_per_question", cm)
+        self.assertEqual(cm["selection"]["mode"], "claim_driven")
+        self.assertTrue((PROJECT / "skills/figure-studio/scripts/check_selection.py").is_file())
+        schema = json.loads(text("skills/figure-studio/assets/figure-brief.schema.json"))
+        self.assertEqual(schema["properties"]["candidates"]["minItems"], 2)
+        for q in ("Q1", "Q2", "Q3", "Q4"):
+            self.assertIn("stroke", cfg["question_palette"][q])
+
 
 if __name__ == "__main__":
     unittest.main()

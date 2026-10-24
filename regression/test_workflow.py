@@ -1164,7 +1164,7 @@ class WorkflowTests(unittest.TestCase):
 
         `_rubric_route` 会把「目标阶段排在门禁之后」的**硬项**降级进 `advisories`（它们此刻
         确实修不了，放行并留痕是对的）。所以一批建议里可能同时有 `severity=hard, tier=must`
-        的项 —— 例如「figures/fig_roadmap.content.json 里那 10 处含内部词的图内文字」
+        的项 —— 例如「figures/fig_roadmap.drawio 里那 10 处含内部词的图内文字」
         （内部词泄漏进图，评委直接看得见）与「交付 PDF 在标题层认不出稳健性检验模块」。
         若把整批都写成「可选建议、按成本决定是否落实」，红线项就被说成可以不做；
         若角标在 PASS 时整批撤掉，这些条目再没有任何人看得到。
@@ -3190,6 +3190,38 @@ class WorkflowTests(unittest.TestCase):
         self.assertIsNone(got["recommended"])
         self.assertEqual([i["id"] for i in got["issues"]], ["rv_x"],
                          "上一轮查出来的条目必须还在面板上")
+
+    def test_a_paused_pending_keeps_rollback_and_disclose_after_restart(self):
+        """用户暂停的灯不是门禁裁决过期：重启后四个出口不许被压成只重跑。"""
+        self.clean_contract()
+        st = self.stage("review")
+        self.report(st, "用户暂停在这")
+        self.s.PENDING_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self.s.PENDING_FILE.write_text(json.dumps({
+            "stage": "review", "kind": "paused", "status": "paused",
+            "reason": "你按了暂停", "actions": ["retry", "rollback", "disclose", "attest"],
+            "attest_default": "analysis", "recommended": "analysis", "issues": [],
+            "advisories_total": 0, "retry_extra_default": 600,
+            "retry_extra_max": 3600},
+            ensure_ascii=False), encoding="utf-8")
+        self.s._load_pending()
+        got = self.s.state["pending"]
+        self.assertEqual(got["status"], "paused")
+        for action in ("retry", "rollback", "disclose", "attest"):
+            self.assertIn(action, got["actions"], f"暂停灯丢了 {action} 出口")
+        self.assertIn("暂停", got["reason"])
+
+    def test_a_live_pause_keeps_disclose_without_a_valid_artifact(self):
+        """暂停当下就构造黄灯时，半成品没过 artifact 校验也要保留披露出口。"""
+        self.clean_contract()
+        st = self.stage("review")
+        self.report(st, "用户暂停在这")
+        self.s._artifact_ok = lambda stage: False
+        p = self.s._build_pending(st, "paused", "paused", "你按了暂停")
+        self.assertEqual(p["status"], "paused")
+        self.assertIn("disclose", p["actions"],
+                      "暂停黄灯没有「接受并披露」——用户只能重跑或回退")
+        self.assertIn("rollback", p["actions"])
 
     def test_a_healthy_pending_survives_a_restart_untouched(self):
         """反向对照：裁决没过期的黄灯必须**原样复活**，别把好黄灯也重算了。"""
@@ -5730,9 +5762,10 @@ class MechanicalFloorWiringTests(unittest.TestCase):
                               f"{sid}: 没有 config/innovation.json 却跑了台账核对")
         (self.root / "config").mkdir()
         (self.root / "config/innovation.json").write_text('{"enabled": true}', encoding="utf-8")
+        # 台账缺失是 ② 的设计问题：③⑤⑮ 都应回 ②，而不是把 ④/⑨ 叫来反复空跑。
         expected = {"review": ("analysis", "NEEDS_FIX"),
-                    "audit": ("code", "NEEDS_FIX"),
-                    "verify": ("write", "FAIL")}
+                    "audit": ("analysis", "NEEDS_FIX"),
+                    "verify": ("analysis", "FAIL")}
         for sid, (target, status) in expected.items():
             out = self.s._mechanical_floor(self.stage(sid))
             self.assertIsNotNone(out, f"{sid}: 开了开关却没跑台账核对（接线漏了）")
@@ -5864,33 +5897,299 @@ class InnovationSidecarReceiptTest(unittest.TestCase):
                             "④ 的 measurement sidecar 必须进入 ④ 自己的产物指纹")
 
 
-class AuditStudioLoggingTests(unittest.TestCase):
-    """⑧ 的 audit_studio 静态检查失败时必须留日志 —— 不许静默少跑一条判据。"""
+class InnovationFloorRoutingTests(unittest.TestCase):
+    """⑮ 的创新地板要把“台账为空/2.5 为空”送回 ②，而不是让 ⑨ 反复重跑。"""
 
-    def test_a_crashing_studio_audit_is_logged(self):
+    def test_an_empty_2_5_routes_back_to_modeling(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            script = root / "skills/figure-studio/scripts/audit_studio.py"
+            (root / "config").mkdir()
+            (root / "config/innovation.json").write_text("{}", encoding="utf-8")
+            (root / "reports").mkdir()
+            (root / "reports/ANALYSIS_MODELING_REPORT.md").write_text(
+                "# 建模报告\n", encoding="utf-8")
+            item = {
+                "question": "Q1", "lens": "closure", "type": "closure",
+                "baseline_id": "B1", "failure_mode": "f", "intervention": "i",
+                "claim": "c", "predicted_delta": "d", "test": "t", "kill_if": "k",
+                "status": "rejected", "reject_reason": "测试用",
+            }
+            ledger = {
+                "schema_version": 1,
+                "report": "reports/ANALYSIS_MODELING_REPORT.md",
+                "panel": {"lenses": ["mechanism", "data", "adversarial", "closure"],
+                          "candidates": 3},
+                "baselines": [{"id": "B1", "question": "Q1", "model": "m",
+                               "headline": "h"}],
+                "items": [dict(item, id=f"I{n}") for n in (1, 2, 3)],
+                "no_adoption_reason": "本题没有值得做的增量",
+            }
+            (root / "reports/INNOVATION_LEDGER.json").write_text(
+                json.dumps(ledger, ensure_ascii=False), encoding="utf-8")
+            s = load_server(root)
+            failed = s._innovation_floor("verify")
+            self.assertIsNotNone(failed)
+            self.assertEqual(failed["target"], "analysis",
+                             "2.5 为空是 ② 的设计问题，送回 ⑨ 只会空转")
+            self.assertIn("2.5 不能为空", failed["issues"][0]["evidence"])
+            self.assertIn("回 ②", failed["issues"][0]["fix"])
+
+    def test_a_missing_ledger_routes_back_to_modeling(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "config").mkdir()
+            (root / "config/innovation.json").write_text("{}", encoding="utf-8")
+            s = load_server(root)
+            failed = s._innovation_floor("audit")
+            self.assertIsNotNone(failed)
+            self.assertEqual(failed["target"], "analysis",
+                             "台账缺失是 ② 的问题，送回 ④ 只会空转")
+            self.assertIn("回 ②", failed["issues"][0]["fix"])
+
+
+class MechanicalCheckerLoggingTests(unittest.TestCase):
+    """⑧ 的机械检查器（selection / plate / studio / figure-mix）崩溃或缺件时必须留日志。
+
+    它们的行为相同，只是脚本路径与 wrapper 不同 —— 参数化成一个类，
+    保留全部场景，不再维护多份复制。
+    """
+
+    CHECKERS = (
+        ("check_selection", "skills/figure-studio/scripts/check_selection.py",
+         "_check_selection_issues"),
+        ("check_plate", "skills/plate-figure/scripts/check_plate.py",
+         "_check_plate_issues"),
+        ("audit_studio", "skills/figure-studio/scripts/audit_studio.py",
+         "_audit_studio_issues"),
+        ("check_figure_mix", "skills/figure-studio/scripts/check_figure_mix.py",
+         "_check_figure_mix_issues"),
+    )
+
+    def test_a_crashing_checker_is_logged(self):
+        for name, rel, method in self.CHECKERS:
+            with self.subTest(checker=name), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                script = root / rel
+                script.parent.mkdir(parents=True)
+                script.write_text("", encoding="utf-8")
+                s = load_server(root)
+
+                def boom(*args, **kwargs):
+                    raise RuntimeError(f"{name} exploded")
+                s.subprocess = types.SimpleNamespace(run=boom)
+                self.assertEqual(getattr(s, method)(), [])
+                self.assertTrue(s.log.called, f"{name} 崩了却没有任何日志")
+                text = " ".join(str(c.args[0]) for c in s.log.call_args_list if c.args)
+                self.assertIn(name, text)
+                self.assertIn("RuntimeError", text, "日志要写出异常类型")
+
+    def test_a_missing_checker_script_is_logged(self):
+        for name, _rel, method in self.CHECKERS:
+            with self.subTest(checker=name), tempfile.TemporaryDirectory() as td:
+                s = load_server(Path(td))
+                self.assertEqual(getattr(s, method)(), [])
+                text = " ".join(str(c.args[0]) for c in s.log.call_args_list if c.args)
+                self.assertIn(name, text, f"{name} 脚本缺件不能让 ⑧ 静默少跑一条判据")
+
+    def test_an_empty_checker_output_is_logged(self):
+        """脚本在打印 JSON 前崩掉（空 stdout）时不能当成 PASS。"""
+        for name, rel, method in self.CHECKERS:
+            with self.subTest(checker=name), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                script = root / rel
+                script.parent.mkdir(parents=True)
+                script.write_text("", encoding="utf-8")
+                s = load_server(root)
+                s.subprocess = types.SimpleNamespace(
+                    run=lambda *a, **k: types.SimpleNamespace(stdout="", returncode=1))
+                self.assertEqual(getattr(s, method)(), [])
+                text = " ".join(str(c.args[0]) for c in s.log.call_args_list if c.args)
+                self.assertIn(name, text, f"{name} 空输出不能让地板静默变绿")
+                self.assertIn("没有输出", text)
+
+    def test_an_empty_roadmap_checker_output_is_logged(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            script = root / "skills/7Route-diagram/scripts/check_roadmap_design.py"
+            script.parent.mkdir(parents=True)
+            script.write_text("", encoding="utf-8")
+            drawio = root / "figures/fig_roadmap.drawio"
+            drawio.parent.mkdir(parents=True)
+            drawio.write_text("<mxfile/>", encoding="utf-8")
+            s = load_server(root)
+            s.subprocess = types.SimpleNamespace(
+                run=lambda *a, **k: types.SimpleNamespace(stdout="", returncode=1))
+            self.assertEqual(s._check_roadmap_design_issues(), [])
+            text = " ".join(str(c.args[0]) for c in s.log.call_args_list if c.args)
+            self.assertIn("check_roadmap_design", text)
+            self.assertIn("没有输出", text)
+
+    def test_check_plate_is_invoked_with_json_output(self):
+        """check_plate 默认打印 PASS/FAIL 文本；不加 --json 时 json.loads 会静默吞掉整项检查。"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            script = root / "skills/plate-figure/scripts/check_plate.py"
             script.parent.mkdir(parents=True)
             script.write_text("", encoding="utf-8")
             s = load_server(root)
+            seen = {}
 
-            def boom(*args, **kwargs):
-                raise RuntimeError("studio exploded")
-            s.subprocess = types.SimpleNamespace(run=boom)
-            self.assertEqual(s._audit_studio_issues(), [])
-            self.assertTrue(s.log.called, "检查器崩了却没有任何日志 —— ⑧ 会静默少跑一条判据")
-            text = " ".join(str(c.args[0]) for c in s.log.call_args_list if c.args)
-            self.assertIn("audit_studio", text)
-            self.assertIn("RuntimeError", text, "日志要写出异常类型，人才知道为什么少跑了")
+            def run(cmd, **kwargs):
+                seen["cmd"] = cmd
+                return types.SimpleNamespace(stdout='{"issues": []}', returncode=0)
 
-    def test_a_missing_studio_script_is_logged(self):
+            s.subprocess = types.SimpleNamespace(run=run)
+            self.assertEqual(s._check_plate_issues(), [])
+            self.assertIn("--json", seen["cmd"],
+                          "check_plate 不加 --json 时输出不是 JSON，plate 检查会被当成崩溃跳过")
+
+    def test_figure_policy_text_uses_the_checker_budget(self):
+        """提示词里的预算必须来自检查器/配置，不能手写一套过时数字。"""
         with tempfile.TemporaryDirectory() as td:
-            s = load_server(Path(td))
-            self.assertEqual(s._audit_studio_issues(), [])
-            text = " ".join(str(c.args[0]) for c in s.log.call_args_list if c.args)
-            self.assertIn("audit_studio", text,
-                          "脚本缺件同样会让 ⑧ 少跑一条判据，不能静默")
+            root = Path(td)
+            script = root / "skills/figure-studio/scripts/check_figure_mix.py"
+            script.parent.mkdir(parents=True)
+            script.write_text(
+                "def check(root):\n"
+                "    return {'line_figures': [], 'field_figures': [],\n"
+                "            'distribution_figures': [], 'bar_figures': [],\n"
+                "            'line_panels': 0, 'field_panels': 0, 'field_map_panels': 0,\n"
+                "            'heatmap_panels': 0, 'annotated_heatmaps': 0,\n"
+                "            'distribution_panels': 0, 'issues': [], 'advisories': [],\n"
+                "            'min_line_panels': 4, 'max_line_panels': 6,\n"
+                "            'max_field_panels': 2, 'max_field_maps': 1, 'max_heatmaps': 1,\n"
+                "            'min_annotated_heatmaps': 1, 'max_distribution_panels': 1}\n"
+                "def duplicate_ids(root):\n"
+                "    return []\n", encoding="utf-8")
+            s = load_server(root)
+            text = s._figure_policy_text()
+            self.assertIn("4–6", text)
+            self.assertIn("场≤2", text)
+            self.assertIn("雨云≤1", text)
+            self.assertNotIn("3–6", text, "提示词里还留着旧预算 3–6")
+
+
+class ResultExitTests(unittest.TestCase):
+    """主 agent 已交卷、后台 Workflow 还持有进程时，看门狗按正常完成收尾。
+
+    这条判据防的是 2026-10-23 ⑧ 的 80 分钟空转：裁决 19:59 已落盘并输出最终答复，
+    19:26 起的 25-agent Workflow 还剩 5 个 verify；`claude -p` 不退，CPU 又有增量，
+    假死判据（无输出且无 CPU）永远不响，自动延长每 10 分钟一次。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.s = load_server(self.root)
+
+    def _report(self, mtime):
+        p = self.root / "reports" / "FIGURE_REVIEW_REPORT.md"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("verdict", encoding="utf-8")
+        os.utime(p, (mtime, mtime))
+        return p
+
+    def test_stop_hook_summary_marks_the_turn_end(self):
+        sh = {"turn_end_at": 0.0, "result_seen": False}
+        self.s._note_stream_event({"type": "system", "subtype": "stop_hook_summary"}, sh)
+        self.assertGreater(sh["turn_end_at"], 0)
+        self.assertFalse(sh["result_seen"])
+
+    def test_a_final_result_marks_the_session_end(self):
+        sh = {"turn_end_at": 0.0, "result_seen": False}
+        self.s._note_stream_event({"type": "result"}, sh)
+        self.assertTrue(sh["result_seen"])
+        self.assertGreater(sh["turn_end_at"], 0)
+
+    def test_the_stop_hook_marks_the_turn_end(self):
+        """实测流里是 hook_response + hook_event=Stop（不是 stop_hook_summary）。"""
+        sh = {"turn_end_at": 0.0, "result_seen": False}
+        self.s._note_stream_event(
+            {"type": "system", "subtype": "hook_response", "hook_event": "Stop"}, sh)
+        self.assertGreater(sh["turn_end_at"], 0)
+        self.assertFalse(sh["result_seen"])
+
+    def test_other_hook_events_do_not_mark_the_turn_end(self):
+        sh = {"turn_end_at": 0.0, "result_seen": False}
+        self.s._note_stream_event(
+            {"type": "system", "subtype": "hook_response", "hook_event": "PreToolUse"}, sh)
+        self.assertEqual(sh["turn_end_at"], 0.0)
+
+    def test_a_subagent_stop_hook_is_ignored(self):
+        """只认主会话的 Stop；子 agent 的 hook 即使被转发也不能当成交卷。"""
+        sh = {"turn_end_at": 0.0, "result_seen": False, "session_id": "main"}
+        self.s._note_stream_event(
+            {"type": "system", "subtype": "hook_response", "hook_event": "Stop",
+             "session_id": "sub"}, sh)
+        self.assertEqual(sh["turn_end_at"], 0.0)
+        self.s._note_stream_event(
+            {"type": "system", "subtype": "hook_response", "hook_event": "Stop",
+             "session_id": "main"}, sh)
+        self.assertGreater(sh["turn_end_at"], 0)
+
+    def test_a_subagent_stop_summary_is_ignored(self):
+        """stop_hook_summary 也要按 session_id 过滤；子 agent 的收尾不能清零主计时。"""
+        sh = {"turn_end_at": 0.0, "result_seen": False, "session_id": "main"}
+        self.s._note_stream_event(
+            {"type": "system", "subtype": "stop_hook_summary", "session_id": "sub"}, sh)
+        self.assertEqual(sh["turn_end_at"], 0.0)
+        self.s._note_stream_event(
+            {"type": "system", "subtype": "stop_hook_summary", "session_id": "main"}, sh)
+        self.assertGreater(sh["turn_end_at"], 0)
+
+    def test_a_panel_lock_blocks_the_early_exit(self):
+        """⑨ 写后审稿：主 agent 先落稿、再开面板等子 agent —— 锁还在就不许收尾。"""
+        now = time.time()
+        self._report(now - 30)
+        lock = self.root / ".fma_panel_lock"
+        lock.write_text("", encoding="utf-8")
+        self.addCleanup(lambda: lock.unlink(missing_ok=True))
+        sh = {"turn_end_at": now - 700, "last_out": now - 700, "result_seen": False}
+        self.assertFalse(self.s._result_exit_ready("figreview", now - 800, sh, now))
+
+    def test_report_plus_a_finished_turn_exits_early(self):
+        now = time.time()
+        self._report(now - 30)
+        sh = {"turn_end_at": now - 700, "last_out": now - 700, "result_seen": False}
+        self.assertTrue(self.s._result_exit_ready("figreview", now - 800, sh, now))
+
+    def test_tail_system_lines_do_not_reset_the_quiet_window(self):
+        """Stop hook 之后只有 result/system 收尾行时，计时不能被清零。"""
+        now = time.time()
+        self._report(now - 30)
+        sh = {"turn_end_at": now - 700, "last_out": now - 10, "result_seen": False}
+        self.assertTrue(self.s._result_exit_ready("figreview", now - 800, sh, now))
+
+    def test_a_resumed_turn_is_not_ready(self):
+        """面板等待：主 agent 回合结束后被后台通知唤醒过 → 不许杀。"""
+        now = time.time()
+        self._report(now - 30)
+        sh = {"turn_end_at": now - 700, "last_out": now - 700, "result_seen": False,
+              "session_id": "main"}
+        self.s._note_stream_event({"type": "assistant", "session_id": "main"}, sh)
+        self.assertFalse(self.s._result_exit_ready("figreview", now - 800, sh, now))
+
+    def test_a_subagent_message_does_not_reset_the_turn(self):
+        sh = {"turn_end_at": 123.0, "result_seen": False, "session_id": "main"}
+        self.s._note_stream_event(
+            {"type": "assistant", "parent_tool_use_id": "tool-1"}, sh)
+        self.assertEqual(sh["turn_end_at"], 123.0)
+
+    def test_a_stale_report_is_not_ready(self):
+        """上一轮留下的报告不能当本轮已交卷的证据。"""
+        now = time.time()
+        self._report(now - 5000)
+        sh = {"turn_end_at": now - 700, "last_out": now - 700, "result_seen": False}
+        self.assertFalse(self.s._result_exit_ready("figreview", now - 800, sh, now))
+
+    def test_a_final_result_uses_the_short_quiet_window(self):
+        now = time.time()
+        self._report(now - 30)
+        sh = {"turn_end_at": now - 70, "last_out": now - 70, "result_seen": True}
+        self.assertTrue(self.s._result_exit_ready("figreview", now - 800, sh, now))
+        sh_no_result = dict(sh, result_seen=False)
+        self.assertFalse(self.s._result_exit_ready("figreview", now - 800, sh_no_result, now))
 
 
 if __name__ == "__main__":

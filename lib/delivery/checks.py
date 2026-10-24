@@ -216,21 +216,54 @@ def _appendix_pdf_issues(root):
 PHYSICAL3D_QA_REPORT = "reports/FIG_GEOMETRY_3D_QA.json"
 
 
+def _qa_part_problems(part, name):
+    """Collect `errors`/`warnings` from one QA part, including a merged wrapper.
+
+    `make_geometry_split.py` merges the per-figure QA outputs as
+    ``{"shared": {"report": {"parts": {"pdf": {...}, "png": {...}}}}``.  A
+    checker that only reads the top level sees no errors on that shape — the
+    actual per-part verdict lives one level down.
+    """
+    problems = []
+    if not isinstance(part, dict):
+        return [f"{PHYSICAL3D_QA_REPORT}.parts.{name} 必须是对象"]
+    if "ok" in part and part.get("ok") is not True:
+        problems.append(f"物理立体图 QA [{name}] 的 ok 不是 true")
+    for err in part.get("errors") or []:
+        problems.append(f"物理立体图 QA [{name}] 错误：{err}")
+    for warn in part.get("warnings") or []:
+        problems.append(f"物理立体图 QA [{name}] 警告：{warn}")
+    nested = part.get("report")
+    if isinstance(nested, dict):
+        if "ok" in nested and nested.get("ok") is not True:
+            problems.append(f"物理立体图 QA [{name}] 的嵌套报告 ok 不是 true")
+        for err in nested.get("errors") or []:
+            problems.append(f"物理立体图 QA [{name}] 嵌套报告错误：{err}")
+        for warn in nested.get("warnings") or []:
+            problems.append(f"物理立体图 QA [{name}] 嵌套报告警告：{warn}")
+        subparts = nested.get("parts")
+        if isinstance(subparts, dict):
+            for sub, subpart in sorted(subparts.items()):
+                problems.extend(_qa_part_problems(subpart, f"{name}.{sub}"))
+    return problems
+
+
 def physical3d_issues(root):
     """第五类物理立体图（Route A/B）的 QA 报告必须落盘、通过，且不能早于图。
 
     这只消费 ⑦ 自己 SKILL 规定要写的 `reports/FIG_GEOMETRY_3D_QA.json`，不重跑
     `qa_physical3d.py`（驱动跑它需要 manifest 里没有的 width/font 参数）。判据分三层：
-      ① 一旦出现 `figures/*.scene.json` 或 `figures/fig_geometry_3d.pdf`，报告必须存在；
-      ② 报告 `ok` 必须为 true，且各 part 的 `errors` 为空；
+      ① 一旦出现 `figures/*.scene.json` 或任一 `figures/fig_geometry*.pdf`，报告必须存在；
+      ② 报告 `ok` 必须为 true，且各 part（含合并报告里嵌套的 `pdf`/`png`/`scene`）
+         的 `errors` 为空；
       ③ 报告不能早于 PDF（改图后没重跑 QA 的陈旧报告不算数）。
     另外把 `warnings` 也当问题：字体/宽度/压实体在 QA 脚本里只出 warning、退出码仍 0，
     若这里不读，3D 图仍可"一路绿"到交付。
     """
     root = Path(root).resolve()
     figures = root / "figures"
-    has_3d = (any(figures.glob("*.scene.json"))
-              or (figures / "fig_geometry_3d.pdf").is_file())
+    geometry_pdfs = sorted(figures.glob("fig_geometry*.pdf"))
+    has_3d = bool(geometry_pdfs) or any(figures.glob("*.scene.json"))
     if not has_3d:
         return []
     report_path = root / PHYSICAL3D_QA_REPORT
@@ -251,18 +284,12 @@ def physical3d_issues(root):
         issues.append(f"{PHYSICAL3D_QA_REPORT} 缺 parts 对象")
         parts = {}
     for name, part in sorted(parts.items()):
-        if not isinstance(part, dict):
-            issues.append(f"{PHYSICAL3D_QA_REPORT}.parts.{name} 必须是对象")
-            continue
-        for err in part.get("errors") or []:
-            issues.append(f"物理立体图 QA [{name}] 错误：{err}")
-        for warn in part.get("warnings") or []:
-            issues.append(f"物理立体图 QA [{name}] 警告：{warn}")
-    pdf = figures / "fig_geometry_3d.pdf"
-    if pdf.is_file():
+        issues.extend(_qa_part_problems(part, name))
+    if geometry_pdfs:
         try:
-            if report_path.stat().st_mtime < pdf.stat().st_mtime:
-                issues.append(f"{PHYSICAL3D_QA_REPORT} 早于 figures/fig_geometry_3d.pdf —— "
+            newest = max(p.stat().st_mtime for p in geometry_pdfs)
+            if report_path.stat().st_mtime < newest:
+                issues.append(f"{PHYSICAL3D_QA_REPORT} 早于 figures/fig_geometry*.pdf —— "
                               f"图改过但没重跑 QA，报告已过期")
         except OSError:
             pass

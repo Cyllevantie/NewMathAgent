@@ -46,12 +46,15 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 - **`reports/INNOVATION_ROBUSTNESS.json`**：每个 `core=true` 的 adopted 项至少做 2 类
   扰动/重抽样/口径对照，写
   `{"schema_version":1,"items":{"INN-1":{"robustness":{"survives":true/false,"evidence":"...","checks":[{"what":"...","result":"..."}]}}}}`；
-  任何计划写进论文 2.5 的 supporting 项也要有 `survives=true`。不稳时在同一条目里写
-  `claim_scope`，把结论限定到实际成立的范围内。
+  `kind="innovation"` 的 supporting 项写进论文 2.5 仍要有 `survives=true`。
+  `kind="contribution"`（关键处理）**不强制** `survives`，但建议在报告里给 1 类口径对照
+  （如换网格/换边界读法后干物质漂移或判据差值不变），作为“贡献成立”的旁证。
+  不稳时在同一条目里写 `claim_scope`，把结论限定到实际成立的范围内。
   **若 `survives=false`，不能继续保留 `core=true`**：在 sidecar 里写 `core=false`
   （supporting/关键处理）或 `status=downgraded` + `downgrade_reason`；**不要改设计台账**
   （`INNOVATION_LEDGER.json` 是 ② 的字段）。否则 ⑨ 的 write 检查会拒绝它。
-  **主答案护栏**：若该项让主答案偏离基线超过 `primary_guard.allowed_relative_change`，
+  **主答案护栏（只对 kind=innovation；contribution 不适用）**：若该项让主答案偏离基线超过
+  `primary_guard.allowed_relative_change`，
   稳健性检验必须包含“这个偏离在扰动下是否仍存在、是否有独立证据支持”；只是“扰动后仍然偏离”
   不构成证据。没有独立证据 → 该项应已在 ④ 被降级；若仍 `adopted`，回 ④ 补降级，不要在本阶段
   用 `survives=false` 替它洗白。

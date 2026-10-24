@@ -18,6 +18,21 @@
       "category": "field-and-3d-core"
     },
     {
+      "id": "field_waterfall",
+      "family": "field",
+      "data_shape": "grid: x × y -> z",
+      "required_fields": [
+        "x",
+        "y",
+        "z"
+      ],
+      "when": "场随时间的演化用一组剖面表达；不需要逐格热力图",
+      "avoid": "需要逐格极值或纹理时",
+      "fallback": "field_heatmap",
+      "implemented": "studio.field_waterfall_panel",
+      "category": "field-and-3d-core"
+    },
+    {
       "id": "field_contour",
       "family": "field",
       "data_shape": "grid: x × y -> z",
@@ -31,6 +46,22 @@
       "avoid": "数据是稀疏散点、没有规则网格时",
       "fallback": "field_heatmap",
       "implemented": "studio.field_panel(kind='contour')",
+      "category": "field-and-3d-core"
+    },
+    {
+      "id": "field_moving",
+      "family": "field",
+      "data_shape": "moving grid: xi × t -> z, one R(t) per row",
+      "required_fields": [
+        "x",
+        "y",
+        "z",
+        "radius"
+      ],
+      "when": "移动域/收缩域：物理半径 r=xi*R(t)，域边界本身是 claim",
+      "avoid": "域不收缩、或只有材料坐标读数时",
+      "fallback": "field_contour",
+      "implemented": "studio.field_moving",
       "category": "field-and-3d-core"
     },
     {
@@ -107,6 +138,62 @@
       "category": "field-and-3d-core"
     },
     {
+      "id": "raincloud",
+      "family": "distribution",
+      "data_shape": "groups × observations",
+      "required_fields": [
+        "groups"
+      ],
+      "when": "多组分布比较，要同时看密度形状、中位数和原始点；sci-box 10 的雨云语法",
+      "avoid": "每组 <3 个观测或组数 >10 时（改箱线/点图）",
+      "fallback": "distribution_box",
+      "implemented": "studio.raincloud_groups",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "field_raincloud",
+      "family": "distribution",
+      "data_shape": "grid: x × y -> z，按时间或空间分组",
+      "required_fields": [
+        "x",
+        "y",
+        "z"
+      ],
+      "when": "场数据的 claim 是“分布怎么移动/变窄”，不是逐格读数：把每个时间（或每个半径带）的切片画成一组雨云",
+      "avoid": "需要精确读出某一条等值线位置时（配一张剖面/场图，不要只靠分布）",
+      "fallback": "field_contour",
+      "implemented": "studio.field_raincloud",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "split_raincloud",
+      "family": "distribution",
+      "data_shape": "category × (two observation arrays)",
+      "required_fields": [
+        "groups"
+      ],
+      "when": "每个类别下要对比两组分布（如中心 vs 表面、前窗 vs 后窗）；sci-box 05 的背靠背半小提琴语法",
+      "avoid": "需要散点/原始个体时（用 raincloud）；两组样本量差很多时先说明",
+      "fallback": "raincloud",
+      "implemented": "studio.split_raincloud",
+      "category": "data-recipe-library"
+    },
+    {
+      "id": "field_split_raincloud",
+      "family": "distribution",
+      "data_shape": "grid: x × y -> z；按时间窗分组，按空间带劈开",
+      "required_fields": [
+        "x",
+        "y",
+        "z"
+      ],
+      "when": "温度/浓度场要表达“每个时间窗内中心区与表面区的分布差”，而不是画两张热力图；options.anomaly=true 先减径向均值（ΔT）",
+      "avoid": "相关性矩阵本身是 claim 时（确定性场的空间自相关是构造出来的，不要硬做相关矩阵）",
+      "fallback": "field_raincloud",
+      "implemented": "studio.field_split_raincloud",
+      "category": "data-recipe-library"
+    },
+    {
       "id": "distribution_violin",
       "family": "distribution",
       "data_shape": "groups × observations",
@@ -166,6 +253,21 @@
       "category": "publication-contract"
     },
     {
+      "id": "sampled_bars",
+      "family": "comparison",
+      "data_shape": "x × series（按选定的 x 抽样）",
+      "required_fields": [
+        "x",
+        "series",
+        "series_labels"
+      ],
+      "when": "时间序列只在少数检查点（起点/峰值/终点）比较，不需要连续轨迹；折线预算不够时用它替代 profiles",
+      "avoid": "claim 依赖连续变化/斜率/交点；抽样点会把这些信息丢掉",
+      "fallback": "profiles",
+      "implemented": "studio.sampled_bars",
+      "category": "comparison-and-composition"
+    },
+    {
       "id": "grouped_bars",
       "family": "comparison",
       "data_shape": "category × series -> value",
@@ -220,6 +322,21 @@
       "avoid": "矩阵过大（>24×12）而不做分面时",
       "fallback": "stacked_composition",
       "implemented": "studio.heatmap_panel",
+      "category": "comparison-and-composition"
+    },
+    {
+      "id": "annotated_heatmap",
+      "family": "comparison",
+      "data_shape": "rows × columns -> values（二维矩阵，逐格数值）",
+      "required_fields": [
+        "rows",
+        "columns",
+        "matrix"
+      ],
+      "when": "矩阵不大（默认 10×8 抽样，可自行决定；每格数值是证据）：参数×情景、C×T 粗网格、敏感性表；格子里写数字",
+      "avoid": "矩阵太大且不需要逐格读数；或只是色块结构时用普通 heatmap",
+      "fallback": "heatmap",
+      "implemented": "studio.heatmap_panel(annotate=True)",
       "category": "comparison-and-composition"
     },
     {
@@ -358,8 +475,7 @@
       "data_shape": "path: t -> (x, y) or (x, y, z)",
       "required_fields": [
         "x",
-        "y",
-        "path_order"
+        "y"
       ],
       "when": "状态随时间的轨迹、相图、优化路径",
       "avoid": "路径没有顺序、或点云本身是重点时",
@@ -776,6 +892,8 @@
     "correlation-pairgrid": "scatter_matrix",
     "split-violin-corr-matrix": "correlation_matrix",
     "contour-field": "field_contour",
+    "moving-field": "field_moving",
+    "field-moving": "field_moving",
     "response-surface-2d": "field_contour",
     "surface3d-response": "surface3d",
     "tuning-surface-3d": "surface3d",

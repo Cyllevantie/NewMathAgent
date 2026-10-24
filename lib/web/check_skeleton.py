@@ -221,7 +221,14 @@ QNUM_RE = re.compile(r"问题[零一二三四五六七八九十百\d]+")
 QHEAD_RE = re.compile(r"^问题[零一二三四五六七八九十百\d]+的")
 
 
+ANALYSIS_25_TITLES = {"本文主要创新点", "模型特点与关键处理",
+                      "本文主要创新点与模型特点"}
+
+
 def _norm_title(t):
+    # 2.5 的三种标题按台账内容三选一（⑨ 的规则），骨架对账时视为同一节。
+    if t in ANALYSIS_25_TITLES:
+        return "2.5"
     return QNUM_RE.sub("问题N", t)
 
 
@@ -242,6 +249,13 @@ def _same_headings(expected, actual):
     return e == a
 
 
+def _display_title(t):
+    """归一后的标题回显；2.5 的三种合法标题用可读写法。"""
+    if t == "2.5":
+        return "2.5（本文主要创新点 / 模型特点与关键处理 / 本文主要创新点与模型特点）"
+    return t
+
+
 def _diff(expected, actual, label, problems):
     """逐条比对两个标题序列，报「多了 / 少了 / 改名 / 顺序」。
 
@@ -258,14 +272,14 @@ def _diff(expected, actual, label, problems):
         return
     if set(e_cmp) == set(a_cmp):
         problems.append(f"{label}: 标题齐全但**顺序**与骨架不同 —— 骨架给的是 "
-                        f"{' → '.join(e_cmp)}")
+                        f"{' → '.join(_display_title(t) for t in e_cmp)}")
         return
     for t in e_cmp:
         if t not in a_cmp:
-            problems.append(f"{label}: **缺**骨架给定的标题「{t}」")
+            problems.append(f"{label}: **缺**骨架给定的标题「{_display_title(t)}」")
     for t in a_cmp:
         if t not in e_cmp:
-            problems.append(f"{label}: **多出**骨架里没有的标题「{t}」（骨架是给定的，"
+            problems.append(f"{label}: **多出**骨架里没有的标题「{_display_title(t)}」（骨架是给定的，"
                             f"只能往它里面填内容）")
 
 
@@ -849,19 +863,35 @@ def _analysis_sections(text):
     return cuts
 
 
+ANALYSIS_ITEM_MARKER_RE = re.compile(r"\\textbf\{(?:创新点|关键处理)")
+_ANALYSIS_ITEM_NAME_RE = re.compile(r"第[一二三四五六七八九十百\d]+条$")
+
+
 def _analysis_pieces(title, body):
     """一个小节里要**分别**计量哪几段，各段的上限是多少 —— 返回 `(名字, 正文, 上限)`。
 
-    普通小节整段算一条，上限 3 行；`本文主要创新点` 里装的是多条，按「创新点X：」逐条算
-    —— 否则三条各 4~5 行的创新点合起来会被当成"这个小节超了"。创新点上限放宽到 5 行，
-    理由见 `ANALYSIS_INNO_CHARS_FAIL` 那段注释。
+    普通小节整段算一条，上限 3 行；`本文主要创新点` 与 `模型特点与关键处理` 里装的是
+    多条，按「创新点X：」/「关键处理X：」逐条算 —— 否则三条各 4~5 行的条目合起来会被
+    当成"这个小节超了"。逐条上限放宽到 5 行，理由见 `ANALYSIS_INNO_CHARS_FAIL` 注释。
+
+    2.5 的两种命名（innovation / contribution）都走这一分支；实测写手会把贡献写成
+    "朴素基线 → 本文处理 → 证据/差值"，一条就要 3~5 行，不能套普通小节的 3 行上限。
     """
-    if "创新点" in title:
-        parts = body.split("\\textbf{创新点")[1:]
-        if parts:
-            return [(f"{title} 第{_cn_num(i + 1)}条", s, ANALYSIS_INNO_CHARS_FAIL)
-                    for i, s in enumerate(parts)]
+    if "创新点" in title or "模型特点" in title:
+        starts = list(ANALYSIS_ITEM_MARKER_RE.finditer(body))
+        if starts:
+            out = []
+            for i, m in enumerate(starts):
+                end = starts[i + 1].start() if i + 1 < len(starts) else len(body)
+                out.append((f"{title} 第{_cn_num(i + 1)}条",
+                            body[m.start():end], ANALYSIS_INNO_CHARS_FAIL))
+            return out
     return [(title, body, ANALYSIS_SUB_CHARS_FAIL)]
+
+
+def _is_analysis_item(name):
+    """逐条计量的小节（名字以「第X条」结尾）；普通小节不套创新点的下限。"""
+    return bool(_ANALYSIS_ITEM_NAME_RE.search(name))
 
 
 def _analysis_detail(cuts):
@@ -899,7 +929,8 @@ def _analysis_length_problems(root):
         for name, piece, limit in _analysis_pieces(title, body):
             k = _prose_len(piece)
             # 空占位符（模板里的 `\textbf{创新点一：}` 后面还没写字）不算"写太短" —— 那是没写。
-            if "创新点" in name and 0 < k < ANALYSIS_INNO_CHARS_MIN:
+            # 逐条计量的 contribution（关键处理）也要有下限；普通小节不套这条。
+            if ("创新点" in name or _is_analysis_item(name)) and 0 < k < ANALYSIS_INNO_CHARS_MIN:
                 problems.append(
                     f"{ANALYSIS_FILE}: {name} 约 {k} 字 ≈ {k / ANALYSIS_PER_LINE:.1f} 行，"
                     f"**不足 {ANALYSIS_INNO_MIN_LINES} 行**（< {ANALYSIS_INNO_CHARS_MIN} 字判短）。"

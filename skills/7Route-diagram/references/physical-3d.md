@@ -1,4 +1,4 @@
-# 第五类非数据图：物理立体 / 3D 剖切示意图（`fig_geometry_3d`）
+# 第五类非数据图：物理立体 / 3D 剖切示意图（`fig_geometry_<part>`）
 
 > 适用：对象本身有三维结构（圆柱、球、多层介质、空间机构、三维轨迹），
 > 或第三维真的承载变量（径向分层、厚度、方位、三维场）。
@@ -9,6 +9,12 @@
 >
 > 核心纪律：**按问判重**——先判断这一问的几何是否真的与前面不同，再决定
 > 画、合并、还是不画；不要每个问都套一张同构的 3D 图。
+
+> **2026-10-22 用户口径（覆盖“合并双面板 ≈120 mm”）**：按**模型**拆图。
+> 同模型（如 Q1–Q3 共用固定域）⇒ 合并成一张，内部放**多个视角**
+> （轴向剖切 + 径向网格），宽 180 mm；模型不同（Q4 收缩动域）⇒ **单独一张**，
+> 内部同样多视角（动域剖切 + ξ 截面），宽 180 mm。不要为了凑 120 mm 把不同模型
+> 硬塞进一张，也不要把同模型拆成多张同构图。
 
 ## 0. 先决定：这一问到底要不要画
 
@@ -175,7 +181,7 @@ Route A 与 Route B 的分界：
 - 中文论文 → 微软雅黑、中文标签、正文 ≥8 pt；英文 → Arial。
 - **3D 图的字体和字号必须与其他图完全一致**：不要因为换了 3D 后端就用另一套
   rcParams；`configure_style(font, base_size)` 只设一次。
-- 画布按最终印刷宽度定：半栏 ≈80 mm，合并双面板 ≈120 mm；
+- 画布按最终印刷宽度定：单模型多视角 ≈180 mm；半栏 ≈80 mm；
   不要画 1500 px 屏幕稿再缩。
 - 图内不写长解释、不写主标题；标题交 LaTeX caption。
 
@@ -188,13 +194,13 @@ import sys
 sys.path.insert(0, "skills/7Route-diagram/assets/physical3d")
 import style3d as S
 
-S.configure_style("Microsoft YaHei", 8.5)
+S.configure_style(None, 8.5)      # None = 读 reports/FIGURE_CONTEXT.json 的字体
 fig = plt.figure(figsize=(120/25.4, 120/25.4*0.56))
 ax = fig.add_axes([...], projection="3d")
 S.setup_ax(ax, elev=18, azim=-62, ...)
 S.half_cyl(ax, 2.0, 0, 6, 0, 2*np.pi, color=S.FILL_BLUE, alpha=0.15)
 S.annotate3d(ax, (0,0,6), "轴心", xytext=(18,12), color=S.AMBER)
-S.save_fixed(fig, "fig_geometry_3d", "figures", width_mm=120)
+S.save_fixed(fig, "fig_geometry_shared", "figures", width_mm=120)
 ```
 
 ### 7.2 Route B
@@ -204,7 +210,7 @@ import sys
 sys.path.insert(0, "skills/7Route-diagram/assets/physical3d")
 import solid3d as S
 
-S.configure_style("Microsoft YaHei", 8.5)
+S.configure_style(None, 8.5)      # None = 读 reports/FIGURE_CONTEXT.json 的字体
 sc = S.Scene(S.Camera(azim=-58, elev=20, zoom=1.10))
 sc.cylinder(r=2.0, z0=0, z1=12.5, cut=(70, -35),
             color="#DBEAFE", cut_hatch="///")
@@ -212,7 +218,7 @@ sc.label((0,0,12.6), "轴心 $r=0$", offset=(-12,18), ha="right", auto=False)
 fig, ax = plt.subplots(figsize=(90/25.4, 90/25.4*1.05))
 sc.fit(ax, margin=0.12)
 sc.draw(ax, fig)
-sc.save(fig, "fig_geometry_3d", "figures", width_mm=90)
+sc.save(fig, "fig_geometry_shared", "figures", width_mm=90)
 ```
 
 > 画布宽度必须在 `draw()` 前定死（`figsize=(width_mm/25.4, ...)`）；
@@ -239,7 +245,7 @@ sc.save(fig, "fig_geometry_3d", "figures", width_mm=90)
 6. **字体/语言**：与数据图/路线图同一字体、字号、语言；中文图不夹整句英文。
 7. **越界/裁切**：文字完整落在画布内；最小字号 ≥8 pt；不在最终宽度下糊掉。
 8. **比例/尺寸**：半径、长度、角度按真实比例；截取段注明；单位齐全。
-9. **版面**：半栏 ≈80 mm 或合并双面板 ≈120 mm；没有大片空白；同构问已合并。
+9. **版面**：单模型多视角 ≈180 mm；没有大片空白；同构问已合并，不同模型已拆开。
 10. **不重复**：同一几何不在两问各画一张；一张图只讲一件事；没有解释性长句。
 
 量化工具：`qa_physical3d.py` 会查 PDF 矢量/字体/宽度、标签越界/压实体/互相重叠；
@@ -247,12 +253,15 @@ sc.save(fig, "fig_geometry_3d", "figures", width_mm=90)
 
 ```bash
 python skills/7Route-diagram/assets/physical3d/qa_physical3d.py \
-    --pdf figures/fig_geometry_3d.pdf \
-    --png figures/fig_geometry_3d.png \
-    --scene figures/fig_geometry_3d.scene.json \
+    --pdf figures/fig_geometry_shared.pdf \
+    --png figures/fig_geometry_shared.png \
+    --scene figures/fig_geometry_shared.scene.json \
     --width-mm 90 --font "Microsoft YaHei" \
     --report reports/FIG_GEOMETRY_3D_QA.json
 ```
+
+拆分后**每张 `fig_geometry_<part>` 各跑一次**，`parts` 分 `shared`/`q4`/… 记录在
+同一份 `FIG_GEOMETRY_3D_QA.json`；只跑一张会让 ⑧ 的 `physical3d_issues` 认为报告缺项。
 
 ## 9. 常见反例
 

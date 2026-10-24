@@ -280,8 +280,8 @@
     },
     "candidates": {
       "type": "array",
-      "minItems": 3,
-      "description": "至少 3 个不同视觉编码的候选；不是 3 个配色。",
+      "minItems": 2,
+      "description": "至少 2 个不同视觉编码的候选；不是同图型换配色。",
       "items": {
         "type": "object",
         "required": [

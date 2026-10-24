@@ -7,7 +7,9 @@
 """
 import errno
 import json
+import os
 import shutil
+import time
 import subprocess
 import tempfile
 import unittest
@@ -1155,7 +1157,7 @@ class Physical3dQaTest(unittest.TestCase):
         self.root = make_workspace()
         self.addCleanup(shutil.rmtree, self.root, True)
         (self.root / "figures").mkdir()
-        (self.root / "figures/fig_geometry_3d.pdf").write_bytes(b"%PDF-1.4")
+        (self.root / "figures/fig_geometry_shared.pdf").write_bytes(b"%PDF-1.4")
         self.report = self.root / "reports/FIG_GEOMETRY_3D_QA.json"
 
     def _write(self, data):
@@ -1181,6 +1183,26 @@ class Physical3dQaTest(unittest.TestCase):
                                                    "errors": ["有文字被画布裁掉"], "warnings": []}}})
         issues = physical3d_issues(self.root)
         self.assertTrue(any("画布裁掉" in i for i in issues), issues)
+
+    def test_a_merged_report_with_a_nested_error_is_an_error(self):
+        """拆分图的 QA 报告把原始 report 嵌在 parts.<part>.report 里；只读顶层会漏。"""
+        self._write({"ok": True, "parts": {"shared": {
+            "figure": "fig_geometry_shared",
+            "report": {"ok": True, "parts": {
+                "pdf": {"ok": False, "errors": ["嵌套：文字出界"], "warnings": []}}},
+        }}})
+        issues = physical3d_issues(self.root)
+        self.assertTrue(any("嵌套：文字出界" in i for i in issues), issues)
+
+    def test_a_newer_split_figure_makes_the_report_stale(self):
+        """Q4 动域图改过、QA 报告没重跑 ⇒ 必须报过期（两张图都算）。"""
+        self._write({"ok": True, "parts": {"pdf": {"ok": True, "errors": [], "warnings": []}}})
+        q4 = self.root / "figures/fig_geometry_q4.pdf"
+        q4.write_bytes(b"%PDF-1.4")
+        later = time.time() + 5
+        os.utime(q4, (later, later))
+        issues = physical3d_issues(self.root)
+        self.assertTrue(any("早于" in i for i in issues), issues)
 
 
 if __name__ == "__main__":

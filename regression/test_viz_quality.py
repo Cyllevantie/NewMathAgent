@@ -267,12 +267,17 @@ class StyleDefaultsTests(unittest.TestCase):
                             "图例必须有底色，否则曲线会从标签上穿过去")
             self.assertGreaterEqual(mpl.rcParams["legend.framealpha"], 0.8)
 
-    def test_the_config_declares_the_chart_mix_doctrine(self):
-        """别把每张图都画成折线 —— 二维场该先想热力图/等高线。"""
+    def test_the_config_declares_the_claim_driven_selection_doctrine(self):
+        """选型按 claim 与数据形态，不再有“每问至少 2 张/至少 1 张非折线”的配额。"""
         import json
         cfg = json.loads((PROJECT / "config/visualization.json").read_text(encoding="utf-8"))
         self.assertIn("heatmap", cfg["chart_mix"]["field_over_spacetime"])
-        self.assertTrue(cfg["chart_mix"]["require_one_non_line_per_question"])
+        self.assertNotIn("require_one_non_line_per_question", cfg["chart_mix"])
+        self.assertNotIn("min_data_figures_per_question", cfg["chart_mix"])
+        sel = cfg["chart_mix"]["selection"]
+        self.assertEqual(sel["mode"], "claim_driven")
+        self.assertGreaterEqual(sel["min_candidates_per_figure"], 2)
+        self.assertTrue(sel["require_distinct_visual_encodings"])
         self.assertEqual(cfg["quality"]["minimum_width_px"], 800)
 
 
@@ -355,20 +360,6 @@ class DrawioLayoutTests(unittest.TestCase):
                          self.BARE + "labelBackgroundColor=#ffffff;", "有底"),
             self._vertex("box", 100, 100, 120, 30, self.SOLID, "实体盒"),
         ])
-        self.assertEqual(rc, 0, out)
-
-    def test_the_repo_template_passes_its_own_checker(self):
-        """模板生成的路线图**必须过自己的体检** —— 那条 ↔ 压字正是要拦的形状。"""
-        content = PROJECT / "figures/fig_roadmap.content.json"
-        if not content.is_file():
-            self.skipTest("没有路线图内容文件")
-        out_drawio = self.root / "roadmap.drawio"
-        gen = PROJECT / "skills/paper-diagram/scripts/roadmap_5band.py"
-        proc = subprocess.run([sys.executable, str(gen), str(content), "-o", str(out_drawio)],
-                              capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", cwd=str(PROJECT))
-        self.assertEqual(proc.returncode, 0, (proc.stdout or "") + (proc.stderr or ""))
-        rc, out = self._run_direct(out_drawio)
         self.assertEqual(rc, 0, out)
 
     def _run_direct(self, f):

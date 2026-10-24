@@ -74,16 +74,23 @@ Web 裁决侧车（content-quality 启用时）：另写 `reports/RESULT_AUDIT_R
 4. 小样本稳定性：阳性极少的分组/类别，波动范围多大（留一或小 bootstrap）；波动过大要求降级为"仅描述/需更多样本"，禁止确定结论。
 5. 标签口径：用哪个标签、报告是否一致；多标签（若存在两个口径不同的结果标签）差异是否处理并披露；结论对标签选择是否敏感。
 6. 可复现性抽查：结果能否由 code/ 复现（seed 是否固定、随机状态是否记录）；若报告的数字代码里找不到来源，标记。
-7. 创新增量核验：逐个 `status=adopted` 的台账项，按 `measurement.source` 打开结果文件，核对
-   `baseline_value / intervention_value / delta` 是否真实存在、单位是否一致、baseline 与
-   intervention 是否只差声明的那一处；`passed=false` 的项是否仍 `adopted`（是则判 NEEDS_FIX，
-   回 ④ 改 `downgraded`，⑤ 不代改）。
-   **主答案护栏**：`measurement.primary` 是否真的报了主答案（不是只挑次要指标）、
-   `relative_change` 是否与 `(intervention-baseline)/|baseline|` 重算一致、`guard_passed` 是否自洽；
-   `guard_passed=false` 时是否有 `independent_evidence`，该证据是否独立于本模型
-   （实验/文献/题面给定值/多模型一致/解析极限）。
+7. 创新增量核验：逐个 `status=adopted` 的台账项（含 `kind="contribution"`），按 `measurement.source`
+   打开结果文件：定量项核对 `baseline_value / intervention_value / delta` 是否真实存在、单位是否
+   一致，定性项核对 `evidence` 是否指到具体结果；baseline 与 intervention 是否只差声明的那一处；
+   `passed=false` 的项是否仍 `adopted`
+   （是则判 NEEDS_FIX，回 ④ 改 `downgraded`，⑤ 不代改）。
+   **主答案护栏（只对 kind=innovation）**：`measurement.primary` 是否真的报了主答案（不是只挑
+   次要指标）、`relative_change` 是否与 `(intervention-baseline)/|baseline|` 重算一致、
+   `guard_passed` 是否自洽；`guard_passed=false` 时是否有 `independent_evidence`，该证据是否
+   独立于本模型（实验/文献/题面给定值/多模型一致/解析极限）。
    主答案大幅偏离又拿不出独立证据 → 不是“创新”，按模型没闭合判 NEEDS_FIX（回 ④/②），
-   不能只改措辞放行。查不到来源、数字对不上、或把失败项继续叫“创新” → NEEDS_FIX，
+   不能只改措辞放行。
+   **contribution（关键处理）**：不要求 `primary_guard`；核对 ① `baseline_is_naive` 写的朴素基线
+   是否真的错/不完整（不是把主模型当基线）；② `contribution_evidence` 与 `measurement.source`
+   是否支持“贡献成立”（一致性残差/干物质漂移/判据差值）；③ 建模报告（若已有论文草稿则一并看）
+   是否只把它写成“模型特点与关键处理”，没有包装成性能创新；论文最终措辞由 ⑨/⑫ 把关。
+   做不到就判 NEEDS_FIX，不能只改措辞。
+   查不到来源、数字对不上、或把失败项继续叫“创新/贡献” → NEEDS_FIX，
    侧车挂 `implementation_fidelity`（回 ④）；若数值真实、只是正文措辞过强 →
    `claim_scope` + `claim`（交 ⑨）。
 

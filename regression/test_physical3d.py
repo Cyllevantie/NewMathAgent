@@ -35,7 +35,8 @@ class Physical3dDocsTests(unittest.TestCase):
     def test_skill_declares_fifth_type(self):
         text = SKILL.read_text(encoding="utf-8")
         self.assertIn("第五类非数据图", text)
-        self.assertIn("fig_geometry_3d", text)
+        self.assertIn("fig_geometry_shared", text)
+        self.assertIn("fig_geometry_q4", text)
         self.assertIn("physical-3d.md", text)
         self.assertIn("按问判重", text)
         self.assertIn("合并", text)

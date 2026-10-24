@@ -63,6 +63,10 @@ class PlottingTests(unittest.TestCase):
                 self.assertEqual(entry["auto_issues"], [])
                 self.assertEqual(entry["review"]["status"], "pending")
                 self.assertEqual(len(entry["artifacts"]), 3)
-                fig.text(1.2, .5, "clipped", fontsize=9)
+                # Start inside the right edge and let the glyph box run past it:
+                # that is the partial clipping the exporter is meant to catch.
+                # A text placed wholly outside (x=1.2) is deliberately ignored
+                # because mplot3d creates off-screen labels for its far axes.
+                fig.text(0.98, .5, "clipped", fontsize=9)
                 entry = export(fig, root, "clipped", **kwargs)
                 self.assertTrue(entry["auto_issues"])

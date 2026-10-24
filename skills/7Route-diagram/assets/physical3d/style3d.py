@@ -9,12 +9,13 @@
 - Route B（``solid3d.py``）：**实心剖切**。自写矢量投影 + 深度排序，
   适合实体圆柱/球/多层的楔形剖切、隐藏面、剖面填充。
 
-字体/语言不在这里硬编码：调用方先跑
-``python skills/figure-studio/scripts/resolve_context.py --write``，
-再把 ``font`` / ``width_mm`` 传进来。默认值与 CUMCM 中文模板一致。
+字体/语言不在这里硬编码：``configure_style(font=None)`` 读
+``reports/FIGURE_CONTEXT.json``（CUMCM 当前为 Microsoft YaHei，英文模板为
+Arial 等）；调用方也可以显式传入 ``font`` / ``width_mm``。
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -47,9 +48,23 @@ FILL_GRAY = "#F1F5F9"
 FILL_GREEN = "#F0FDF4"
 
 
-def configure_style(font: str = "Microsoft YaHei", base_size: float = 8.5,
+def _context_font() -> str | None:
+    for rel in ("reports/FIGURE_CONTEXT.json", "config/visualization.json"):
+        try:
+            data = json.loads((Path(__file__).resolve().parents[4] / rel)
+                              .read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        font = str(data.get("font") or "").strip()
+        if font:
+            return font
+    return None
+
+
+def configure_style(font: str | None = None, base_size: float = 8.5,
                     pdf_fonttype: int = 42) -> None:
-    """统一字体、数学字体、矢量字体嵌入方式。"""
+    """统一字体、数学字体、矢量字体嵌入方式；``font=None`` 读模板 context。"""
+    font = font or _context_font() or "Microsoft YaHei"
     mpl.rcParams.update({
         "font.size": base_size,
         "font.family": "sans-serif",

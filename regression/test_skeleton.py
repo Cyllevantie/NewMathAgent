@@ -102,6 +102,11 @@ class SkeletonTests(unittest.TestCase):
     def test_a_paper_that_matches_the_skeleton_passes(self):
         self.assertEqual(self.check(), [])
 
+    def test_a_contribution_heading_is_accepted_in_the_legacy_skeleton(self):
+        """2.5 的三种标题按台账三选一；legacy 对账也不能只认「本文主要创新点」。"""
+        self._analysis_with_contributions(130)
+        self.assertEqual(self.check(), [])
+
     def test_body_text_under_a_heading_is_not_a_new_heading(self):
         """往骨架的小节里**填正文**不算改结构 —— 这正是该做的。
 
@@ -707,6 +712,41 @@ class SkeletonTests(unittest.TestCase):
         probs = [p for p in self.check() if "2_analysis.tex" in p]
         self.assertTrue(any(f"超 {cs.ANALYSIS_INNO_MAX_LINES} 行上限" in p for p in probs), probs)
         self.assertTrue(any("创新点" in p and "第一条" in p for p in probs), probs)
+
+    def _analysis_with_contributions(self, each, items=3, title="模型特点与关键处理"):
+        """2.5 里装 contribution：每个 `\\textbf{关键处理X：}` 一条，每条 `each` 字。"""
+        cn = "一二三"
+        for n in range(2, 4):
+            self.write(f"5_problem{n}.tex",
+                       f"\\section{{模型的建立与求解}}\n"
+                       f"\\subsection{{问题{cn[n - 1]}的模型的建立和求解}}\n"
+                       f"\\subsubsection{{具体分析}}\n\\subsubsection{{模型建立}}\n")
+        body = "".join(f"\\subsection{{问题{cn[i]}的分析}}\n{'字' * 50}\n" for i in range(3))
+        contrib = "".join(f"\\textbf{{关键处理{cn[i]}：}}{'字' * each}\n"
+                          for i in range(items))
+        self.write("2_analysis.tex",
+                   "\\section{问题分析}\n" + body + f"\\subsection{{{title}}}\n" + contrib)
+
+    def test_contribution_points_are_measured_item_by_item(self):
+        """模型特点与关键处理也装多条；不能按普通小节的 3 行上限把整节卡死。"""
+        self._analysis_with_contributions(130)
+        self.assertEqual(cs._analysis_length_problems(self.tmp), [])
+
+    def test_a_too_short_contribution_point_is_reported(self):
+        self._analysis_with_contributions(55)
+        probs = cs._analysis_length_problems(self.tmp)
+        self.assertTrue(any("不足" in p and "第一条" in p for p in probs), probs)
+
+    def test_mixed_innovation_and_contribution_markers_are_both_measured(self):
+        """2.5 同时有 innovation 与 contribution 时，两种标记都要逐条计量。"""
+        self._analysis_with_contributions(
+            130, items=1, title="本文主要创新点与模型特点")
+        text = (self.tmp / "paper/sections/2_analysis.tex").read_text(encoding="utf-8")
+        text = text.replace("\\subsection{本文主要创新点与模型特点}\n",
+                            "\\subsection{本文主要创新点与模型特点}\n"
+                            + "\\textbf{创新点一：}" + "字" * 130 + "\n")
+        (self.tmp / "paper/sections/2_analysis.tex").write_text(text, encoding="utf-8")
+        self.assertEqual(cs._analysis_length_problems(self.tmp), [])
 
     def test_a_section_over_the_cap_is_reported(self):
         """全节一页半是硬上限；明细要点出每一节的字数，写手才知道砍哪一段。"""

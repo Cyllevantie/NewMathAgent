@@ -22,27 +22,56 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 
 本阶段：`python -m lib.result_contract export`（引用结构化结果）；只读，不补写被审结果。
 
+## 正文用词：不写工具名与元话语
+
+- **正文与摘要不出现工具名**：Excel、Python、MATLAB、Lingo、draw.io、Origin、SPSS、Word 等。
+  结果文件一律写“结果表 / 完整网格 / 按题面模板”；生成方式放附录或 AI 使用详情。
+  （AI 使用详情是赛事要求的单独文件，可列 AI 工具，不算正文。）
+- **不写元话语**：`同源`、`口径`、`格式位/有效位`、`未舍入`、`脚本分工`、`复核记录`、
+  `审计/门禁/回执` 等。数据条件集中在表注或该量首次出现处，其余位置引用；摘要只写方法、结果、结论。
+- 自检：`grep -nE "Excel|Python|MATLAB|draw\\.io|同源|口径|未舍入|格式位|复核记录" paper --include=*.tex`，
+  命中逐条改写（数学/统计定义本身除外）。
+
 ## 创新台账：2.5 只写“测过且审计通过”的项
 
 读 `reports/INNOVATION_LEDGER.json`、`reports/INNOVATION_MEASUREMENT.json`、
 `reports/INNOVATION_ROBUSTNESS.json` 与 `reports/INNOVATION_AUDIT.json`。
-论文「2.5 本文主要创新点」不是自由创作：
+论文 2.5 不是自由创作。标题按台账内容三选一（这是骨架里唯一允许按内容改名的标题）：
 
-- 只有 `status="adopted"` + `measurement.passed=true` + `audit.verdict="PASS"` +
-  `robustness.survives=true` + 主答案守住护栏的项，才能写进 2.5。
+- 只有 `kind=innovation`：「本文主要创新点」；
+- 只有 `kind=contribution`：「模型特点与关键处理」；
+- 两者都有：「本文主要创新点与模型特点」。
+
+- `kind="innovation"`：只有 `status="adopted"` + `measurement.passed=true` + `audit.verdict="PASS"`
+  + `robustness.survives=true` + 主答案守住护栏的项，才能写进 2.5。
+- `kind="contribution"`：`status="adopted"` + `measurement.passed=true` + `audit.verdict="PASS"`
+  + `contribution / baseline_is_naive / contribution_evidence` 齐全即可写进 2.5 的
+  「模型特点与关键处理」；不要求 `robustness.survives`，也不套 `primary_guard`。
+- 2.5 的条目用固定标记逐条起头：innovation 用 `\textbf{创新点X：}`，contribution 用
+  `\textbf{关键处理X：}`。`check_skeleton` 按标记逐条计量；没有标记的整段按普通小节
+  3 行卡，贡献写不下。
 - 每条创新点按三份台账写：**基线 → 干预 → delta**，并引 `measurement` 里的数字（带单位）；
   正文用 `INNOVATION_PAPER.json` 里的 `paper.claim_id` 可回查，不能另编一个“提升 XX%”。
-- **主答案护栏**：若 `measurement.primary.guard_passed=false`，该项**不得写进 2.5**；即使有
+- **主答案护栏（仅 innovation）**：若 `measurement.primary.guard_passed=false`，该项**不得写进 2.5**；即使有
   `independent_evidence`，也只能放在正文其他节作为“条件性结果/模型层级对照”（写 `claim_scope`），
   不能放进“本文主要创新点”。典型反例：加了潜热后中心温度 5 ℃、空气 41 ℃——这不是创新，
   是能量没闭合；应写进「七、模型的评价与推广」的局限，说明为什么当前数据/闭合不足以支持该模型。
 - **主结果先报 baseline**：正文的题定表/主结论用基线（简单、可辩护）的数；创新作为
   “改进后/条件性”结果并列，写清差多少、为什么。不要让复杂模型单独覆盖主答案，除非
   独立证据已证明基线错。
-- 每条 3–5 行（见步骤 4 的篇幅硬指标），必须能看出“没有它会错在哪、有了它哪个数字变了”。
+- 每条 3–5 行（见步骤 4 的篇幅硬指标），必须能看出“没有它会错在哪、有了它哪个数字变了”；
+  contribution 同样逐条计量，写“朴素基线 → 本文处理 → 证据/差值”，不能只写一句方法名。
+- `kind=contribution` 同样要在 `INNOVATION_PAPER.json` 登记 `paper.section`（2.5）与
+  `claim_id`；正文写“朴素基线 → 本文处理 → 证据/差值”，不要写成性能创新。
 - `rejected` / `downgraded` / `passed=false` 的项，**不得**出现在 2.5；可以写进
   「七、模型的评价与推广」的局限/改进，标明是负结果或未验证方向。
-- 没有 `core` 项时，2.5 可以不写“核心创新”，只写“关键处理”；不要为了凑节数把 L0/L1 包装成创新。
+- 没有 `kind=innovation` 的 adopted 时，2.5 写 `kind=contribution` 的项（节名「模型特点与
+  关键处理」），每条用 `\textbf{关键处理X：}` 起头，写“朴素基线 → 本文处理 → 证据/差值”；
+  不要为了凑节数把 L0 包装成创新。
+- **没有任何 adopted（innovation 或 contribution）时**：⑨ 不能把 2.5 留空；按
+  `check_innovation --stage write` 打回 ② 补模型贡献。禁止写「九项候选均未通过/本文不宣称创新/
+  创新台账/硬门槛」——那是研发过程，不是论文内容，也会触发 ⑫ 的“完全无创新”致命项。
+  `no_adoption_reason` 留在台账里，不进论文。
 - `--stage write` 不过时按原因回退：台账/基线/`measurement` 缺 → ②/③/④；
   `INNOVATION_AUDIT.json` **缺失** → ⑤（补齐复核）；verdict **非 PASS** → 回 ④/② 修
   （改 `measurement`，或把该项改为 `downgraded` + `downgrade_reason`），修完由 ⑤ 复审；
@@ -546,14 +575,16 @@ LaTeX 图片路径相对于编译工作目录：在 paper/ 内编译 main.tex �
 
 > **`templates/<语言>/<族名>/sections/*.tex` 是「骨架」，不是「参考」。**
 > `\section{}` / `\subsection{}` / `\subsubsection{}` 的名称、层级、顺序都是给定的 ——
-> 你只能往它们里面填正文，**不得新增、删除、改名、换顺序**。骨架注释里写的
-> 「每个问题的分析 ≤ 3 行、全节 ≤ 一页半」「条数 3--5 条（最多 5 条），每条不长」一律是硬约束，不是建议。
+> 你只能往它们里面填正文，**不得新增、删除、改名、换顺序**。唯一例外是 2.5 的标题：
+> 按台账三选一（本文主要创新点 / 模型特点与关键处理 / 本文主要创新点与模型特点），见下表。
+> 骨架注释里写的「每个问题的分析 ≤ 3 行、全节 ≤ 一页半」「条数 3--5 条（最多 5 条），每条不长」
+> 一律是硬约束，不是建议。
 >
 > 骨架给定的结构如下，一律照办：
 >
-> | 节 | 骨架给定（不得改动） |
+> | 节 | 骨架给定（除 2.5 标题外不得改动） |
 > |---|---|
-> | 二、问题分析 | 问题一/二/三的分析 + 本文主要创新点 |
+> | 二、问题分析 | 问题一/二/三的分析 + 2.5（标题按台账三选一：本文主要创新点 / 模型特点与关键处理 / 本文主要创新点与模型特点） |
 > | 三、模型假设 | **3–5 条（最多 5 条）**、每条不长 |
 > | 五、模型建立与求解 | 5.1 = 问题一（具体分析/模型准备/模型建立/模型求解） |
 > | 六、模型检验与分析 | 误差分析 / 灵敏度分析 |
@@ -561,12 +592,12 @@ LaTeX 图片路径相对于编译工作目录：在 paper/ 内编译 main.tex �
 >
 > **有内容放不进骨架时，把它并进骨架已有的小节，而不是另开一节。** 例：四问共用的控制方程
 > 进 5.1.3 模型建立（问题一里写全），5.2.3/5.3.3/5.4.3 只写「沿用 5.1 的控制方程，仅 X 不同」；
-> 而「四问共用同一套框架」这件事本身是创新点，放 2.5 本文主要创新点
+> 而「四问共用同一套框架」这件事本身是创新点，放 2.5（标题按台账三选一）
 > （每条 **4~5 行**、按 `INNOVATION_LEDGER.json` 写「基线 → 干预 → 实测 delta」并引一个
 > 带单位的关键数字 —— 不是每条一句，那只有 2 行、撑不起这一节；只写台账里
 > `adopted + passed + audit PASS` 的项，篇幅与判据见下面「二、问题分析 的篇幅」那段）。
 >
-> **二、问题分析 的篇幅：全节 ≤ 一页半，每个问题的分析 ≤ 3 行，每条创新点 ≤ 5 行。**
+> **二、问题分析 的篇幅：全节 ≤ 一页半，每个问题的分析 ≤ 3 行，每条创新点/关键处理 ≤ 5 行。**
 > 这一节是全篇最容易写胖的地方 —— 四问分析各写成 400+ 字、加创新点就到 2205 字
 > = **2.23 页**，是所有机械检查都不拦的那一类超限。
 > 标尺是参考件 `基于变物性耦合传热传质与动域模型的.pdf`：它的 2.1~2.4 **各占 2~3 行**、
@@ -766,7 +797,7 @@ $Bi_h,\ Bi_m$ & 传热 Biot 数、传质 Biot 数 & 无量纲 \\
 
 | 子 agent | 只负责 |
 |---|---|
-| `paper-claims` | 每条结论能否回到 `reports/RESULTS_REPORT.md` / 图 / 表；有没有过度声明、把相关性写成因果；决策卡是否只引用正文数值；章节间数字/口径是否一致；**2.5 每条是否能在 `INNOVATION_LEDGER.json` 找到 adopted+passed 的对应项、并在 `INNOVATION_AUDIT.json` 找到 PASS，delta 是否与台账一致** |
+| `paper-claims` | 每条结论能否回到 `reports/RESULTS_REPORT.md` / 图 / 表；有没有过度声明、把相关性写成因果；决策卡是否只引用正文数值；章节间数字/口径是否一致；**2.5 每条是否能在 `INNOVATION_LEDGER.json` 找到 adopted+passed 的对应项、并在 `INNOVATION_AUDIT.json` 找到 PASS；innovation 的 delta、contribution 的贡献证据是否与台账一致** |
 | `paper-format` | 模板骨架/章节顺序、术语一致、图题表题、引用与参考文献、字数/页数硬限、LaTeX 命令泄漏、占位符 |
 
 硬规则：

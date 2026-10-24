@@ -38,6 +38,10 @@ if str(HERE) not in sys.path:
 
 import figure_lock  # noqa: E402
 import studio  # noqa: E402
+try:
+    import check_figure_mix  # noqa: E402
+except Exception:                        # keep rendering if the checker is absent
+    check_figure_mix = None
 
 
 def main(argv=None) -> int:
@@ -45,9 +49,13 @@ def main(argv=None) -> int:
     ap.add_argument("--root", type=Path, default=Path.cwd())
     ap.add_argument("--figure", action="append", default=None,
                     help="render only this figure id (repeatable)")
+    ap.add_argument("--include-duplicates", action="store_true",
+                    help="也渲染与 plate hero 同源同图型的 3D 支撑图（默认跳过）")
     args = ap.parse_args(argv)
 
     root = args.root.resolve()
+    skip_dupes = (set() if args.include_duplicates or check_figure_mix is None
+                  else set(check_figure_mix.duplicate_ids(root)))
     # ⑦ owns `figures/make_figures.py`.  If it has not been written yet, leave a
     # working entry point so `save_figure` has a real script to hash/register.
     script = root / "figures" / "make_figures.py"
@@ -74,6 +82,10 @@ def main(argv=None) -> int:
     renderable = []
     for path in specs:
         fid = path.stem
+        if fid in skip_dupes:
+            print(f"skip {fid}: 与 plate hero 同源同图型的 3D 重复图；"
+                  f"bundle 保留给 plate 读，不再单独渲染")
+            continue
         if not path.is_file():
             print(f"skip {fid}: 没有 figures/spec/{fid}.json")
             problems.append(fid)

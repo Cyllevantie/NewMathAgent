@@ -103,6 +103,11 @@ def _semantic(ctx: Context, key: str) -> str:
     return str((ctx.tokens.get("palette") or {}).get("semantic", {}).get(key, "#1F2937"))
 
 
+def _bar_colors(ctx: Context) -> list[str]:
+    bars = ctx.tokens.get("bars") or {}
+    return list(bars.get("series") or _series(ctx))
+
+
 @contextmanager
 def style(ctx: Context, *, width_mm: float | None = None):
     """Apply the unified rcParams and yield the merged export settings.
@@ -183,25 +188,13 @@ def axes_mm(fig, x: float, y: float, w: float, h: float, *, width_mm: float,
 
 def panel_label(fig, ax, letter: str, ctx: Context, title: str | None = None,
                 *, dx_mm: float = -7.0, dy_mm: float = 2.2, gap_mm: float = 4.0):
-    """Place a bold panel letter and an optional short title above the Axes.
+    """Deprecated no-op: panel letters a/b/c are not drawn.
 
-    Offsets are in millimetres, not figure fractions: a fixed fraction moves a
-    label twice as far on a 160 mm canvas as on an 80 mm one, which is how
-    panel titles ended up off the left edge in earlier drafts.
+    A short panel description is optional and belongs below the panel (like a
+    composite plate); when there is none, the panel stands on its axes labels.
+    ``letter``/``title`` stay in the signature for existing callers.
     """
-    typo = _typo(ctx)
-    box = ax.get_position()
-    w_mm = fig.get_figwidth() * 25.4
-    h_mm = fig.get_figheight() * 25.4
-    x_mm = max(0.5, box.x0 * w_mm + dx_mm)
-    x = x_mm / w_mm
-    y = (box.y1 * h_mm + dy_mm) / h_mm
-    fig.text(x, y, letter, fontsize=float(typo.get("panel_letter_pt", 9.5)),
-             fontweight="bold", color=_semantic(ctx, "ink"), ha="left", va="bottom")
-    if title:
-        fig.text((box.x0 * w_mm + dx_mm + gap_mm) / w_mm, y, title,
-                 fontsize=float(typo.get("panel_title_pt", 9.0)),
-                 fontweight="bold", color=_semantic(ctx, "ink"), ha="left", va="bottom")
+    return None
 
 
 def fig_title(fig, text: str, ctx: Context, *, x: float = 0.055, y: float = 0.995,
@@ -231,13 +224,28 @@ def field_panel(ax, x, y, z, ctx: Context, *, kind: str = "contour",
                 level: float | None = None, level_label: str | None = None,
                 xlabel: str | None = None, ylabel: str | None = None,
                 title: str | None = None, vmin=None, vmax=None, gamma=None,
-                levels: int = 14):
-    """Space-time field: filled contour (thresholds/fronts) or mesh."""
+                levels: int = 14, xlim=None, ylim=None,
+                show_level_legend: bool = True, label_lines: bool = True,
+                annotations: Sequence[Mapping] | None = None):
+    """Space-time field: filled contour (thresholds/fronts) or mesh.
+
+    ``xlim`` / ``ylim`` crop the rendered window before drawing; the colour
+    normalization may still use explicit ``vmin``/``vmax`` (a zoomed panel
+    should say so in its colorbar label).
+    """
     x = np.asarray(x, float)
     y = np.asarray(y, float)
     z = np.asarray(z, float)
     if z.shape != (len(y), len(x)):
         raise ValueError(f"field z must be (len(y), len(x)); got {z.shape}")
+    if xlim is not None:
+        keep = (x >= float(xlim[0])) & (x <= float(xlim[1]))
+        x, z = x[keep], z[:, keep]
+    if ylim is not None:
+        keep = (y >= float(ylim[0])) & (y <= float(ylim[1]))
+        y, z = y[keep], z[keep, :]
+    if len(x) < 2 or len(y) < 2:
+        raise ValueError("field window leaves fewer than two grid points")
     colorbar_label = colorbar_label or ctx.L("moisture")
     xlabel = xlabel or ctx.L("time_h")
     ylabel = ylabel or ctx.L("radius_cm")
@@ -247,7 +255,9 @@ def field_panel(ax, x, y, z, ctx: Context, *, kind: str = "contour",
             ax, x, y, z, colorbar_label=colorbar_label, quantity=quantity,
             levels=levels, lines=([level] if level is not None else None),
             highlight=level, highlight_color=_semantic(ctx, "warn"),
-            highlight_label=(level_label or ctx.L("criterion")) if level is not None else None,
+            label_lines=bool(label_lines),
+            highlight_label=((level_label or ctx.L("criterion"))
+                             if level is not None and show_level_legend else None),
             vmin=vmin, vmax=vmax, gamma=gamma,
         )
     elif kind == "heatmap":
@@ -262,10 +272,141 @@ def field_panel(ax, x, y, z, ctx: Context, *, kind: str = "contour",
         raise ValueError("kind must be 'contour' or 'heatmap'")
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
+    for item in annotations or []:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            px, py = float(item["x"]), float(item["y"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        color = str(item.get("color") or _semantic(ctx, "warn"))
+        if item.get("marker"):
+            ax.scatter([px], [py], s=float(item.get("size") or 22), color=color,
+                       edgecolor="white", linewidth=0.4, zorder=6)
+        if item.get("text"):
+            # A call-out inside a field sits on top of a drawn contour often
+            # enough that it must carry its own paper: without the opaque box
+            # the criterion line shows through the glyphs (FR8-02 class).
+            ax.annotate(str(item["text"]), xy=(px, py),
+                        xytext=(float(item.get("dx", 4)), float(item.get("dy", 4))),
+                        textcoords="offset points", ha=str(item.get("ha", "left")),
+                        va=str(item.get("va", "center")),
+                        fontsize=mpl.rcParams["legend.fontsize"] * 0.95,
+                        color=color, zorder=7,
+                        bbox={"facecolor": "white", "edgecolor": "none",
+                              "alpha": 0.95, "pad": 0.6})
     if title:
         ax.set_title(title, loc="left", fontsize=mpl.rcParams["axes.titlesize"],
                      fontweight="bold", pad=4)
     return ax
+
+
+def field_moving(ax, xi, t, z, radius, ctx: Context, *, quantity: str = "moisture",
+                 colorbar_label: str | None = None,
+                 level: float | None = None, level_label: str | None = None,
+                 xlabel: str | None = None, ylabel: str | None = None,
+                 title: str | None = None, vmin=None, vmax=None, gamma=None,
+                 r_lines: Sequence[float] | None = None,
+                 annotations: Sequence[Mapping] | None = None):
+    """Moving-domain field in physical radius r = xi * R(t).
+
+    The material-coordinate field ``C(xi,t)`` hides the actual shrinkage: its
+    right edge stays at xi=1.  This renders the same numbers on the physical
+    grid, so the domain visibly narrows from R(0) to R(t_dry).
+    """
+    xi = np.asarray(xi, float)
+    t = np.asarray(t, float)
+    z = np.asarray(z, float)
+    radius = np.asarray(radius, float)
+    if z.shape != (len(t), len(xi)) or radius.shape != (len(t),):
+        raise ValueError("field_moving needs z=(len(t),len(xi)) and one radius per time")
+    if np.any(np.diff(xi) <= 0) or np.any(np.diff(t) <= 0):
+        raise ValueError("field_moving grid coordinates must increase")
+    X = xi[None, :] * radius[:, None]
+    Y = np.repeat(t[:, None], len(xi), axis=1)
+    cmap = charts.quantity_cmap(quantity) or "viridis"
+    g = charts.quantity_gamma(quantity) if gamma is None else gamma
+    lo = float(np.nanmin(z)) if vmin is None else float(vmin)
+    hi = float(np.nanmax(z)) if vmax is None else float(vmax)
+    norm = PowerNorm(g, vmin=lo, vmax=hi)
+    mesh = ax.pcolormesh(X, Y, z, cmap=cmap, norm=norm, shading="auto", rasterized=True)
+    cb = ax.figure.colorbar(mesh, ax=ax, label=colorbar_label or ctx.L("moisture"), shrink=.86)
+    cb.ax.yaxis.set_major_locator(mpl.ticker.MaxNLocator(nbins=6))
+    # The physical boundary is the point of this panel: draw it explicitly.
+    ax.plot(radius, t, color=_semantic(ctx, "line"), lw=1.0, zorder=4)
+    if level is not None:
+        cs = ax.contour(X, Y, z, levels=[float(level)], colors=[_semantic(ctx, "warn")],
+                        linewidths=1.0, zorder=5)
+        if level_label:
+            labels = ax.clabel(cs, fmt=str(level_label), inline=True, inline_spacing=4,
+                               fontsize=mpl.rcParams["legend.fontsize"] * 0.95,
+                               colors=_semantic(ctx, "warn"))
+            for label in labels or []:
+                label.set_bbox({"facecolor": "white", "edgecolor": "none",
+                                "alpha": 0.95, "pad": 0.6})
+                label.set_zorder(6)
+    for rv in r_lines or []:
+        ax.axvline(float(rv), color=_semantic(ctx, "line"), lw=0.8, ls=":", zorder=3)
+    ax.set_xlim(0.0, float(np.nanmax(radius)) * 1.02)
+    ax.set_ylim(float(t[0]), float(t[-1]))
+    ax.set_xlabel(xlabel or "物理半径 r / cm")
+    ax.set_ylabel(ylabel or ctx.L("time_h"))
+    clean(ax)
+    for item in annotations or []:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            px, py = float(item["x"]), float(item["y"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        color = str(item.get("color") or _semantic(ctx, "warn"))
+        if item.get("marker"):
+            ax.scatter([px], [py], s=float(item.get("size") or 22), color=color,
+                       edgecolor="white", linewidth=0.4, zorder=6)
+        if item.get("text"):
+            ax.annotate(str(item["text"]), xy=(px, py),
+                        xytext=(float(item.get("dx", 4)), float(item.get("dy", 4))),
+                        textcoords="offset points", ha=str(item.get("ha", "left")),
+                        va=str(item.get("va", "center")),
+                        fontsize=mpl.rcParams["legend.fontsize"] * 0.95,
+                        color=color, zorder=7,
+                        bbox={"facecolor": "white", "edgecolor": "none",
+                              "alpha": 0.95, "pad": 0.6})
+    if title:
+        ax.set_title(title, loc="left", fontweight="bold", pad=4)
+    return ax
+
+
+def field_waterfall_panel(ax, x, y, z, ctx: Context, *, times=None,
+                          n_profiles: int = 5, xlabel: str | None = None,
+                          ylabel: str | None = None, logy: bool = False,
+                          direct: bool = False, legend: bool = True,
+                          legend_loc: str = "best", legend_ncol: int = 1,
+                          legend_bbox=None, ylim=None, hline=None,
+                          hline_label=None, title: str | None = None):
+    """A space-time field drawn as a family of line profiles (no heatmap).
+
+    Same data contract as ``field_panel`` (x/y/z grid), but the time axis is
+    sampled into a handful of profiles.  Use it when the claim is about how a
+    front/profile moves, not about every cell of the field: it keeps the figure
+    line-based and avoids a wall of heatmaps.
+    """
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    z = np.asarray(z, float)
+    if z.shape != (len(y), len(x)):
+        raise ValueError(f"field waterfall z must be (len(y), len(x)); got {z.shape}")
+    if times:
+        idx = sorted({int(np.argmin(np.abs(y - float(t)))) for t in times})
+    else:
+        idx = np.unique(np.linspace(0, len(y) - 1,
+                                    max(2, int(n_profiles))).round().astype(int))
+    series = {f"t = {y[j]:g} h": z[j] for j in idx}
+    return profile_panel(ax, x, series, ctx, xlabel=xlabel, ylabel=ylabel,
+                         logy=logy, direct=direct, legend=legend,
+                         legend_loc=legend_loc, legend_ncol=legend_ncol,
+                         legend_bbox=legend_bbox, ylim=ylim, hline=hline,
+                         hline_label=hline_label, title=title)
 
 
 def heatmap_panel(ax, values, rows: Sequence[str], columns: Sequence[str],
@@ -288,14 +429,31 @@ def profile_panel(ax, x, series: Mapping[str, Sequence[float]], ctx: Context, *,
                   xlabel: str | None = None, ylabel: str | None = None,
                   logy: bool = False, direct: bool = True, markers: bool = False,
                   legend: bool = False, title: str | None = None,
-                  colors: Sequence[str] | None = None):
-    """Several radial/time profiles, with direct end labels by default."""
+                  colors: Sequence[str] | None = None,
+                  legend_loc: str = "best", legend_bbox=None, legend_ncol: int = 1,
+                  divide_by_value: float | None = None,
+                  normalize: str | None = None,
+                  ylim: Sequence[float] | None = None,
+                  hline: float | None = None, hline_label: str | None = None,
+                  annotations: Sequence[Mapping] | None = None):
+    """Several radial/time profiles, with direct end labels by default.
+
+    ``divide_by_value`` / ``normalize='max'`` are presentation-only transforms:
+    they keep the same data and fields, but put several series on one
+    dimensionless scale (criterion ratio, peak-normalized properties).
+    """
     x = np.asarray(x, float)
     if np.any(np.diff(x) <= 0):
         raise ValueError("profile x must be strictly increasing")
     cols = list(colors or _series(ctx))
     for i, (label, ys) in enumerate(series.items()):
         ys = np.asarray(ys, float)
+        if divide_by_value not in (None, 0):
+            ys = ys / float(divide_by_value)
+        if str(normalize or "").lower() == "max":
+            peak = float(np.nanmax(np.abs(ys)))
+            if peak:
+                ys = ys / peak
         ax.plot(x, ys, color=cols[i % len(cols)],
                 linestyle=["-", "--", ":", "-."][i % 4],
                 marker=("o", "s", "^", "D")[i % 4] if markers else None,
@@ -308,14 +466,46 @@ def profile_panel(ax, x, series: Mapping[str, Sequence[float]], ctx: Context, *,
                         color=cols[i % len(cols)], clip_on=False)
     if logy:
         ax.set_yscale("log")
+    if ylim is not None:
+        ax.set_ylim(float(ylim[0]), float(ylim[1]))
     if direct:
         # Leave room for the end labels instead of letting them run off the
         # canvas; the data still occupy the same physical span.
         ax.set_xlim(float(x[0]), float(x[-1]) * 1.12)
+    if hline is not None:
+        ax.axhline(float(hline), color=_semantic(ctx, "line"), lw=0.8, ls="--", zorder=1)
+        if hline_label:
+            ax.annotate(str(hline_label), xy=(x[-1], float(hline)), xytext=(-2, 2),
+                        textcoords="offset points", ha="right", va="bottom",
+                        fontsize=mpl.rcParams["legend.fontsize"] * 0.95,
+                        color=_semantic(ctx, "line"))
     ax.set_xlabel(xlabel or ctx.L("radius_cm"))
     ax.set_ylabel(ylabel or ctx.L("moisture"))
     if legend and not direct:
-        ax.legend(loc="best")
+        kw = dict(loc=legend_loc, ncol=legend_ncol, frameon=False)
+        if legend_bbox is not None:
+            kw["bbox_to_anchor"] = tuple(legend_bbox)
+        ax.legend(**kw)
+    for item in annotations or []:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            px, py = float(item["x"]), float(item["y"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        color = str(item.get("color") or _semantic(ctx, "warn"))
+        if item.get("marker"):
+            ax.scatter([px], [py], s=float(item.get("size") or 22), color=color,
+                       edgecolor="white", linewidth=0.4, zorder=5)
+        if item.get("text"):
+            ax.annotate(str(item["text"]), xy=(px, py),
+                        xytext=(float(item.get("dx", 4)), float(item.get("dy", 4))),
+                        textcoords="offset points", ha=str(item.get("ha", "left")),
+                        va=str(item.get("va", "center")),
+                        fontsize=mpl.rcParams["legend.fontsize"] * 0.95,
+                        color=color, zorder=6,
+                        bbox={"facecolor": "white", "edgecolor": "none",
+                              "alpha": 0.95, "pad": 0.6})
     clean(ax)
     if title:
         ax.set_title(title, loc="left", fontweight="bold", pad=4)
@@ -361,6 +551,262 @@ def _kde_half(ax, values, x0: float, side: str, color: str, width: float = 0.28)
         ax.fill_betweenx(grid, x0 - d, x0, color=color, alpha=0.30, linewidth=0, zorder=1)
     else:
         ax.fill_betweenx(grid, x0, x0 + d, color=color, alpha=0.30, linewidth=0, zorder=1)
+
+
+def _kde_half_h(ax, values, y0: float, side: str, color: str, width: float = 0.34):
+    """Half violin for horizontal rainclouds (density on y, value on x)."""
+    vals = np.asarray(values, float)
+    vals = vals[np.isfinite(vals)]
+    if len(vals) < 5 or np.std(vals) <= 0:
+        return
+    try:
+        from scipy.stats import gaussian_kde
+        kde = gaussian_kde(vals)
+        grid = np.linspace(vals.min(), vals.max(), 220)
+        d = np.asarray(kde(grid), float)
+        d = d / max(d.max(), 1e-12) * width
+    except Exception:
+        hist, edges = np.histogram(vals, bins=24, density=True)
+        grid = 0.5 * (edges[:-1] + edges[1:])
+        d = hist / max(hist.max(), 1e-12) * width
+    if side == "up":
+        ax.fill_between(grid, y0, y0 + d, color=color, alpha=0.30,
+                        linewidth=0, zorder=1)
+    else:
+        ax.fill_between(grid, y0 - d, y0, color=color, alpha=0.30,
+                        linewidth=0, zorder=1)
+
+
+def raincloud_groups(ax, groups: Mapping[str, Sequence[float]], ctx: Context, *,
+                     xlabel: str | None = None, ylabel: str | None = None,
+                     sort: bool = False, reference: float | None = None,
+                     reference_label: str | None = None, logx: bool = False,
+                     title: str | None = None, seed: int = 0,
+                     value_labels: bool = False,
+                     value_fmt: str = "{:.2f}") -> None:
+    """Sci-box style group raincloud: half violin + box + jittered points.
+
+    ``groups`` maps a category label to its observations.  Unlike
+    ``distribution_box`` this keeps the (half) density visible, so a set of
+    radial/time snapshots reads as a distribution rather than a line family.
+    """
+    names = list(groups)
+    vals = [np.asarray(groups[n], float).ravel() for n in names]
+    vals = [v[np.isfinite(v)] for v in vals]
+    if sort:
+        order = np.argsort([float(np.median(v)) if len(v) else np.inf
+                            for v in vals])
+        names = [names[i] for i in order]
+        vals = [vals[i] for i in order]
+    cols = _series(ctx)
+    ink = _semantic(ctx, "ink")
+    rng = np.random.default_rng(seed)
+    n = len(names)
+    for i, v in enumerate(vals):
+        color = cols[i % len(cols)]
+        if logx:
+            v = v[v > 0]
+        if len(v):
+            _kde_half_h(ax, v, i, "up", color)
+            # points below the violin; every observation stays visible
+            ax.scatter(v, i - 0.24 + rng.uniform(-0.055, 0.055, len(v)),
+                       s=6.5, color=color, alpha=0.55, linewidth=0, zorder=3)
+            q1, med, q3 = np.quantile(v, [0.25, 0.5, 0.75])
+            ax.plot([q1, q3], [i, i], color=ink, lw=2.0,
+                    solid_capstyle="butt", zorder=4)
+            ax.plot([med, med], [i - 0.055, i + 0.055], color=ink, lw=1.1,
+                    zorder=5)
+            if value_labels:
+                ax.annotate(value_fmt.format(med), xy=(q3, i),
+                            xytext=(4, 0), textcoords="offset points",
+                            va="center", ha="left", fontsize=6.0,
+                            color=color, zorder=6)
+    if reference is not None:
+        ax.axvline(float(reference), color=_semantic(ctx, "warn"),
+                   lw=0.9, ls="--", zorder=0)
+        if reference_label:
+            ax.annotate(str(reference_label),
+                        xy=(float(reference), n - 0.5), xytext=(3, -2),
+                        textcoords="offset points", ha="left", va="top",
+                        fontsize=6.0, color=_semantic(ctx, "warn"),
+                        bbox={"facecolor": "white", "edgecolor": "none",
+                              "alpha": 0.9, "pad": 0.4}, zorder=6)
+    if logx:
+        ax.set_xscale("log")
+    ax.set_yticks(np.arange(n))
+    ax.set_yticklabels(names)
+    ax.set_ylim(n - 0.5, -0.5)
+    ax.set_xlabel(xlabel or ctx.L("value"))
+    if ylabel:
+        ax.set_ylabel(ylabel)
+    clean(ax, grid="x")
+    if title:
+        ax.set_title(title, loc="left", fontweight="bold", pad=4)
+
+
+def _select_time_indices(y, groups, n_groups: int) -> list[int]:
+    y = np.asarray(y, float)
+    if groups:
+        if isinstance(groups, (int, float)):
+            groups = [groups]
+        return sorted({int(np.argmin(np.abs(y - float(t)))) for t in groups})
+    n_groups = max(2, int(n_groups))
+    return sorted(set(np.linspace(0, len(y) - 1, n_groups).round().astype(int).tolist()))
+
+
+def field_raincloud(ax, x, y, z, ctx: Context, *, group_by: str = "time",
+                    groups=None, n_groups: int = 5, xlabel: str | None = None,
+                    group_labels=None, reference: float | None = None,
+                    reference_label: str | None = None, logx: bool = False,
+                    title: str | None = None, value_labels: bool = False,
+                    value_fmt: str = "{:.2f}") -> None:
+    """Turn a space-time field into group rainclouds — no line family.
+
+    ``group_by='time'``: each selected time is a group; the observations are
+    the values across the spatial axis.  ``group_by='space'``: each spatial
+    band is a group; the observations are the values across time.  This is the
+    sci-box distribution grammar for field claims where the message is how a
+    profile shifts, not the exact location of every cell.
+    """
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    z = np.asarray(z, float)
+    if z.shape != (len(y), len(x)):
+        raise ValueError(f"field_raincloud z must be (len(y), len(x)); got {z.shape}")
+    labels = list(group_labels or [])
+    data: dict[str, np.ndarray] = {}
+    if str(group_by).lower() == "time":
+        idx = _select_time_indices(y, groups, n_groups)
+        for k, j in enumerate(idx):
+            label = labels[k] if k < len(labels) else f"t = {y[j]:g} h"
+            data[label] = z[j, :]
+        xlabel = xlabel or ctx.L("value")
+    elif str(group_by).lower() == "space":
+        n_groups = max(2, int(n_groups))
+        edges = np.linspace(0, len(x), n_groups + 1).round().astype(int)
+        for k in range(n_groups):
+            lo, hi = int(edges[k]), int(edges[k + 1])
+            if hi <= lo:
+                continue
+            label = (labels[k] if k < len(labels)
+                     else f"r = {x[lo]:g}–{x[hi - 1]:g}")
+            data[label] = z[:, lo:hi].ravel()
+        xlabel = xlabel or ctx.L("value")
+    else:
+        raise ValueError("field_raincloud group_by must be 'time' or 'space'")
+    if not data:
+        raise ValueError("field_raincloud 没选出任何分组")
+    raincloud_groups(ax, data, ctx, xlabel=xlabel, reference=reference,
+                     reference_label=reference_label, logx=logx, title=title,
+                     value_labels=value_labels, value_fmt=value_fmt)
+
+
+def split_raincloud(ax, groups: Mapping[str, tuple[Sequence[float], Sequence[float]]],
+                    ctx: Context, *, labels: Sequence[str] | None = None,
+                    xlabel: str | None = None, title: str | None = None,
+                    colors: Sequence[str] | None = None,
+                    legend: bool = True, logx: bool = False,
+                    xlim: Sequence[float] | None = None) -> None:
+    """Back-to-back half violins per category (sci-box 05 split-violin grammar).
+
+    ``groups`` maps a category (e.g. a time window) to two observation arrays
+    (e.g. centre vs surface).  No scatter points: the information is the two
+    distribution shapes and their medians, as in the reference template.
+    """
+    names = list(groups)
+    cols = list(colors or _series(ctx))
+    if len(cols) < 2:
+        cols += ["#B45309"]
+    ink = _semantic(ctx, "ink")
+    if labels is None:
+        labels = ("A", "B")
+    for i, name in enumerate(names):
+        left, right = groups[name]
+        lv = np.asarray(left, float)
+        rv = np.asarray(right, float)
+        lv = lv[np.isfinite(lv)]
+        rv = rv[np.isfinite(rv)]
+        # Value is on x and categories on y, so the two halves mirror
+        # **vertically** around the category line (up = group A, down = group B).
+        # Passing "left"/"right" here would hit the old else-branch and draw
+        # both clouds on the same side, superimposing them.
+        _kde_half_h(ax, lv, i, "up", cols[0])
+        _kde_half_h(ax, rv, i, "down", cols[1])
+        for vals, side in ((lv, "left"), (rv, "right")):
+            if not len(vals):
+                continue
+            q1, med, q3 = np.quantile(vals, [0.25, 0.5, 0.75])
+            # median tick + quartile ticks inside the half violin
+            ax.plot([med, med], [i - 0.30, i + 0.30], color=ink, lw=1.0,
+                    zorder=4)
+            for q in (q1, q3):
+                ax.plot([q, q], [i - 0.18, i + 0.18], color=ink, lw=0.55,
+                        ls=(0, (3, 2)), zorder=3)
+    if xlim is not None:
+        ax.set_xlim(float(xlim[0]), float(xlim[1]))
+    if logx:
+        ax.set_xscale("log")
+    ax.set_yticks(np.arange(len(names)))
+    ax.set_yticklabels(names)
+    ax.set_ylim(len(names) - 0.5, -0.5)
+    ax.set_xlabel(xlabel or ctx.L("value"))
+    clean(ax, grid="x")
+    if legend:
+        from matplotlib.lines import Line2D
+        handles = [Line2D([], [], color=cols[0], lw=2.0),
+                   Line2D([], [], color=cols[1], lw=2.0)]
+        ax.legend(handles, list(labels), loc="lower center",
+                  bbox_to_anchor=(0.5, -0.28), ncol=2, frameon=False,
+                  handlelength=1.8, columnspacing=1.2)
+    if title:
+        ax.set_title(title, loc="left", fontweight="bold", pad=4)
+
+
+def field_split_raincloud(ax, x, y, z, ctx: Context, *,
+                          windows=None, bands=None, n_windows: int = 4,
+                          band_labels: Sequence[str] | None = None,
+                          xlabel: str | None = None, title: str | None = None,
+                          logx: bool = False,
+                          xlim: Sequence[float] | None = None,
+                          anomaly: bool = False) -> None:
+    """Split half-violins from a space-time field.
+
+    Each category is a time window; the two sides are two spatial bands
+    (e.g. centre vs surface).  This is the honest part of sci-box template 05:
+    the correlation matrix is not applicable to a deterministic field, but the
+    split-violin grammar is.
+    """
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    z = np.asarray(z, float)
+    if z.shape != (len(y), len(x)):
+        raise ValueError(f"field_split_raincloud z must be (len(y), len(x)); got {z.shape}")
+    if anomaly:
+        # ΔT = T - radial mean: removes the shared heating ramp and exposes the
+        # centre/surface lag that the split violin is meant to show.
+        z = z - z.mean(axis=1, keepdims=True)
+    if windows:
+        pairs = [(float(a), float(b)) for a, b in windows]
+    else:
+        edges = np.linspace(float(y.min()), float(y.max()), max(2, n_windows + 1))
+        pairs = [(edges[k], edges[k + 1]) for k in range(len(edges) - 1)]
+    bands = bands or [[float(x.min()), float(x.min()) + (float(x.max()) - float(x.min())) / 3],
+                      [float(x.max()) - (float(x.max()) - float(x.min())) / 3, float(x.max())]]
+    labels = list(band_labels or [ctx.L("center", "中心区"), ctx.L("surface", "表面区")])
+    groups: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for k, (t0, t1) in enumerate(pairs):
+        # Half-open windows avoid counting the shared boundary row twice
+        # (the last window keeps its right endpoint).
+        upper = (y <= t1) if k == len(pairs) - 1 else (y < t1)
+        rows = np.where((y >= t0) & upper)[0]
+        tiled = []
+        for a, b in bands:
+            cols = np.where((x >= a) & (x <= b))[0]
+            tiled.append(z[np.ix_(rows, cols)].ravel() if len(rows) and len(cols)
+                         else np.array([], dtype=float))
+        groups[f"{t0:g}–{t1:g} h"] = (tiled[0], tiled[1])
+    split_raincloud(ax, groups, ctx, labels=labels, xlabel=xlabel, title=title,
+                    logx=logx, xlim=xlim)
 
 
 def paired_raincloud(ax, before, after, ctx: Context, *, labels: Sequence[str] | None = None,
@@ -456,8 +902,19 @@ def dot_interval(ax, labels: Sequence[str], values: Sequence[float],
                  ctx: Context, *, reference: float | None = None,
                  xlabel: str | None = None, title: str | None = None,
                  groups: Sequence[str] | None = None, sort: bool = True,
-                 value_fmt: str = "{:.2f}", value_labels: bool = True):
-    """Sorted point estimates with real intervals; one row per category."""
+                 value_fmt: str = "{:.2f}", value_labels: bool = True,
+                 censored_values: Sequence[float] | None = None,
+                 censored_labels: Sequence[str] | None = None,
+                 censored_style: str = "arrow_right",
+                 xlim: Sequence[float] | None = None,
+                 reference_color: str | None = None,
+                 label_map: Mapping[str, str] | None = None):
+    """Sorted point estimates with real intervals; one row per category.
+
+    ``censored_*`` entries are bounds, not observations.  They get a separate
+    row and an arrow at the right edge, never a point on the observed x scale:
+    a 200 h censoring bound must not read as a 200 h measurement.
+    """
     values = np.asarray(values, float)
     labels = list(labels)
     if low is None or high is None:
@@ -470,14 +927,27 @@ def dot_interval(ax, labels: Sequence[str], values: Sequence[float],
     order = np.argsort(values) if sort else np.arange(len(values))
     values = values[order]
     labels = [labels[i] for i in order]
+    # `label_map` is keyed by the *bundle's* label string and applied after the
+    # sort.  A positional `options.labels` is applied before the sort, so any
+    # caller that lists labels in sorted order silently shifts every row by the
+    # sort permutation (q_sensitivity c/d showed the wet-bulb cap at the bottom
+    # of the scale).  Map by name; never by position.
+    if label_map:
+        labels = [str(label_map.get(lab, lab)) for lab in labels]
     if low is not None:
         low, high = low[order], high[order]
     if groups is not None:
         groups = [groups[i] for i in order]
-    y = np.arange(len(values))
+    n_data = len(values)
+    cens = (np.asarray(censored_values, float).ravel()
+            if censored_values is not None else np.array([], dtype=float))
+    cens_labels = [str(x) for x in (censored_labels or [])]
+    cens_labels = (cens_labels + [f">{v:g} h" for v in cens])[:len(cens)]
+    n_rows = n_data + len(cens)
+    y = np.arange(n_data)
     cols = _series(ctx)
     if groups is None:
-        colors = [cols[0]] * len(values)
+        colors = [cols[0]] * n_data
     else:
         uniq = list(dict.fromkeys(groups))
         colors = [cols[uniq.index(g) % len(cols)] for g in groups]
@@ -489,12 +959,41 @@ def dot_interval(ax, labels: Sequence[str], values: Sequence[float],
         ax.scatter(v, y[i], s=22, color=c, edgecolor="white", linewidth=0.4, zorder=3)
         if value_labels:
             ax.text(v, y[i] - 0.28, value_fmt.format(v), ha="center", va="bottom",
-                    fontsize=mpl.rcParams["xtick.labelsize"] * 0.95, color=_semantic(ctx, "line"))
-    ax.set_yticks(y, labels)
-    ax.set_ylim(-0.7, len(values) - 0.3)
+                    fontsize=mpl.rcParams["xtick.labelsize"] * 0.95,
+                    color=_semantic(ctx, "line"), clip_on=False, zorder=4,
+                    bbox={"facecolor": "white", "edgecolor": "none",
+                          "alpha": 0.97, "pad": 0.5})
+    ax.set_yticks(np.arange(n_rows), labels + cens_labels)
+    ax.set_ylim(-0.9, n_rows - 0.3)
     ax.invert_yaxis()
     if reference is not None:
-        ax.axvline(reference, color=_semantic(ctx, "warn"), lw=1.0, ls="--", zorder=1)
+        # The baseline is not a threshold: `warn` is reserved for thresholds and
+        # anomalies, so callers can pass an auxiliary colour for it.
+        ax.axvline(reference, color=(reference_color or _semantic(ctx, "warn")),
+                   lw=1.0, ls="--", zorder=1)
+    # A censored bound is an annotation, not a point: putting 200 h on the same
+    # x scale would squash the 55–75 h observations and invite a wrong reading.
+    warn = _semantic(ctx, "warn")
+    for j, cv in enumerate(cens):
+        row = n_data + j
+        if str(censored_style) == "arrow_left":
+            x_from, x_to = 0.97, 0.74
+        else:
+            x_from, x_to = 0.74, 0.97
+        ax.annotate("", xy=(x_to, row), xytext=(x_from, row),
+                    xycoords=("axes fraction", "data"),
+                    textcoords=("axes fraction", "data"),
+                    arrowprops={"arrowstyle": "->", "color": warn, "lw": 1.0,
+                                "shrinkA": 0, "shrinkB": 0},
+                    annotation_clip=False, zorder=4)
+        ax.text(0.72, row, f">{cv:g} h", transform=ax.get_yaxis_transform(),
+                ha="right", va="center",
+                fontsize=mpl.rcParams["xtick.labelsize"] * 0.95, color=warn,
+                clip_on=False, zorder=5,
+                bbox={"facecolor": "white", "edgecolor": "none",
+                      "alpha": 0.97, "pad": 0.5})
+    if xlim is not None:
+        ax.set_xlim(float(xlim[0]), float(xlim[1]))
     ax.set_xlabel(xlabel or ctx.L("value"))
     clean(ax, grid="x")
     if title:
@@ -505,53 +1004,125 @@ def dot_interval(ax, labels: Sequence[str], values: Sequence[float],
 # ---------------------------------------------------------------------------
 # recipes: comparison and composition
 # ---------------------------------------------------------------------------
+def sampled_bars(ax, x, series: Mapping[str, Sequence[float]], ctx: Context, *,
+                 times=None, n_samples: int = 5,
+                 category_fmt: str = "{:g}", xlabel: str | None = None,
+                 ylabel: str | None = None, title: str | None = None,
+                 horizontal: bool = False, value_fmt: str = "{:.2f}",
+                 value_labels: bool = True, hatches: bool = False,
+                 gradient: bool | None = None,
+                 hline: float | None = None, hline_label: str | None = None):
+    """Sample one-dimensional series at selected x positions and draw bars.
+
+    This is the non-line encoding for a time series whose claim is a comparison
+    at a few checkpoints (start/peak/end), not a continuous trajectory.  It
+    keeps the values and the x positions; it does not smooth or invent points.
+    """
+    x = np.asarray(x, float)
+    if x.ndim != 1 or len(x) < 2:
+        raise ValueError("sampled_bars x must be a 1-D array with >=2 points")
+    if times:
+        if isinstance(times, (int, float)):
+            times = [times]
+        idx = sorted({int(np.argmin(np.abs(x - float(t)))) for t in times})
+    else:
+        n = max(2, int(n_samples))
+        idx = sorted(set(np.linspace(0, len(x) - 1, n).round().astype(int).tolist()))
+    categories = [category_fmt.format(x[i]) for i in idx]
+    sampled = {}
+    for label, ys in series.items():
+        arr = np.asarray(ys, float).ravel()
+        if len(arr) != len(x):
+            raise ValueError(f"sampled_bars 系列 {label!r} 长度 {len(arr)} 与 x 长度 {len(x)} 不一致")
+        sampled[label] = [arr[i] for i in idx]
+    grouped_bars(ax, categories, sampled, ctx, ylabel=ylabel, xlabel=xlabel,
+                 horizontal=horizontal, title=title, value_fmt=value_fmt,
+                 hatches=hatches, value_labels=value_labels, gradient=gradient,
+                 hline=hline, hline_label=hline_label)
+
+
 def grouped_bars(ax, categories: Sequence[str], series: Mapping[str, Sequence[float]],
                  ctx: Context, *, ylabel: str | None = None, xlabel: str | None = None,
                  errors: Mapping[str, Sequence[float]] | None = None,
                  horizontal: bool = False, title: str | None = None,
-                 value_fmt: str = "{:.2f}", hatches: bool = True,
-                 value_labels: bool = True):
-    """Grouped bars with black edges, optional hatches and direct values."""
+                 value_fmt: str = "{:.2f}", hatches: bool = False,
+                 value_labels: bool = True, gradient: bool | None = None,
+                 hline: float | None = None, hline_label: str | None = None):
+    """Grouped bars with black edges, optional hatches and direct values.
+
+    ``hline`` is for a real threshold/claim line (e.g. C = 0.15); it is drawn
+    behind the bars and labelled at the right edge, never as decoration.
+    """
     cats = list(categories)
     names = list(series)
     n = len(names)
-    cols = _series(ctx)
-    width = 0.78 / max(1, n)
+    cols = _bar_colors(ctx)
+    width = 0.66 / max(1, n)
     base = np.arange(len(cats), dtype=float)
+    if gradient is None:
+        gradient = (n == 1 and len(cats) >= 3)
+    if gradient:
+        bar_cmap = mpl.colors.LinearSegmentedColormap.from_list(
+            "bar_blue", ["#DCE9FF", "#5B8FF9"])
+        shades = [mpl.colors.to_hex(bar_cmap(t))
+                  for t in np.linspace(0.28, 1.0, len(cats))]
+    else:
+        shades = []
     hatch_pool = ["", "///", "...", "\\\\\\", "xx"]
     for i, name in enumerate(names):
         vals = np.asarray(series[name], float)
         if vals.shape != (len(cats),):
             raise ValueError(f"series {name!r} does not match categories")
         offset = (i - (n - 1) / 2) * width
-        kwargs = dict(color=cols[i % len(cols)], edgecolor=_semantic(ctx, "ink"),
-                      linewidth=0.55, width=width * 0.92,
+        kwargs = dict(color=(shades if gradient else cols[i % len(cols)]),
+                      edgecolor=_semantic(ctx, "ink"), linewidth=0.32,
+                      alpha=0.96,
                       hatch=hatch_pool[i % len(hatch_pool)] if hatches else None,
                       label=str(name), zorder=2)
         if horizontal:
             xpos = base + offset
-            ax.barh(xpos, vals, **kwargs)
+            ax.barh(xpos, vals, height=width * 0.88, **kwargs)
             if errors and name in errors:
                 ax.errorbar(vals, xpos, xerr=errors[name], fmt="none",
-                            ecolor=_semantic(ctx, "ink"), elinewidth=0.8, capsize=2)
+                            ecolor=_semantic(ctx, "ink"), elinewidth=0.7, capsize=2)
             if value_labels:
                 for xv, yv in zip(vals, xpos):
-                    ax.annotate(value_fmt.format(xv), xy=(xv, yv), xytext=(3, 0),
+                    ax.annotate(value_fmt.format(xv), xy=(xv, yv), xytext=(4, 0),
                                 textcoords="offset points", va="center", ha="left",
-                                fontsize=mpl.rcParams["xtick.labelsize"] * 0.78,
-                                color=_semantic(ctx, "line"), clip_on=False)
+                                fontsize=max(5.2, mpl.rcParams["xtick.labelsize"] * 0.8),
+                                color=_semantic(ctx, "ink"), clip_on=False)
         else:
             xpos = base + offset
-            ax.bar(xpos, vals, **kwargs)
+            ax.bar(xpos, vals, width=width * 0.88, **kwargs)
             if errors and name in errors:
                 ax.errorbar(xpos, vals, yerr=errors[name], fmt="none",
-                            ecolor=_semantic(ctx, "ink"), elinewidth=0.8, capsize=2)
+                            ecolor=_semantic(ctx, "ink"), elinewidth=0.7, capsize=2)
             if value_labels:
                 for xv, yv in zip(xpos, vals):
-                    ax.annotate(value_fmt.format(yv), xy=(xv, yv), xytext=(0, 2),
-                                textcoords="offset points", va="bottom", ha="center",
-                                fontsize=mpl.rcParams["xtick.labelsize"] * 0.78,
-                                color=_semantic(ctx, "line"), clip_on=False)
+                    va = "bottom" if yv >= 0 else "top"
+                    dy = 2 if yv >= 0 else -2
+                    ax.annotate(value_fmt.format(yv), xy=(xv, yv), xytext=(0, dy),
+                                textcoords="offset points", va=va, ha="center",
+                                fontsize=max(5.2, mpl.rcParams["xtick.labelsize"] * 0.8),
+                                color=_semantic(ctx, "ink"), clip_on=False)
+    if hline is not None:
+        if horizontal:
+            ax.axvline(float(hline), color=_semantic(ctx, "warn"), lw=0.9,
+                       ls="--", zorder=1)
+        else:
+            ax.axhline(float(hline), color=_semantic(ctx, "warn"), lw=0.9,
+                       ls="--", zorder=1)
+        if hline_label:
+            ax.annotate(str(hline_label),
+                        xy=(len(cats) - 0.5, float(hline)) if not horizontal
+                        else (float(hline), -0.5),
+                        xytext=(-3, 3) if not horizontal else (3, -3),
+                        textcoords="offset points", ha="right" if not horizontal else "left",
+                        va="bottom" if not horizontal else "top",
+                        fontsize=mpl.rcParams["legend.fontsize"] * 0.92,
+                        color=_semantic(ctx, "warn"), zorder=6,
+                        bbox={"facecolor": "white", "edgecolor": "none",
+                              "alpha": 0.92, "pad": 0.4})
     if horizontal:
         ax.set_yticks(base, cats)
         ax.invert_yaxis()
@@ -856,20 +1427,32 @@ def surface3d_panel(ax, x, y, z, ctx: Context, *, quantity: str = "diffusivity",
                     colorbar_label: str | None = None, projection_ax=None,
                     view: tuple[float, float] | None = None, title: str | None = None,
                     xlabel: str | None = None, ylabel: str | None = None,
-                    zlabel: str | None = None):
-    """3D data surface, not a waterfall.  Pair it with a 2D projection."""
+                    zlabel: str | None = None, level: float | None = None,
+                    level_color: str | None = None, colorbar: bool = True,
+                    cmap: str | None = None):
+    """3D data surface, not a waterfall.  Pair it with a 2D projection.
+
+    ``level`` draws the first intersection of the surface with that value
+    (e.g. the C=0.15 drying front) as a 3-D line; it is computed on the full
+    grid before the surface's row/column subsampling.
+    """
     x = np.asarray(x, float)
     y = np.asarray(y, float)
     z = np.asarray(z, float)
+    # A 3-D panel already carries the scale on its z axis; a colour bar duplicating
+    # it squeezes into the z tick labels in a narrow slot (q2_props).  Callers can
+    # switch it off with `options.colorbar=false`.
     charts.surface3d(ax, x, y, z, colorbar_label=colorbar_label or ctx.L("diffusivity"),
-                     quantity=quantity, colorbar=projection_ax is None,
+                     quantity=quantity, cmap=cmap,
+                     colorbar=bool(colorbar) and projection_ax is None,
+                     level=level, level_color=level_color,
                      view=view or (ctx.tokens.get("surface3d") or {}).get("view"))
     ax.set_xlabel(xlabel or ctx.L("moisture_short"))
     ax.set_ylabel(ylabel or ctx.L("temperature"))
     ax.set_zlabel(zlabel or ctx.L("diffusivity_log"))
     if projection_ax is not None:
         charts.response(projection_ax, x, y, z, colorbar_label=colorbar_label or ctx.L("diffusivity"),
-                        quantity=quantity)
+                        quantity=quantity, cmap=cmap)
         projection_ax.set_xlabel(xlabel or ctx.L("moisture_short"))
         projection_ax.set_ylabel(ylabel or ctx.L("temperature"))
     if title:
@@ -879,8 +1462,13 @@ def surface3d_panel(ax, x, y, z, ctx: Context, *, quantity: str = "diffusivity",
 
 def trajectory_panel(ax, x, y, ctx: Context, *, order=None, time=None,
                      xlabel: str | None = None, ylabel: str | None = None,
-                     title: str | None = None):
-    """Ordered state trajectory, optionally coloured by time."""
+                     title: str | None = None, stride: int = 1,
+                     point_size: float = 14):
+    """Ordered state trajectory, optionally coloured by time.
+
+    ``stride`` thins only the coloured markers (the line keeps every point):
+    a 3000-point time series otherwise paints a thick opaque band.
+    """
     x = np.asarray(x, float)
     y = np.asarray(y, float)
     if order is not None:
@@ -891,7 +1479,9 @@ def trajectory_panel(ax, x, y, ctx: Context, *, order=None, time=None,
         ax.plot(x, y, color=_series(ctx)[0], lw=1.4)
     else:
         t = np.asarray(time, float)
-        sc = ax.scatter(x, y, c=t, cmap="viridis", s=14, zorder=2)
+        step = max(1, int(stride or 1))
+        sc = ax.scatter(x[::step], y[::step], c=t[::step], cmap="viridis",
+                        s=float(point_size or 14), zorder=2)
         ax.plot(x, y, color=_semantic(ctx, "muted"), lw=0.6, alpha=0.6, zorder=1)
         cb = ax.figure.colorbar(sc, ax=ax, label=ctx.L("time_h"), shrink=.85)
         cb.ax.yaxis.set_major_locator(mpl.ticker.MaxNLocator(nbins=5))
@@ -907,15 +1497,56 @@ def trajectory_panel(ax, x, y, ctx: Context, *, order=None, time=None,
 
 def convergence_panel(ax, resolution, values, ctx: Context, *, reference: float | None = None,
                       xlabel: str | None = None, ylabel: str | None = None,
-                      logx: bool = False, title: str | None = None):
-    """Convergence curve with an optional reference line."""
+                      logx: bool = False, logy: bool = False,
+                      normalize: bool = False, band_pct: float | None = None,
+                      vline: Mapping | None = None, value_labels: bool = False,
+                      value_fmt: str = "{:+.3f}", title: str | None = None):
+    """Convergence curve with an optional reference/±band and delivery grid.
+
+    ``normalize=True`` plots values/reference, so several absolute t_dry
+    series become a dimensionless plateau at 1.  ``band_pct`` then draws the
+    claimed tolerance band (±1% means 0.99–1.01); ``vline`` marks the grid
+    actually delivered (Q3 N=800, Q4 N=200).
+    """
     x = np.asarray(resolution, float)
     y = np.asarray(values, float)
-    ax.plot(x, y, color=_series(ctx)[0], marker="o", ms=4, lw=1.3)
-    if reference is not None:
-        ax.axhline(reference, color=_semantic(ctx, "warn"), ls="--", lw=0.9)
+    if normalize:
+        if reference is None:
+            raise ValueError("convergence normalize needs a reference value")
+        y = y / float(reference)
+    ax.plot(x, y, color=_series(ctx)[0], marker="o", ms=4, lw=1.3, zorder=3)
+    center = 1.0 if normalize else (float(reference) if reference is not None else 0.0)
+    if band_pct:
+        half = abs(float(band_pct)) / 100.0 * (abs(center) if center else 1.0)
+        ax.axhspan(center - half, center + half, color=_semantic(ctx, "grid"),
+                   alpha=0.85, zorder=0)
+    if normalize or reference is not None:
+        ax.axhline(center, color=_semantic(ctx, "line"), ls="--", lw=0.8, zorder=1)
+    if value_labels:
+        xmax = float(np.nanmax(x))
+        for xv, yv in zip(x, y):
+            right = float(xv) >= xmax
+            ax.annotate(str(value_fmt).format(float(yv)), xy=(float(xv), float(yv)),
+                        xytext=(-4 if right else 4, 5), textcoords="offset points",
+                        ha="right" if right else "left",
+                        va="bottom", fontsize=mpl.rcParams["xtick.labelsize"] * 0.95,
+                        color=_semantic(ctx, "line"), zorder=5)
     if logx:
         ax.set_xscale("log")
+        ax.set_xticks(x)
+        ax.set_xticklabels([f"{v:g}" for v in x])
+        ax.xaxis.set_minor_locator(mpl.ticker.NullLocator())
+    if logy:
+        ax.set_yscale("log")
+    if isinstance(vline, Mapping) and vline.get("x") is not None:
+        xv = float(vline["x"])
+        ax.axvline(xv, color=_semantic(ctx, "warn"), ls=":", lw=1.0, zorder=2)
+        if vline.get("label"):
+            ax.annotate(str(vline["label"]), xy=(xv, 1.01),
+                        xycoords=("data", "axes fraction"), xytext=(0, 0),
+                        textcoords="offset points", ha="center", va="bottom",
+                        fontsize=mpl.rcParams["legend.fontsize"],
+                        color=_semantic(ctx, "warn"))
     ax.set_xlabel(xlabel or ctx.L("mesh"))
     ax.set_ylabel(ylabel or ctx.L("dry_time"))
     clean(ax)
@@ -1209,7 +1840,8 @@ def save_bundle(root: str | Path, figure_id: str, arrays: Mapping[str, object],
                 height_mm: float | None = None, layout: Mapping | None = None,
                 units: Mapping[str, str] | None = None,
                 render: Mapping | None = None,
-                brief: str | None = None) -> dict:
+                brief: str | None = None,
+                figure_legend: Mapping | None = None) -> dict:
     """④'s delivery: write ``figures/data/<id>.npz`` + ``spec/<id>.json`` + ``<id>.lock.json``.
 
     This is the data-layer half of the ④/⑦ split.  It writes **no canvas**:
@@ -1276,6 +1908,8 @@ def save_bundle(root: str | Path, figure_id: str, arrays: Mapping[str, object],
         "render": dict(render) if render else {
             "mode": "declarative", "script": "figures/make_figures.py"},
     }
+    if figure_legend is not None:
+        spec["figure_legend"] = dict(figure_legend)
     spec_path = root / "figures" / "spec" / f"{figure_id}.json"
     _write_json(spec_path, spec)
 
@@ -1461,23 +2095,33 @@ _AXES_RECIPES = {
     "field_contour": "field_contour",
     "field-heatmap": "field_heatmap", "heatmap-field": "field_heatmap",
     "field_heatmap": "field_heatmap",
+    "field-waterfall": "field_waterfall", "field_waterfall": "field_waterfall",
+    "field-moving": "field_moving", "field_moving": "field_moving",
     "profiles": "profiles", "profile": "profiles",
     "trend-line": "profiles", "trend_line": "profiles",
     "parameter-sweep": "profiles", "parameter_sweep": "profiles",
     "paired-raincloud": "paired_raincloud", "paired_raincloud": "paired_raincloud",
     "paired-dumbbell": "paired_dumbbell", "paired_dumbbell": "paired_dumbbell",
     "distribution-box": "distribution_box", "distribution_box": "distribution_box",
+    "raincloud": "raincloud", "group-raincloud": "raincloud",
+    "group_raincloud": "raincloud",
+    "field-raincloud": "field_raincloud", "field_raincloud": "field_raincloud",
+    "split-raincloud": "split_raincloud", "split_raincloud": "split_raincloud",
+    "field-split-raincloud": "field_split_raincloud",
+    "field_split_raincloud": "field_split_raincloud",
     "horizontal-dot-interval": "dot_interval", "dot-interval": "dot_interval",
     "forest-plot": "dot_interval", "forest_plot": "dot_interval",
     "sensitivity-dot": "dot_interval", "sensitivity_dot": "dot_interval",
     "dot_interval": "dot_interval",
     "grouped-bars": "grouped_bars", "grouped_bars": "grouped_bars",
+    "sampled-bars": "sampled_bars", "sampled_bars": "sampled_bars",
     "ablation-bars": "grouped_bars", "ablation_bars": "grouped_bars",
     "multi-metric-bar-panel": "grouped_bars", "multi_metric_bar_panel": "grouped_bars",
     "log-scale-bars": "grouped_bars", "log_scale_bars": "grouped_bars",
     "stacked-composition": "stacked_composition", "stacked_composition": "stacked_composition",
     "correlation-matrix": "correlation_matrix", "correlation_matrix": "correlation_matrix",
     "matrix-heatmap": "heatmap", "matrix_heatmap": "heatmap", "heatmap": "heatmap",
+    "annotated-heatmap": "annotated_heatmap", "annotated_heatmap": "annotated_heatmap",
     "table-heatmap": "heatmap", "table_heatmap": "heatmap",
     "signed-error-heatmap": "heatmap", "signed_error_heatmap": "heatmap",
     "composition-heatmap": "heatmap", "composition_heatmap": "heatmap",
@@ -1573,6 +2217,95 @@ def _render_panel(ax, panel: Mapping, bundle: Mapping, ctx: Context) -> None:
     options = dict(panel.get("options") or {})
     title = panel.get("title")
 
+    if alias == "field_moving":
+        xi = bundle[_panel_value(panel, "x", 0)]
+        t = bundle[_panel_value(panel, "y", 1)]
+        z = bundle[_panel_value(panel, "z", 2)]
+        radius = bundle[_panel_value(panel, "radius", 3)]
+        field_moving(ax, xi, t, z, radius, ctx,
+                     quantity=str(options.get("quantity") or "moisture"),
+                     colorbar_label=options.get("colorbar_label"),
+                     level=options.get("level"),
+                     level_label=options.get("level_label"),
+                     gamma=options.get("gamma"),
+                     vmin=options.get("vmin"), vmax=options.get("vmax"),
+                     xlabel=options.get("xlabel"), ylabel=options.get("ylabel"),
+                     r_lines=options.get("r_lines"),
+                     annotations=options.get("annotations"),
+                     title=title)
+        return
+    if alias == "field_waterfall":
+        x = bundle[_panel_value(panel, "x", 0)]
+        y = bundle[_panel_value(panel, "y", 1)]
+        z = bundle[_panel_value(panel, "z", 2)]
+        field_waterfall_panel(
+            ax, x, y, z, ctx,
+            times=options.get("times"),
+            n_profiles=int(options.get("n_profiles") or 5),
+            xlabel=options.get("xlabel"), ylabel=options.get("ylabel"),
+            logy=bool(options.get("logy")),
+            direct=bool(options.get("direct", False)),
+            legend=bool(options.get("legend", True)),
+            legend_loc=str(options.get("legend_loc") or "best"),
+            legend_ncol=int(options.get("legend_ncol") or 1),
+            legend_bbox=options.get("legend_bbox"),
+            ylim=options.get("ylim"),
+            hline=options.get("hline"),
+            hline_label=options.get("hline_label"),
+            title=title)
+        return
+    if alias == "split_raincloud":
+        opts_groups = options.get("groups") or {}
+        if not isinstance(opts_groups, Mapping):
+            raise ValueError(f"面板 {panel.get('id')}: split_raincloud 需要 options.groups 字典")
+        groups = {}
+        for label, pair in opts_groups.items():
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                raise ValueError(f"面板 {panel.get('id')}: 组 {label!r} 需要两个字段名")
+            groups[str(label)] = (bundle[str(pair[0])], bundle[str(pair[1])])
+        split_raincloud(ax, groups, ctx,
+                        labels=options.get("split_labels"),
+                        xlabel=options.get("xlabel"), title=title,
+                        colors=options.get("colors"),
+                        legend=bool(options.get("legend", True)),
+                        logx=bool(options.get("logx")),
+                        xlim=options.get("xlim"))
+        return
+    if alias == "field_split_raincloud":
+        x = bundle[_panel_value(panel, "x", 0)]
+        y = bundle[_panel_value(panel, "y", 1)]
+        z = bundle[_panel_value(panel, "z", 2)]
+        field_split_raincloud(ax, x, y, z, ctx,
+                              windows=options.get("windows"),
+                              bands=options.get("bands"),
+                              n_windows=int(options.get("n_windows") or 4),
+                              band_labels=options.get("band_labels"),
+                              xlabel=options.get("xlabel"), title=title,
+                              logx=bool(options.get("logx")),
+                              xlim=options.get("xlim"),
+                              anomaly=bool(options.get("anomaly")))
+        return
+    if alias == "field_raincloud":
+        x = bundle[_panel_value(panel, "x", 0)]
+        y = bundle[_panel_value(panel, "y", 1)]
+        z = bundle[_panel_value(panel, "z", 2)]
+        groups_opt = options.get("times") or options.get("groups")
+        if isinstance(groups_opt, Mapping):
+            groups_opt = list(groups_opt.values())
+        field_raincloud(
+            ax, x, y, z, ctx,
+            group_by=str(options.get("group_by") or "time"),
+            groups=groups_opt,
+            n_groups=int(options.get("n_groups") or 5),
+            xlabel=options.get("xlabel"),
+            group_labels=options.get("group_labels"),
+            reference=options.get("level"),
+            reference_label=options.get("level_label"),
+            logx=bool(options.get("logx")),
+            title=title,
+            value_labels=bool(options.get("value_labels")),
+            value_fmt=str(options.get("value_fmt", "{:.2f}")))
+        return
     if alias in ("field_contour", "field_heatmap"):
         x = bundle[_panel_value(panel, "x", 0)]
         y = bundle[_panel_value(panel, "y", 1)]
@@ -1585,6 +2318,11 @@ def _render_panel(ax, panel: Mapping, bundle: Mapping, ctx: Context) -> None:
                     level_label=options.get("level_label"),
                     gamma=options.get("gamma"),
                     vmin=options.get("vmin"), vmax=options.get("vmax"),
+                    xlabel=options.get("xlabel"), ylabel=options.get("ylabel"),
+                    xlim=options.get("xlim"), ylim=options.get("ylim"),
+                    show_level_legend=bool(options.get("show_level_legend", True)),
+                    label_lines=bool(options.get("label_lines", True)),
+                    annotations=options.get("annotations"),
                     title=title)
         return
     if alias == "profiles":
@@ -1593,7 +2331,36 @@ def _render_panel(ax, panel: Mapping, bundle: Mapping, ctx: Context) -> None:
                       xlabel=options.get("xlabel"), ylabel=options.get("ylabel"),
                       logy=bool(options.get("logy")), direct=bool(options.get("direct", True)),
                       markers=bool(options.get("markers")), legend=bool(options.get("legend")),
-                      title=title)
+                      title=title,
+                      legend_loc=str(options.get("legend_loc") or "best"),
+                      legend_bbox=options.get("legend_bbox"),
+                      legend_ncol=int(options.get("legend_ncol") or 1),
+                      divide_by_value=options.get("divide_by_value"),
+                      normalize=options.get("normalize"),
+                      ylim=options.get("ylim"),
+                      hline=options.get("hline"),
+                      hline_label=options.get("hline_label"),
+                      annotations=options.get("annotations"))
+        # A real threshold/claim line is part of the evidence, not decoration.
+        if options.get("level") is not None:
+            ax.axhline(float(options["level"]), color=_semantic(ctx, "warn"),
+                       lw=0.9, ls="--", zorder=1)
+            if options.get("level_label"):
+                # `level_label_x` lets the label sit where no series runs; the
+                # default is the right edge, which is exactly where a saturating
+                # series ends (q3_history: the curve crossed the label).
+                lx = options.get("level_label_x")
+                lx = float(lx) if lx is not None else float(x[-1])
+                ax.annotate(str(options["level_label"]),
+                            xy=(lx, float(options["level"])),
+                            xytext=(float(options.get("level_label_dx", -4)),
+                                    float(options.get("level_label_dy", 3))),
+                            textcoords="offset points",
+                            ha=str(options.get("level_label_ha", "right")), va="bottom",
+                            fontsize=mpl.rcParams["legend.fontsize"],
+                            color=_semantic(ctx, "warn"), zorder=6,
+                            bbox={"facecolor": "white", "edgecolor": "none",
+                                  "alpha": 0.95, "pad": 0.6})
         return
     if alias in ("paired_raincloud", "paired_dumbbell"):
         before = bundle[_panel_value(panel, "before", 0)]
@@ -1618,6 +2385,28 @@ def _render_panel(ax, panel: Mapping, bundle: Mapping, ctx: Context) -> None:
                          ylabel=options.get("ylabel"), xlabel=options.get("xlabel"),
                          logy=bool(options.get("logy")), title=title)
         return
+    if alias == "raincloud":
+        opts_groups = options.get("groups")
+        mapping = panel.get("field_mapping") or {}
+        if isinstance(opts_groups, Mapping):
+            groups = {str(k): bundle[str(v)] for k, v in opts_groups.items()}
+        else:
+            names = opts_groups or mapping.get("groups") or list(panel.get("fields") or [])
+            if isinstance(names, str):
+                names = [names]
+            labels = options.get("group_labels") or names
+            if len(labels) != len(names):
+                raise ValueError(f"面板 {panel.get('id')}: group_labels 与 groups 长度不一致")
+            groups = {str(label): bundle[str(n)] for label, n in zip(labels, names)}
+        raincloud_groups(ax, groups, ctx,
+                         xlabel=options.get("xlabel"), ylabel=options.get("ylabel"),
+                         sort=bool(options.get("sort", False)),
+                         reference=options.get("level"),
+                         reference_label=options.get("level_label"),
+                         logx=bool(options.get("logx")), title=title,
+                         value_labels=bool(options.get("value_labels")),
+                         value_fmt=str(options.get("value_fmt", "{:.2f}")))
+        return
     if alias == "dot_interval":
         labels = _strings(panel, bundle, "labels", default=list(panel.get("fields") or []))
         values = bundle[_panel_value(panel, "values", 0)]
@@ -1627,13 +2416,26 @@ def _render_panel(ax, panel: Mapping, bundle: Mapping, ctx: Context) -> None:
             low = bundle[str(mapping.get("low") or options["low"])]
         if mapping.get("high") or options.get("high"):
             high = bundle[str(mapping.get("high") or options["high"])]
+        censored = None
+        if mapping.get("censored") or options.get("censored"):
+            censored = bundle[str(mapping.get("censored") or options["censored"])]
+        censored_labels = None
+        if mapping.get("censored_labels") or options.get("censored_labels"):
+            censored_labels = bundle[str(mapping.get("censored_labels")
+                                         or options["censored_labels"])]
         dot_interval(ax, labels, values, low, high, ctx,
                      reference=options.get("reference"),
                      xlabel=options.get("xlabel"), title=title,
                      groups=options.get("groups"),
                      sort=bool(options.get("sort", True)),
                      value_fmt=str(options.get("value_fmt", "{:.2f}")),
-                     value_labels=bool(options.get("value_labels", True)))
+                     value_labels=bool(options.get("value_labels", True)),
+                     censored_values=censored,
+                     censored_labels=censored_labels,
+                     censored_style=str(options.get("censored_style") or "arrow_right"),
+                     xlim=options.get("xlim"),
+                     reference_color=options.get("reference_color"),
+                     label_map=options.get("label_map"))
         return
     if _recipe_name(panel) in ("ablation-bars", "ablation_bars"):
         labels = _strings(panel, bundle, "labels",
@@ -1645,14 +2447,30 @@ def _render_panel(ax, panel: Mapping, bundle: Mapping, ctx: Context) -> None:
                      value_fmt=str(options.get("value_fmt", "{:.2f}")),
                      value_labels=bool(options.get("value_labels", True)))
         return
+    if alias == "sampled_bars":
+        x = bundle[_panel_value(panel, "x", 0)]
+        sampled_bars(ax, x, _series_map(panel, bundle), ctx,
+                     times=options.get("times"),
+                     n_samples=int(options.get("n_samples") or 5),
+                     category_fmt=str(options.get("category_fmt") or "{:g}"),
+                     xlabel=options.get("xlabel"), ylabel=options.get("ylabel"),
+                     title=title, horizontal=bool(options.get("horizontal")),
+                     value_fmt=str(options.get("value_fmt", "{:.2f}")),
+                     value_labels=bool(options.get("value_labels", True)),
+                     hatches=bool(options.get("hatches", False)),
+                     hline=options.get("level"),
+                     hline_label=options.get("level_label"))
+        return
     if alias == "grouped_bars":
         categories = _strings(panel, bundle, "categories")
         grouped_bars(ax, categories, _series_map(panel, bundle), ctx,
                      ylabel=options.get("ylabel"), xlabel=options.get("xlabel"),
                      horizontal=bool(options.get("horizontal")),
                      title=title, value_fmt=str(options.get("value_fmt", "{:.2f}")),
-                     hatches=bool(options.get("hatches", True)),
-                     value_labels=bool(options.get("value_labels", True)))
+                     hatches=bool(options.get("hatches", False)),
+                     value_labels=bool(options.get("value_labels", True)),
+                     hline=options.get("level"),
+                     hline_label=options.get("level_label"))
         return
     if alias == "stacked_composition":
         categories = _strings(panel, bundle, "categories")
@@ -1667,6 +2485,49 @@ def _render_panel(ax, panel: Mapping, bundle: Mapping, ctx: Context) -> None:
         correlation_matrix(ax, variables, matrix, ctx,
                            lower=bool(options.get("lower", True)), title=title,
                            colorbar_label=options.get("colorbar_label"))
+        return
+    if alias == "annotated_heatmap":
+        rows = _strings(panel, bundle, "rows")
+        columns = _strings(panel, bundle, "columns")
+        mapping = panel.get("field_mapping") or {}
+        value_key = mapping.get("values") or mapping.get("matrix")
+        if not value_key:
+            fields = [str(x) for x in (panel.get("fields") or [])]
+            value_key = fields[-1] if fields else None
+        if not value_key:
+            raise ValueError(f"面板 {panel.get('id')}: annotated_heatmap 缺 values/matrix 字段")
+        values = np.asarray(bundle[str(value_key)], float)
+        if values.ndim != 2:
+            raise ValueError(f"面板 {panel.get('id')}: annotated_heatmap values 必须是二维矩阵")
+        if values.shape == (len(columns), len(rows)) and values.shape != (len(rows), len(columns)):
+            values = values.T
+        if values.shape != (len(rows), len(columns)):
+            raise ValueError(
+                f"面板 {panel.get('id')}: 矩阵 {values.shape} 与 rows={len(rows)} / "
+                f"columns={len(columns)} 不匹配")
+        def _even(n, k):
+            k = max(1, min(int(k), n))
+            return sorted(set(np.linspace(0, n - 1, k).round().astype(int).tolist()))
+        # Default 10x8, but respect an explicit spec choice: the agent decides
+        # how many cells stay readable. More cells are generally better, but
+        # this is not a hard gate.
+        ri = _even(len(rows), int(options.get("max_rows") or 10))
+        ci = _even(len(columns), int(options.get("max_cols") or 8))
+        values = values[np.ix_(ri, ci)]
+        def _fmt_labels(labels):
+            out = []
+            for lab in labels:
+                try:
+                    out.append(f"{float(lab):.3g}")
+                except (TypeError, ValueError):
+                    out.append(str(lab))
+            return out
+        rows = _fmt_labels([rows[i] for i in ri])
+        columns = _fmt_labels([columns[i] for i in ci])
+        heatmap_panel(ax, values, rows, columns, ctx,
+                      colorbar_label=options.get("colorbar_label"),
+                      quantity=options.get("quantity"),
+                      annotate=True, title=title)
         return
     if alias == "heatmap":
         rows = _strings(panel, bundle, "rows")
@@ -1711,12 +2572,23 @@ def _render_panel(ax, panel: Mapping, bundle: Mapping, ctx: Context) -> None:
         x = bundle[_panel_value(panel, "x", 0)]
         y = bundle[_panel_value(panel, "y", 1)]
         z = bundle[_panel_value(panel, "z", 2)]
+        view = options.get("view")
+        if isinstance(view, Mapping):
+            view = dict(view)
+        elif isinstance(view, (list, tuple)) and len(view) == 2:
+            view = {"elev": float(view[0]), "azim": float(view[1])}
+        else:
+            view = None
         surface3d_panel(ax, x, y, z, ctx,
                         quantity=str(options.get("quantity") or "diffusivity"),
                         colorbar_label=options.get("colorbar_label"),
-                        view=tuple(options["view"]) if options.get("view") else None,
+                        view=view,
                         title=title, xlabel=options.get("xlabel"),
-                        ylabel=options.get("ylabel"), zlabel=options.get("zlabel"))
+                        ylabel=options.get("ylabel"), zlabel=options.get("zlabel"),
+                        level=options.get("level"),
+                        level_color=options.get("level_color"),
+                        colorbar=bool(options.get("colorbar", True)),
+                        cmap=options.get("cmap"))
         return
     if alias == "trajectory":
         mapping = panel.get("field_mapping") or {}
@@ -1728,15 +2600,27 @@ def _render_panel(ax, panel: Mapping, bundle: Mapping, ctx: Context) -> None:
         time = bundle[str(time_field)] if time_field and str(time_field) in bundle else None
         trajectory_panel(ax, x, y, ctx, order=order, time=time,
                          xlabel=options.get("xlabel"), ylabel=options.get("ylabel"),
-                         title=title)
+                         title=title, stride=int(options.get("stride") or 1),
+                         point_size=float(options.get("point_size") or 14))
         return
     if alias == "convergence":
         resolution = bundle[_panel_value(panel, "resolution", 0)]
         values = bundle[_panel_value(panel, "values", 1)]
+        mapping = panel.get("field_mapping") or {}
+        ref = options.get("reference")
+        if ref is None and mapping.get("reference") and str(mapping["reference"]) in bundle:
+            arr = np.asarray(bundle[str(mapping["reference"])]).ravel()
+            ref = float(arr[0]) if arr.size else None
         convergence_panel(ax, resolution, values, ctx,
-                          reference=options.get("reference"),
+                          reference=ref,
                           xlabel=options.get("xlabel"), ylabel=options.get("ylabel"),
-                          logx=bool(options.get("logx")), title=title)
+                          logx=bool(options.get("logx")), logy=bool(options.get("logy")),
+                          normalize=bool(options.get("normalize")),
+                          band_pct=options.get("band_pct"),
+                          vline=options.get("vline"),
+                          value_labels=bool(options.get("value_labels")),
+                          value_fmt=str(options.get("value_fmt", "{:+.3f}")),
+                          title=title)
         return
     if alias == "timeline":
         mapping = panel.get("field_mapping") or {}
@@ -1895,8 +2779,10 @@ def render_spec(spec: Mapping, root: str | Path, ctx: Context | None = None):
     with style(ctx, width_mm=width) as settings:
         fig = canvas(ctx, width_mm=width, height_mm=height, constrained=False)
         source_data = {}
+        axes = []
         for index, panel in enumerate(panels):
             ax = _axes_for(fig, panel, layout, index, ctx, width, height)
+            axes.append(ax)
             _render_panel(ax, panel, bundle, ctx)
             if panel.get("title") or panel.get("id"):
                 panel_label(fig, ax, str(panel.get("id") or chr(ord("a") + index)),
@@ -1904,6 +2790,16 @@ def render_spec(spec: Mapping, root: str | Path, ctx: Context | None = None):
             data = _panel_source_data(panel, bundle)
             if data:
                 source_data.update(data)
+        fl = spec.get("figure_legend")
+        if isinstance(fl, Mapping) and axes:
+            handles, labels = axes[0].get_legend_handles_labels()
+            if handles:
+                kw = {"loc": str(fl.get("loc") or "upper center"),
+                      "ncol": int(fl.get("ncol") or len(labels) or 1),
+                      "frameon": bool(fl.get("frameon", True))}
+                if fl.get("bbox") is not None:
+                    kw["bbox_to_anchor"] = tuple(fl["bbox"])
+                fig.legend(handles, labels, **kw)
         stats = spec.get("statistics") or {}
         if not isinstance(stats, dict):
             stats = {}

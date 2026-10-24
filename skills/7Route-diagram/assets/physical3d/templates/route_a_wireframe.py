@@ -49,7 +49,7 @@ def build(font: str, width_mm: float, out_dir: Path, stem: str) -> tuple[Path, P
              va="top", zorder=6.9)
     ax2.text(0.0, -0.16, "$r=0$", color=S.AMBER, fontsize=8.2, ha="center",
              va="top", zorder=7.0)
-    ax2.text(-1.52, -1.42, "(a) 横截面", fontsize=8.2, color=S.MUTED)
+    ax2.text(-1.52, -1.42, "横截面", fontsize=8.2, color=S.MUTED)
 
     # ---------------- (b) 3D 透明圆柱 ----------------
     ax3 = fig.add_axes([0.34, 0.03, 0.64, 0.94], projection="3d")
@@ -78,7 +78,7 @@ def build(font: str, width_mm: float, out_dir: Path, stem: str) -> tuple[Path, P
                  color=S.BLUE)
     S.annotate3d(ax3, (0.0, -2.0, 0.0), "$L=25$ cm（示意截取）",
                  xytext=(-8, -22), color=S.MUTED, ha="right", size=8.0)
-    ax3.text2D(0.78, 0.04, "(b) 三维透视", transform=ax3.transAxes,
+    ax3.text2D(0.78, 0.04, "三维透视", transform=ax3.transAxes,
                fontsize=8.2, color=S.MUTED)
 
     out_dir.mkdir(parents=True, exist_ok=True)

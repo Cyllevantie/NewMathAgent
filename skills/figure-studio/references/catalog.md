@@ -58,6 +58,10 @@
 | `paired-raincloud` | `subject_id × condition(2–3) × group × value` | 同一对象前后测；原始点+分布+效应 | 只有汇总均值；没有配对 ID | `paired-dumbbell` |
 | `paired-dumbbell` | `pair_id × condition(恰好2) × value` | 小样本配对；每对都要看见 | 样本大、分布形状是重点 | `paired-raincloud` |
 | `ridgeline` | `group × observation`（有序组） | 多组分布沿有序维度堆叠 | 组序无意义；组 >8 | `boxplot` / `small-multiples` |
+| `raincloud` | `group × observation` | 多组分布；要同时看半小提琴、箱线中位数和全部散点（sci-box 10 语法） | 每组 <3 个观测；组 >10 | `boxplot` / `distribution-strip` |
+| `field-raincloud` | `x × y -> z` 网格，按时间或空间分组 | 场的 claim 是“分布怎么移动/变窄”，不是逐格读数；每个时刻/半径带一组 | 需要精确读等值线位置（配一张场图/剖面） | `field-contour` / `profiles` |
+| `split-raincloud` | `category × (two observation arrays)` | 每个类别对比两组分布（中心 vs 表面、前窗 vs 后窗）；sci-box 05 背靠背半小提琴 | 需要散点/原始个体；两组样本量差很多不说明 | `raincloud` |
+| `field-split-raincloud` | `x × y -> z`，按时间窗分组、按空间带劈开 | 温度/浓度场要表达“每个时间窗内中心区与表面区的分布差”，替代两张热力图 | 相关矩阵本身是 claim（确定性场不要硬做） | `field-raincloud` |
 | `distribution-composite` | `group × metric × observation` + 组成 | 一张图同时看分布与构成 | 面板只是重复同一证据 | `boxplot` + `stacked-composition` |
 | `horizontal-dot-interval` | `category × estimate × low × high` | 十几个方法/情景的均值与区间 | 区间定义未说明；类别 <5；上下界不包含中心 | `grouped-bars` / `boxplot` |
 | `forest-plot` | `category × estimate × low × high × reference` | 效应量、比值、差值；有零线 | 区间不是从数据算的 | `horizontal-dot-interval` |
@@ -68,6 +72,7 @@
 | id | 数据契约 | 什么时候用 | 避免 | 退路 |
 |---|---|---|---|---|
 | `grouped-bars` | `category × series × value`，可选 low/high | 2–12 类 × 2–5 序列；直接读数 | >5 序列或 >12 类；跨数量级 | `horizontal-dot-interval` / `matrix-heatmap` |
+| `sampled-bars` | `x × series`，按 `times`/`n_samples` 抽样 | 时间序列只比少数检查点；折线预算不够 | 连续斜率/交点是 claim；抽样点未写清 | `profiles` |
 | `multi-metric-bar-panel` | `method × metric × value` | 3–4 指标 × 5–12 方法；分面板 | 指标 >4；方法名太长 | `grouped-bars` / `horizontal-dot-interval` |
 | `ablation-bars` | `variant × component_set × metric × value` | 消融/剥离；基线虚线 | 组件强交互不说明；变体 >8 | `grouped-bars` / `waterfall-contribution` |
 | `log-scale-bars` | `method × value`，跨 ≥2 个数量级 | 时间、吞吐、误差跨量级 | 含 0/负数；同量级 | `horizontal-dot-interval` |

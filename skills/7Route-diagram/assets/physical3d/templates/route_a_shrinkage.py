@@ -60,7 +60,7 @@ def build(font: str, width_mm: float, out_dir: Path, stem: str):
               color=S.RED, lw=1.6)
     S.annotate3d(axL, (0.55, 0.05, 2.0), "收缩", xytext=(6, -18),
                  color=S.RED, bold=True, size=8.2)
-    fig.text(0.01, 0.035, "(a) 物理域 $r\\in[0,R(t)]$", fontsize=8.2,
+    fig.text(0.01, 0.035, "物理域 $r\\in[0,R(t)]$", fontsize=8.2,
              color=S.MUTED, ha="left", va="bottom")
 
     # ---------------- (b) 材料坐标 ----------------
@@ -80,7 +80,7 @@ def build(font: str, width_mm: float, out_dir: Path, stem: str):
                  color=S.AMBER, bold=True, ha="right")
     S.annotate3d(axR, (1.0, 0, Z1 * 0.55), "$\\xi=1$", xytext=(16, 0),
                  color=S.BLUE)
-    fig.text(0.59, 0.035, "(b) 材料坐标 $\\xi\\in[0,1]$", fontsize=8.2,
+    fig.text(0.59, 0.035, "材料坐标 $\\xi\\in[0,1]$", fontsize=8.2,
              color=S.MUTED, ha="left", va="bottom")
 
     # 面板之间的映射箭头（figure 坐标）

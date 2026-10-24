@@ -1,13 +1,15 @@
 ---
 name: 3Modeling-review-gate
-description: "建模评审与机理校验门禁（核心门禁：建模定稿前的 sanity 与机理审查）。独立复核 2Modeling-design 的建模设计：①数学正确性 ②题意权衡（目标函数/约束是否把临床或业务意图做成硬约束、是否退化解）③领域机理选择（主变量/因果方向是否符合文献机理基线）④数据严谨性 ⑤创新台账（基线/失败模式/可证伪 test/主答案护栏）。输出 PASS/FAIL，FAIL 附具体修改清单退回建模手重做。只有 PASS 才允许进入代码阶段。"
+description: "建模评审与机理校验门禁（核心门禁：建模定稿前的 sanity 与机理审查）。独立复核 2Modeling-design 的建模设计：①数学正确性 ②题意权衡（目标函数/约束是否把临床或业务意图做成硬约束、是否退化解）③领域机理选择（主变量/因果方向是否符合文献机理基线）④数据严谨性 ⑤创新台账（基线/失败模式/可证伪 test/innovation 主答案护栏/contribution 朴素基线与证据）。输出 PASS/FAIL，FAIL 附具体修改清单退回建模手重做。只有 PASS 才允许进入代码阶段。"
 allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebFetch
 ---
 
 # 建模评审与机理校验（门禁）
 
-> **第一原则：主答案优先。** 评审创新时先看它有没有把主答案带偏；主答案大幅偏离基线、
-> 又拿不出独立证据，先判模型没闭合，不要因为“方法更精细”放行。详见 ⑤ 创新审计。
+> **第一原则：主答案优先（仅 `kind=innovation`）。** 评审创新时先看它有没有把主答案带偏；
+> 主答案大幅偏离基线、又拿不出独立证据，先判模型没闭合，不要因为“方法更精细”放行。
+> `kind=contribution` 的基线是朴素/不完整模型，不套主答案护栏；改查朴素基线是否真错、
+> 贡献证据是否成立。详见 ⑤ 创新审计。
 
 > 评审对照清单见 `../_references/math_modeling_norms.md` 末尾「建模决策评审 A / 机理选择评审 B / 数据严谨性预检 C」三节；本 SKILL 的数学/题意/机理/数据/创新五查中，前四查对应 A/B/C 与本题机理，⑤ 创新审计另读 `INNOVATION_LEDGER.json`。
 > 通用执行纪律（增量返修 / 缩比预估 / 分段落盘 / 方法标记 / 返修只动清单内）见 `../_references/stage_discipline.md`。
@@ -51,8 +53,8 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent, WebSearch, WebF
 
 - 逐子问题的评审结论（每问给 PASS / FAIL / PASS_WITH_REVISION）
 - 每条结论附证据与具体修改清单（明确到"目标函数第几项应改成什么""应加哪条约束""哪个特征不该作主变量、应改用什么"）
-- **创新审计表**：`ID / 基线 / 失败模式 / 可证伪命题 / 预测增量 / 主答案护栏 / test / 状态 / 判定`；
-  逐条说明“这个候选是核心创新、关键处理，还是应该淘汰”，并给证据。
+- **创新审计表**：`ID / kind / 基线 / 失败模式 / 可证伪命题 / 预测增量 / 主答案护栏（innovation）/ 贡献证据（contribution）/ test / 状态 / 判定`；
+  逐条说明“这个候选是核心创新、supporting、模型贡献，还是应该淘汰”，并给证据。
 - 末尾给整题总体结论：APPROVED（放行进代码）/ REVISE（退回建模手）
 - 收尾必写（防 no_report 白跑）：全部结论确定后，**最后一动必须是 Write/更新 `reports/MODELING_REVIEW_REPORT.md`**，写完即结束；不要"想好结论就停"。若这是 no_report 重试轮（上一轮已做主体分析只是没落报告），**直接续着汇总写报告，不要重做审查**。落盘后可自查 `test -s reports/MODELING_REVIEW_REPORT.md`。
 
@@ -165,30 +167,43 @@ python lib/web/check_innovation.py --stage design
 不过就判 REVISE，退回 ② 补台账；不要替 ② 编候选。机械检查只保证字段齐，下面五条要人判：
 
 1. **基线是否真基线**：每问的头条数字/决策是否清楚；adopted 项的 `baseline_id` 是否指向它，
-   而不是拿“更复杂的模型”当基线。
+   而不是拿“更复杂的模型”当基线。对 `kind=contribution`，基线应是**朴素/不完整模型**
+   （固定域、体积平均判据、把 R(t) 与 ρ(C) 同时当独立输入等），不是主模型；`baseline_id`
+   指向的基线卡 `model` 也必须写的是朴素模型（如 `BASE-Q4-N`），卡片写的是主模型 →
+   REVISE，退回 ② 单独建朴素基线卡。
 2. **失败模式是否具体**：`failure_mode` 是否说清哪个方程/边界/数据口径/判据/决策会错；
    写“精度不够/效果一般”= 不合格。
 3. **test 是否真能证伪**：`test` 必须是 baseline vs intervention 的对照/负控制/复算，
    并写清什么结果算失败（`kill_if`）；“做灵敏度分析”不是证伪。
-4. **delta 是否与头条数字相关**：`predicted_delta` 是否给出方向与量级；去掉它，
-   头条数字是否变化 ≥5% 或定性翻转。达不到就是 L1/L2 的“关键处理”，不能叫核心创新。
-5. **主答案护栏是否守住**：`primary_guard.metric` 是否是阅卷人最可能对照的那个数；
-   `allowed_relative_change` 是否有依据（默认 10%，题面有量级按题面）；`why` 是否具体。
-   如果创新会让主答案大幅偏离（如温度从 33 ℃ 掉到 5 ℃、空气 41 ℃），必须要求 ② 说明
-   **是基线错了还是创新把模型带偏**；没有独立证据（实验/文献/题面给定值/多模型一致/解析极限）
-   → REVISE，不能因为“方法更精细”放行。主答案偏离不是加分项，首先按模型错误处理。
+4. **delta 是否与头条数字相关（仅 kind=innovation）**：`predicted_delta` 是否给出方向与量级；
+   去掉它，头条数字是否变化 ≥5% 或定性翻转。达不到就是 L1/L2 的“关键处理”，不能叫核心创新。
+   对 `kind=contribution`：不要求推动主答案；看 `baseline_is_naive` 是否真的错/不完整、
+   `contribution_evidence` 是否给出一致性/必要性/差值证据（如干物质漂移、守恒残差、
+   判据差值），以及 ④ 的 `delta` 是否与两列对得上。
+5. **主答案护栏是否守住（仅 kind=innovation）**：`primary_guard.metric` 是否是阅卷人最可能
+   对照的那个数；`allowed_relative_change` 是否有依据（默认 10%，题面有量级按题面）；
+   `why` 是否具体。如果创新会让主答案大幅偏离（如温度从 33 ℃ 掉到 5 ℃、空气 41 ℃），
+   必须要求 ② 说明**是基线错了还是创新把模型带偏**；没有独立证据（实验/文献/题面给定值/
+   多模型一致/解析极限）→ REVISE，不能因为“方法更精细”放行。主答案偏离不是加分项，首先按
+   模型错误处理。`kind=contribution` 不应带 `primary_guard`；带了就说明它被误写成 innovation，
+   退回删护栏或改 kind。
 
 判定规则：
 
 - **无台账** → REVISE（这是“没做”，不是“本题没有创新”）。
 - **只有 adopted、没有 rejected** → REVISE：说明面板没真跑或没敢淘汰；至少 3 条候选。
-- **adopted 是“用了 PSO/机器学习/材料坐标/灵敏度分析”** → REVISE：这是 L0/L1，不是创新；
-  要求改写成“基线在什么条件下会错 + 改了什么 + 哪个数字变了”。
-- **core > 1** → REVISE：一篇最多 1 个核心创新；其余降为 supporting/关键处理。
-- **主答案大幅偏离且无独立证据** → REVISE：先把模型闭合/口径查清，不能把偏离包装成创新；
-  典型是“加潜热后温度远低于空气温度”这类能量不闭合。
-- **没有 adopted，但 `no_adoption_reason` 诚实具体** → 可以 PASS：本题可能确实没有值得做的
-  增量；但报告里不许再写“创新点一/二/三”凑数。
+- **kind=innovation 的 adopted 只写“用了 PSO/机器学习/材料坐标/灵敏度分析”** → REVISE：
+  方法名本身是 L0/L1，不是创新；要求改写成“基线在什么条件下会错 + 改了什么 + 哪个数字变了”。
+  同样的材料坐标**作为 kind=contribution** 且有朴素基线（固定域 130.5 h → 51.2 h）与证据，
+  可以保留为模型贡献，但仍不能叫核心创新。
+- **core > 1** → REVISE：一篇最多 1 个核心创新；其余 innovation 降为 supporting，
+  contribution 写「模型特点与关键处理」。
+- **contribution > 3 或 contribution 的 core=true** → REVISE：关键处理最多 3 条，core 只给 innovation。
+- **主答案大幅偏离且无独立证据（kind=innovation）** → REVISE：先把模型闭合/口径查清，不能把
+  偏离包装成创新；典型是“加潜热后温度远低于空气温度”这类能量不闭合。
+- **没有 adopted，但 `no_adoption_reason` 诚实具体** → REVISE：⑨ 的 2.5 不能为空，先退回 ②
+  补一条可望 adopted 的 contribution/innovation（朴素基线 → 本文处理 → 证据/差值）。
+  `no_adoption_reason` 可以保留作诚实记录，但不能作为“论文没有贡献”的通过理由。
 - **报告写“创新点”但台账里是 rejected/downgraded** → 实质问题，判 REVISE；
   如果只是措辞过强（台账已降级、正文还写“创新”），走 `advisories` + `report_wording`。
 
@@ -210,7 +225,8 @@ python lib/web/check_innovation.py --stage design
    - `review-intent`：只审 ②题意权衡（目标/约束/退化解/保障率是否硬约束）
    - `review-mechanism`：只审 ③领域机理（对照 LITERATURE_DIRECTION 的主变量/因果/去偏）
    - `review-data-design`：只审 ④数据严谨性预检（分析单位/样本量/标签口径/泄漏设计/缺失）
-   - `review-innovation`：只审 ⑤创新审计（基线/失败模式/test/delta/核心数量/报告是否一致）
+   - `review-innovation`：只审 ⑤创新审计（kind 分流：innovation 的基线/失败模式/test/delta/核心数量；
+     contribution 的朴素基线/证据/护栏误用；两类都查报告是否一致）
    给每个子 agent：对应那条检查的原文 + ANALYSIS_MODELING_REPORT.md +（mechanism 那个还需）LITERATURE_DIRECTION.md +（innovation 那个还需）INNOVATION_LEDGER.json；要求只输出该维度的 PASS/FAIL/修改清单，**禁止越界评其它维度**。
 4. 每回来一维就回填一次骨架报告（§六·6.1），别等五份齐了再一起写。五份齐了再定稿裁决：任一维度判 FAIL 且有具体证据 → 整题 REVISE（把对应维度的修改清单作为回执）。
 5. 复查仍 FAIL 的维度：写明分歧，转黄灯由用户选「再试一次 / 回退到某阶段 / 接受并披露」——本阶段不再自动重试。

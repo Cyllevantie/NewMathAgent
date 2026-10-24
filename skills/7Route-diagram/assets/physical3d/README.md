@@ -1,6 +1,6 @@
 # physical3d：物理立体 / 3D 剖切示意图工具包
 
-第五类非数据图（`fig_geometry_3d`）的后端。完整规范见
+第五类非数据图（`fig_geometry_<part>`，单图可用 `fig_geometry_3d`）的后端。完整规范见
 `../../references/physical-3d.md`；这里只列文件和最短用法。
 
 ## 文件
@@ -29,14 +29,14 @@ sc.label((0, 0, 12.6), "轴心 $r=0$", offset=(-12, 18), ha="right", auto=False)
 fig, ax = plt.subplots(figsize=(90 / 25.4, 90 / 25.4 * 1.05))
 sc.fit(ax, margin=0.12)
 sc.draw(ax, fig)
-sc.save(fig, "fig_geometry_3d", "figures", width_mm=90)
+sc.save(fig, "fig_geometry_shared", "figures", width_mm=90)
 ```
 
 ```bash
 python skills/7Route-diagram/assets/physical3d/qa_physical3d.py \
-    --pdf figures/fig_geometry_3d.pdf \
-    --png figures/fig_geometry_3d.png \
-    --scene figures/fig_geometry_3d.scene.json \
+    --pdf figures/fig_geometry_shared.pdf \
+    --png figures/fig_geometry_shared.png \
+    --scene figures/fig_geometry_shared.scene.json \
     --width-mm 90 --font "Microsoft YaHei"
 ```
 

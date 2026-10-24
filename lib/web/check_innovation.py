@@ -16,9 +16,11 @@
 `reports/INNOVATION_PAPER.json`（⑨ paper）。
 本检查器按 id 把它们合并到**内存视图**里做机械核对：字段是否齐、引用是否存在、
 adopted 是否真的测过、测失败是否降级、核心创新是否经过审计与稳健性检验、主答案
-是否守住护栏。它**不**判断创新是否“新”（那是 ③ 建模评审门禁的活），只保证
-“创新”这句话是**可证伪、可追踪、不会把主答案带偏**的。⑤ 的复核结论写在独立的
-`reports/INNOVATION_AUDIT.json`，不写回任何台账。
+是否守住护栏。`kind="contribution"`（模型贡献）与 `kind="innovation"`（性能增量）分开：
+contribution 用“朴素基线 + 一致性/差值证据”，不套主答案护栏，但同样要 ⑤ 复核；
+⑨ 的 2.5 至少要有一条 innovation 或 contribution，不能为空。它**不**判断创新是否“新”
+（那是 ③ 建模评审门禁的活），只保证“创新/贡献”这句话是**可证伪、可追踪、不会把主答案
+带偏**的。⑤ 的复核结论写在独立的 `reports/INNOVATION_AUDIT.json`，不写回任何台账。
 
 用法（项目根目录）::
 
@@ -60,8 +62,9 @@ SIDE_ALLOWED = {
     PAPER_REL: {"paper"},
 }
 STAGES = ("design", "code", "audit", "robustness", "write", "all")
-TYPES = {"mechanism", "structure", "criterion", "evidence"}
-LENSES = {"mechanism", "data", "adversarial", "optimization"}
+TYPES = {"mechanism", "structure", "criterion", "evidence", "closure"}
+LENSES = {"mechanism", "data", "adversarial", "optimization", "closure"}
+KINDS = {"innovation", "contribution"}
 STATUSES = {"adopted", "rejected", "downgraded"}
 DESIGN_FIELDS = (
     "id", "question", "lens", "type", "baseline_id", "failure_mode",
@@ -212,14 +215,23 @@ def _check_schema(data, root: Path, issues):
         issues.append("缺 `panel`：记录本轮跑了哪些视角、共几个候选")
     else:
         lenses = panel.get("lenses")
-        if not isinstance(lenses, list) or len({str(x) for x in lenses}) < 3:
-            issues.append("`panel.lenses` 至少要有 3 个不同视角")
+        if not isinstance(lenses, list) or len({str(x) for x in lenses}) < 4:
+            issues.append(
+                "`panel.lenses` 至少要有 4 个不同视角"
+                "（closure 与 adversarial 各需其一；纯优化/决策题可用 optimization 顶替其中一项）")
         else:
             lens_set = {str(x) for x in lenses}
             if not ({"adversarial", "optimization"} & lens_set):
                 issues.append(
                     "`panel.lenses` 至少要有一个对抗/审稿视角或优化视角"
                     "（默认 adversarial；纯优化题可用 optimization 代替）"
+                )
+            if not ({"closure", "optimization"} & lens_set):
+                issues.append(
+                    "`panel.lenses` 必须含 closure（闭合/输入过定）视角；"
+                    "纯优化/决策题可用 optimization 代替。"
+                    "本题的输入常把同一物理量重复定义（如 R(t) 与 ρ(C) 同时定干物质存量），"
+                    "不查闭合就只能提出机制假设，提不出模型层贡献"
                 )
         candidates = panel.get("candidates")
         if not isinstance(candidates, int) or isinstance(candidates, bool) or candidates < 3:
@@ -286,6 +298,9 @@ def _check_design(data, root: Path, issues, stage="design"):
         status = item.get("status")
         if _text(status) and status not in STATUSES:
             issues.append(f"{tag}.status={status!r} 不在 {sorted(STATUSES)}")
+        kind = item.get("kind") or "innovation"
+        if kind not in KINDS:
+            issues.append(f"{tag}.kind={kind!r} 不在 {sorted(KINDS)}")
         bid = item.get("baseline_id")
         if _text(bid) and seen_base and bid not in seen_base:
             issues.append(f"{tag}.baseline_id 指向不存在的基线：{bid}")
@@ -297,27 +312,45 @@ def _check_design(data, root: Path, issues, stage="design"):
             )
         if status == "adopted":
             adopted.append(item)
-            if not isinstance(item.get("core"), bool):
-                issues.append(f"{tag}.core 必须是 true/false（adopted 项必填）")
-            guard = item.get("primary_guard")
-            gtag = f"{tag}.primary_guard"
-            if not isinstance(guard, dict):
-                issues.append(
-                    f"{gtag} 缺失：adopted 必须写主答案护栏（metric / allowed_relative_change / why）。"
-                    "创新默认只能让主答案在护栏内变化；超出且无独立证据 = 模型被带偏，不是创新"
-                )
-            else:
-                if not _text(guard.get("metric")):
-                    issues.append(f"{gtag}.metric 必须写明哪个主答案（如 1800 s 中心温度、t_dry）")
-                allowed = guard.get("allowed_relative_change")
-                if not _num(allowed) or allowed < 0 or allowed > 1:
+            if kind == "contribution":
+                # 模型贡献：基线是“朴素/不完整模型”，不是主模型；不套主答案护栏。
+                # 但必须写清贡献本身、朴素基线错在哪、证据在哪（④ 再填 measurement）。
+                for key in ("contribution", "baseline_is_naive", "contribution_evidence"):
+                    if not _text(item.get(key)):
+                        issues.append(
+                            f"{tag}.{key} 必须是非空字符串（contribution 项必填）："
+                            "contribution=贡献是什么；baseline_is_naive=朴素基线为什么错；"
+                            "contribution_evidence=验证证据/路径")
+                if item.get("core") is not False:
                     issues.append(
-                        f"{gtag}.allowed_relative_change 必须是 0–1 的相对值（10% 写 0.10，不要写 10）"
+                        f"{tag}.core 必须是 false：contribution 是关键处理，不是核心创新；"
+                        "core 只给 kind=innovation")
+                if item.get("primary_guard") is not None:
+                    issues.append(
+                        f"{tag}.primary_guard 不应出现在 contribution：它的基线是朴素模型，"
+                        "主答案护栏不适用；请改 kind=innovation 或删除 primary_guard")
+            else:
+                if not isinstance(item.get("core"), bool):
+                    issues.append(f"{tag}.core 必须是 true/false（adopted 项必填）")
+                guard = item.get("primary_guard")
+                gtag = f"{tag}.primary_guard"
+                if not isinstance(guard, dict):
+                    issues.append(
+                        f"{gtag} 缺失：adopted 必须写主答案护栏（metric / allowed_relative_change / why）。"
+                        "创新默认只能让主答案在护栏内变化；超出且无独立证据 = 模型被带偏，不是创新"
                     )
-                if not _text(guard.get("why")):
-                    issues.append(f"{gtag}.why 必须说明为什么允许这个偏离（题面/文献/多数模型量级）")
-            if item.get("core") is True:
-                core.append(item)
+                else:
+                    if not _text(guard.get("metric")):
+                        issues.append(f"{gtag}.metric 必须写明哪个主答案（如 1800 s 中心温度、t_dry）")
+                    allowed = guard.get("allowed_relative_change")
+                    if not _num(allowed) or allowed < 0 or allowed > 1:
+                        issues.append(
+                            f"{gtag}.allowed_relative_change 必须是 0–1 的相对值（10% 写 0.10，不要写 10）"
+                        )
+                    if not _text(guard.get("why")):
+                        issues.append(f"{gtag}.why 必须说明为什么允许这个偏离（题面/文献/多数模型量级）")
+                if item.get("core") is True:
+                    core.append(item)
         elif status == "rejected" and not _text(item.get("reject_reason")):
             issues.append(f"{tag} 是 rejected，必须写 `reject_reason`")
         elif status == "downgraded" and not _text(item.get("downgrade_reason")):
@@ -327,10 +360,25 @@ def _check_design(data, root: Path, issues, stage="design"):
             f"core=true 的 adopted 有 {len(core)} 个（{[i.get('id') for i in core]}）："
             "一篇论文最多 1 个核心创新，其余写成 supporting/关键处理"
         )
-    if len(adopted) > 2:
+    innovations = [i for i in adopted
+                   if (i.get("kind") or "innovation") != "contribution"]
+    if len(innovations) > 2:
         issues.append(
-            f"adopted 有 {len(adopted)} 个（{[i.get('id') for i in adopted]}）："
-            "最多 1 core + 1 supporting；其余必须 rejected 或写在“关键处理”里"
+            f"adopted 有 {len(innovations)} 个创新（{[i.get('id') for i in innovations]}）："
+            "最多 1 core + 1 supporting；其余必须 rejected 或写成 kind=contribution（关键处理）"
+        )
+    contributions = [i for i in adopted
+                     if (i.get("kind") or "innovation") == "contribution"]
+    if len(contributions) > 3:
+        issues.append(
+            f"adopted 有 {len(contributions)} 个 contribution（{[i.get('id') for i in contributions]}）："
+            "「模型特点与关键处理」最多 3 条；其余必须 rejected 或合并进一条"
+        )
+    if not any(isinstance(i, dict) and i.get("type") in {"closure", "structure", "criterion"}
+               for i in items):
+        issues.append(
+            "候选里没有模型层（type=closure/structure/criterion）：九条全是机理/参数假设时，"
+            "论文只能写“关键处理”却拿不出模型贡献；请补一条闭合/结构/判据候选"
         )
     if not adopted:
         downgraded = [
@@ -339,7 +387,8 @@ def _check_design(data, root: Path, issues, stage="design"):
             and _text(i.get("downgrade_reason"))
         ]
         if _text(data.get("no_adoption_reason")):
-            # ② 明确声明“本题没有值得做的增量”，后续阶段没有 adopted 可测，合法。
+            # ② 明确声明“本题没有值得做的增量”：机械上允许 ②-⑥ 收尾，但 ③ 会退回
+            # 补模型贡献，⑨ 仍会因 2.5 为空打回 ②；这不是“论文可以没有贡献”的许可证。
             pass
         elif stage == "design":
             issues.append(
@@ -360,8 +409,62 @@ def _source_exists(root: Path, source: str) -> bool:
     return (root / source).is_file()
 
 
+def _check_contribution_measurement(root: Path, issues, item):
+    """contribution 的验证：不要求主答案 primary/guard，只要求有来源、有结论。
+
+    它可以是定量（朴素基线 vs 本文结构的差值，如干物质漂移 −10.98% → 0、t_dry 差 −0.0052 h），
+    也可以是定性（一致性/必要性证据）。关键是不能只写一句“更好”。
+    """
+    tag = f"{item.get('id', '?')}.measurement"
+    m = item.get("measurement")
+    if not isinstance(m, dict):
+        issues.append(
+            f"{tag} 缺失：contribution 必须在 {MEASUREMENT_REL} 写验证结果"
+            "（kind/passed/source/evidence）")
+        return
+    kind = m.get("kind", "qualitative")
+    if kind not in ("quantitative", "qualitative"):
+        issues.append(f"{tag}.kind={kind!r} 只能是 quantitative 或 qualitative")
+    if "passed" not in m or not isinstance(m.get("passed"), bool):
+        issues.append(f"{tag}.passed 必须是 true/false")
+    source = m.get("source")
+    if not _text(source):
+        issues.append(f"{tag}.source 必须是非空路径（不能空串/None）")
+    elif not _source_exists(root, source):
+        issues.append(f"{tag}.source 指向的文件不存在：{source}")
+    if kind == "quantitative":
+        for key in ("baseline_value", "intervention_value", "delta"):
+            if not _num(m.get(key)):
+                issues.append(f"{tag}.{key} 必须是有限数值")
+        b, i, d = m.get("baseline_value"), m.get("intervention_value"), m.get("delta")
+        if _num(b) and _num(i) and _num(d):
+            expect = float(i) - float(b)
+            if not math.isfinite(expect):
+                issues.append(f"{tag}.delta 无法核对：baseline/intervention 差值溢出浮点范围")
+            elif abs(float(d) - expect) > 5e-3 * max(1.0, abs(expect)):
+                issues.append(
+                    f"{tag}.delta={d} 与 intervention_value - baseline_value="
+                    f"{expect:.6g} 不一致；贡献的差值也必须和两列对得上"
+                )
+        if not _text(m.get("delta_unit")):
+            issues.append(f"{tag}.delta_unit 必须写明单位（如 h、%、kg/m）")
+    elif not _text(m.get("evidence")):
+        issues.append(f"{tag}.evidence 缺失：定性贡献也要写证据/反例/一致性对照")
+    if m.get("primary") is not None:
+        issues.append(
+            f"{tag}.primary 不应出现在 contribution：contribution 的基线不是主模型，"
+            "主答案护栏不适用；要报主答案就说明它其实是 innovation，请改 kind")
+    if m.get("passed") is False:
+        issues.append(
+            f"{tag}.passed=false，但 {item.get('id')} 仍是 contribution："
+            "必须改成 rejected/downgraded 并写原因，不能把未验证的处理写成贡献")
+
+
 def _check_measurement(root: Path, issues, adopted):
     for item in adopted:
+        if (item.get("kind") or "innovation") == "contribution":
+            _check_contribution_measurement(root, issues, item)
+            continue
         tag = f"{item.get('id', '?')}.measurement"
         m = item.get("measurement")
         if not isinstance(m, dict):
@@ -603,7 +706,7 @@ def _check_robustness(issues, adopted, core):
             )
 
 
-def _check_write(issues, adopted, core, all_items=()):
+def _check_write(issues, adopted, all_items=()):
     all_items = all_items if isinstance(all_items, list) else []
     for item in all_items:
         if not isinstance(item, dict) or item.get("status") == "adopted":
@@ -626,6 +729,18 @@ def _check_write(issues, adopted, core, all_items=()):
             issues.append(f"{tag}.section 必须非空（如 2.5）")
         if not _text(paper.get("claim_id")):
             issues.append(f"{tag}.claim_id 必须非空（正文里可核对的 claim 标识）")
+        if (item.get("kind") or "innovation") == "contribution":
+            audit = item.get("audit")
+            audit = audit if isinstance(audit, dict) else {}
+            if audit.get("verdict") != "PASS":
+                issues.append(
+                    f"{tag} 的 ⑤ 复核不是 PASS（{audit.get('verdict')!r}）："
+                    "contribution 也不能绕过 ⑤；先回 ②/④ 修")
+            if not str(paper.get("section", "")).startswith("2.5"):
+                issues.append(
+                    f"{tag}.section 必须写到 2.5（「模型特点与关键处理」），"
+                    "不要塞进负结果/局限")
+            continue
         measurement = item.get("measurement")
         measurement = measurement if isinstance(measurement, dict) else {}
         primary = measurement.get("primary")
@@ -661,6 +776,12 @@ def _check_write(issues, adopted, core, all_items=()):
                     f"{tag} 是 core 但 robustness.survives=false："
                     "不能继续放在 2.5，降级为 supporting/关键处理"
                 )
+    if not adopted:
+        issues.append(
+            "论文 2.5 不能为空：至少要有 1 条 adopted innovation 或 adopted contribution"
+            "（kind=contribution，写「模型特点与关键处理」）；"
+            "只有 no_adoption_reason 不够——那会让读者觉得整篇没有贡献"
+        )
 
 
 def validate(root, stage="design"):
@@ -700,7 +821,7 @@ def validate(root, stage="design"):
     if stage in ("robustness", "write", "all"):
         _check_robustness(issues, adopted, core)
     if stage in ("write", "all"):
-        _check_write(issues, adopted, core, data.get("items", []))
+        _check_write(issues, adopted, data.get("items", []))
     return issues
 
 
@@ -722,7 +843,8 @@ def main() -> int:
         for i, problem in enumerate(issues, 1):
             print(f"  {i}. {problem}")
         print("\n修法：按 `skills/2Modeling-design/references/innovation-ledger.md` 补齐；"
-              "不要靠改措辞绕过——adopted 必须有基线、失败模式、可证伪 test、实测 delta；"
+              "不要靠改措辞绕过——innovation 必须有基线、失败模式、可证伪 test、实测 delta；"
+              "contribution 必须有朴素基线卡、一致性/差值证据；"
               "测失败就写 downgraded + downgrade_reason。")
     else:
         print(f"创新台账自检通过（stage={args.stage}）：{root}")

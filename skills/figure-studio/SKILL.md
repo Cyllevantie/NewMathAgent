@@ -19,7 +19,7 @@ allowed-tools: PowerShell, Read, Write, Edit, Grep, Glob, Agent
 ## 0. 什么时候用它
 
 - 要画数据图、多面板图、拼版大图、3D 响应面、机制/几何示意；
-- 要统一全文图的配色、字体、字号、面板字母、图注语言；
+- 要统一全文图的配色、字体、字号、面板短描述、图注语言；
 - 要从数据图型库 / 比较与拼版 / 投稿契约与质控 / 场图与3D内核里选一个，而不是默认折线；
 - 要在投稿前检查“图是否支持 claim、是否有来源数据、是否读得清”。
 
@@ -60,17 +60,22 @@ python skills/figure-studio/scripts/resolve_context.py --write
 - 一张图只使用一种解释性语言。方法名/模型名/指标名（TPE、SHAP、AUC、RMSE、R²）可保留拉丁写法，但坐标轴、面板标题、注释必须是模板语言。
 - 中文图不要用 `$...$` 写单位、上下标或简单希腊字母；优先 Unicode（`R²`、`℃`、`μ`、`σ`），避免字体缺字。若发现方框，改成 ASCII（如 `kg/kg`、`m2/s`）。
 - 标签从 `assets/labels.zh.json` / `labels.en.json` 取；新词同时加到两份字典，不要在图脚本里临时翻译。
-- 图注写在 LaTeX 里；图内只放短标题和必要注释，不放大段解释。
+- 图注写在 LaTeX 里；**图内不写整图标题**，只放面板短描述和必要注释，不放大段解释。
 
 ## 2. 路由：先看数据形状，再看图型
 
 | 你手上的数据 | 默认 recipe | 不要做什么 |
 |---|---|---|
-| `(r,t)` 二维场 | `field_contour` / `field_heatmap` | 不要只切几条折线就说完场结构 |
-| 空间/时间剖面族 | `profiles` / `small_multiples` | 不要 8 条以上挤一张图 |
+| `(r,t)` 二维场，且**空间结构本身是 claim** | `field_contour` / `field_heatmap` | 不要只切几条折线就说完场结构；场不是默认图型 |
+| `(r,t)` 二维场，但 claim 是**分布怎么移动/变窄** | `field_raincloud`（按时间或半径带分组，sci-box 半小提琴 + 箱线 + 散点） | 不要再交一整墙 `profiles` / `field_waterfall` 折线 |
+| 场里两组空间带在每个时间窗的分布差 | `field_split_raincloud`（sci-box 05 背靠背半小提琴：中心区 vs 表面区；`anomaly=true` 先减径向均值成 ΔT） | 不要硬做相关矩阵；确定性场的空间自相关不是独立样本 |
+| 空间/时间剖面族 | `profiles` / `small_multiples` | 连续变化/斜率是 claim 时用折线；只有少数检查点比较才用 `sampled_bars`/`grouped_bars` |
+| 时间序列只看几个检查点 | `sampled_bars`（按 x 抽样成柱） | 不要为了“连续感”画整条折线；抽样点要在图注写清 |
+| 多组分布（每组多个观测） | `raincloud` / `distribution_box` | 每组 <3 个观测不要硬画小提琴 |
 | 同一对象前后测 | `paired_raincloud` / `paired_dumbbell` | 不要画成两组独立柱 |
 | 多口径/多方法 + 区间 | `dot_interval` / `forest_plot` | 不要只有均值、没有真实区间 |
 | 类别 × 序列 | `grouped_bars` / `stacked_composition` | 组成总和没有意义时不要堆叠 |
+| 矩阵数值/敏感性表 | `annotated_heatmap`（默认 10×8 抽样，格子里写数字；格数由 agent 按可读性决定，多一点更好） | 矩阵 >12×10 且不需逐格读数；只画色块不写数 |
 | 多变量关系 | `correlation_matrix` / `scatter_matrix` | 变量 >12 不要硬塞相关矩阵 |
 | 预测 vs 观测 | `prediction_marginal` / `residual_panel` | 不要只画拟合线不画误差 |
 | 真实二分类 | `roc_curve` | AUC≈1 时不要拿 ROC 当卖点 |
@@ -82,7 +87,22 @@ python skills/figure-studio/scripts/resolve_context.py --write
 完整目录、数据契约、适用/禁用/退路见 [`references/catalog.md`](references/catalog.md)；
 机器可读的 recipe 列表见 [`assets/recipes.json`](assets/recipes.json)。
 
-**每张主图至少写 3 个不同视觉编码的候选**，不是 3 个配色。写清：映射哪些字段、回答什么问题、保留/隐藏什么、淘汰理由、退路。用户点名图型只是 preference；先检查数据契约，不适合就降级并说明。
+**每张主图至少写 2 个不同视觉编码的候选**，不是同图型换配色。至少一个候选来自不同 recipe 家族（如 `profiles` vs `field_contour`、`dot_interval` vs `grouped_bars`）。写清：映射哪些字段、回答什么问题、保留/隐藏什么、淘汰理由、退路。用户点名图型只是 preference；先检查数据契约，不适合就降级并说明。
+
+候选不是 ④ 的“最终选择”：④ 只保证每个候选需要的字段都在 bundle 里并写进 brief；⑦ 渲染候选到 `tmp/figures/<id>/cand_*.png`，按 claim 支持 / 信息密度 / 可读性 / 灰度 / 语言统计 / 冗余评分后，把选择写进 `figures/choice/<id>.json`。选择不能改 fields、claim、statistics 或 bundle。
+
+**sci-box 部件拼接**：模板是语法，不是整张用或整张不用；只适配一个面板时，
+把那个面板（05 拆半小提琴 / 08 半小提琴 / 10 云雨+箱线 / 07 3D 面）与本题的
+场图/折线拼成一张，不适配的部件（相关矩阵/分组树/ROC/Taylor）不画。见
+`../plate-figure/SKILL.md` §「部件拼接」。
+
+**混排预算与判重**：支撑图折线 4–6、场图/热力图共 2（1 张场图 + 1 张带数字的矩阵热力图）、雨云/分布 ≤1、柱/抽样柱 ≤3
+（`config/visualization.json` 的 `chart_mix.line_budget`）；连续轨迹/相轨迹保留
+折线，只在少数检查点比较时才用柱/点，场分布才用雨云，不要把一整批图压成同一种。
+同一 bundle + 同一视觉编码只出现一次，plate hero 已画的 3D 曲面不再出同源支撑图。
+**同类子型也尽量均分**（柱里的 sampled/grouped、折线里的 profiles/field_waterfall）；
+数据不支持另一种子型时不要硬换，保留并在报告里说明。
+机械检查：`python skills/figure-studio/scripts/check_figure_mix.py --root .`。
 
 ## 3. FigureBrief：画之前先写清楚
 
@@ -205,7 +225,8 @@ python skills/figure-studio/scripts/figure_lock.py verify --root .
 - **语义色**：`warn` 只用于阈值/异常；`positive` 只用于增益；`highlight` 只给每图一个 callout；`muted` 只给背景对象，不当文字色。
 - **连续量**：按物理量取 `quantity_cmap`（温度 inferno；水分/浓度/扩散 viridis；残差 Reds；参与 Blues；轴比 YlOrRd）。同一量跨图同色；同图多栏共用 `vmin/vmax`。
 - **字体与字号**：中文 Microsoft YaHei（全宽 9 pt 正文 / 8 pt 刻度；半栏 8/7）；英文 Arial（全宽 7–8/6.5–7；半栏 7/6）。半栏图用 `studio.style(ctx, width_mm=80)` + `studio.canvas(ctx, width_mm=80)`，两者宽度要一致；任何渲染后小于 7 pt（英文 6 pt）的字都必须改布局，不许整体缩小。
-- **面板字母**：小写粗体 a/b/c，物理偏移（mm），不是 axes 比例；面板标题短，解释留图注。
+- **面板短描述**：**全图不写 a/b/c 字母**（`studio.panel_label` 已是 no-op）。需要时在面板下方
+  写一行短描述（物理偏移 mm，不是 axes 比例），解释留图注；没有合适描述就留空。
 - **轴线**：只留左/下；网格 y 向、浅灰、在数据下方；图例白底半透明（中文模板必须，防止压曲线）。
 - **3D**：只在第三维真有变量时用；`plot_surface` 平滑曲面 + 细网格边 + 合适视角；必须配二维投影/切片/等高线；禁止 3D 柱/3D 饼/瀑布替代曲面。
 - **导出**：PDF/SVG 可编辑文字（`pdf.fonttype=42`、`svg.fonttype=none`），PNG 300 dpi；物理宽度是契约，**不要用 `bbox_inches='tight'` 改交付图的宽度**（预览图可以）。
@@ -229,7 +250,7 @@ python skills/figure-studio/scripts/figure_lock.py verify --root .
 
 - 每个面板承担**不同的推断角色**（hero / effect / distribution / uncertainty / diagnostic / comparison / composition / mechanism / sensitivity / convergence / context），不是把同一证据换一种图再画一遍。
 - 面板顺序就是论证顺序：a 主结果 → b 效应/分布 → c 诊断/稳健性；不要按数据表顺序排。
-- 共享轴、共享色标、共享图例；面板字母和标题对齐；不要把图例放到数据上。
+- 共享轴、共享色标、共享图例；面板短描述和标题对齐；不要把图例放到数据上。
 - 拼版大图要有“叙事条”或一句结论，不要只是 9 个小图拼贴。
 - 参考投稿契约示例：一主多辅、manifest 记录 counts/intervals/exclusions、四格式导出、
   QA 记录。它的价值是**构图与交付契约**，不是另一套配色。
@@ -404,6 +425,8 @@ skills/figure-studio/
     figure_lock.py           # 数据包/spec 语义/source/claim 的锁：build/verify
     render_specs.py          # ⑦ 的默认声明式渲染器（可复制成 figures/make_figures.py）
     audit_studio.py          # 语言/来源数据/figure lock/脚本静态检查
+    check_selection.py       # 候选/选中记录与“折线赢家必须有过非折线候选”
+    check_figure_mix.py      # 图级判重（plate 已画的 3D）+ 折线预算
     smoke_recipes.py         # 六个通用模板的合成数据冒烟渲染
 ```
 
